@@ -59,4 +59,15 @@ import Testing
         c.undo(window: nil)
         #expect(FileManager.default.fileExists(atPath: original.path) && c.canRedo && c.activities.isEmpty)
     }
+
+    /// W-236 m2 (W-243): whether undoing moves between volumes is decided from the mount table, not a stat per item on
+    /// the main thread: a destination on a share that went away answers at once.
+    @Test func betweenVolumesIsDecidedFromTheMountTable() throws {
+        #expect(MountTable.mountPoint(of: "/Users/someone/x") == "/")
+        #expect(MountTable.mountPoint(of: "/System/Volumes/Data/x") == "/System/Volumes/Data")
+        #expect(MountTable.mountPoint(of: "/Volumes/No Such Disk \(UUID().uuidString)/x") == "/")  // not mounted: nothing is asked
+        let home = URL(fileURLWithPath: "/Users/someone/a.txt"), data = URL(fileURLWithPath: "/System/Volumes/Data/tmp/a.txt")
+        #expect(FileOperationsController.movesBetweenVolumes(.moved([(from: home, to: data)])))
+        #expect(!FileOperationsController.movesBetweenVolumes(.moved([(from: home, to: URL(fileURLWithPath: "/Users/other/gone/a.txt"))])))
+    }
 }

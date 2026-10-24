@@ -7,10 +7,12 @@ extension FileOperationsController {
     func handleDrop(_ urls: [URL], onto folder: URL, operation: NSDragOperation, in view: NSView) {
         let urls = urls.filter { $0.standardizedFileURL != folder.standardizedFileURL }
         guard !urls.isEmpty else { return }
-        if urls.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL }) { return }
+        // Already there: nothing to move or link, but an Option-drag copies them alongside (Finder duplicates).
+        if urls.allSatisfy({ $0.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL }), operation != .copy { return }
         let w = view.window
-        // Dropping into the Trash folder is Move to Trash, as in Finder (put back works, Finder's sound plays).
-        if LocationKind.of(folder) == .trash, urls.allSatisfy(\.isFileURL) {
+        // Dropping into the Trash folder is Move to Trash, as in Finder (put back works, Finder's sound plays), for
+        // remote items too, as a drop on Trash in Places does.
+        if LocationKind.of(folder) == .trash {
             trash(urls, window: w)
             return
         }

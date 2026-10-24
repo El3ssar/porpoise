@@ -116,7 +116,25 @@ final class ItemAccessibilityElement: NSAccessibilityElement, NSAccessibilityEle
         if it.isHidden { parts.append("hidden") }
         if let git = list.gitBadge(it) { parts.append(git.label) }
         if let mark = list.editMark(it) { parts.append(mark.note(CloudAccounts.shared.providerTitle(for: url))) }
+        // What the cloud badge shows: only in the cloud, downloading, a problem.
+        if case .cloud(let state) = list.cloudBadge(it), let help = CloudBadge.help(.cloud(state), of: url) { parts.append(help) }
         return parts.joined(separator: ", ")
+    }
+
+    /// The badge's click, for VoiceOver: Download for an item only in the cloud, Show Problem for one that failed.
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        guard let list, let it = item, case .cloud(let state) = list.cloudBadge(it) else { return nil }
+        switch state {
+        case .cloudOnly:
+            return [NSAccessibilityCustomAction(name: "Download") { [weak list] in list?.downloadFromCloud(it) ?? false }]
+        case .error:
+            return [
+                NSAccessibilityCustomAction(name: "Show Problem") {
+                    ActivityWindowController.shared.show(); return true
+                }
+            ]
+        default: return nil
+        }
     }
 
     override func isAccessibilitySelected() -> Bool { list?.model.selection.contains(url) ?? false }

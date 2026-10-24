@@ -260,10 +260,22 @@ final class ConnectSheet: SecondaryWindowController {
         ConnectionsWindow.show(adding: .s3, open: open)
     }
 
+    static var problemShownForTesting: ((String) -> Void)?
+
     @objc private func connectServer(_ sender: Any?) {
         guard let form, let url = form.url() else { NSSound.beep(); return }
         if form.addToPlaces {
             // Servers the connection manager knows become saved connections (editable in Connections); others a place.
+            // A server Connections manages is saved there, or the form says what's wrong and stays: it never
+            // quietly becomes a plain place that Connections can't list or edit.
+            if let (_, problem) = form.draftProfile(), let problem {
+                let alert = NSAlert()
+                alert.messageText = "Connection wasn’t saved."
+                alert.informativeText = problem
+                if let window { alert.beginSheetModal(for: window) }
+                Self.problemShownForTesting?(problem)
+                return
+            }
             if let profile = form.profile() {
                 do { try ConnectionProfiles.shared.save(profile).get() } catch {
                     let alert = NSAlert(error: error)
@@ -583,7 +595,7 @@ final class ServerForm {
     let view = NSGridView()
     let server = NSTextField()
     private let nameField = NSTextField()
-    private let port = NSTextField()
+    let port = NSTextField()
     private let user = NSTextField()
     private let folder = NSTextField()
     private let secure: NSButton?
@@ -664,6 +676,13 @@ final class ServerForm {
 
     /// The fields as a saved connection, for the kinds the Connections window manages.
     func profile() -> ConnectionProfile? {
+        guard let (p, problem) = draftProfile(), problem == nil else { return nil }
+        return p
+    }
+
+    /// The saved connection the fields describe and what's wrong with it, for the kinds Connections manages (nil
+    /// for others, which become a plain place).
+    func draftProfile() -> (ConnectionProfile, problem: String?)? {
         let kind: ConnectionProfile.Kind
         switch scheme {
         case "sftp": kind = .sftp
@@ -677,7 +696,7 @@ final class ServerForm {
         let p = ConnectionProfile(
             name: name ?? host, kind: kind, host: host, port: Int(port.stringValue).flatMap { $0 == defaultPort ? nil : $0 },
             user: u.isEmpty ? nil : u, path: folder.stringValue.trimmingCharacters(in: .whitespaces))
-        return p.problem == nil ? p : nil
+        return (p, p.problem)
     }
 
     /// The address the fields describe (nil without a server).

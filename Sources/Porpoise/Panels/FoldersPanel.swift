@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// Dolphin's Folders panel (F7): a folder tree that follows the current location.
@@ -38,6 +39,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         private static var listings = 0
         /// The missing child a re-list was made for: one re-list per missing folder, not one per follow.
         var relistedFor: String?
+        /// The folder changed on disk while it was being listed: it's listed once more when that listing is done.
+        var changedWhileListing = false
         init(_ url: URL) { self.url = url }
 
         var isLoading: Bool { listing != nil }
@@ -188,6 +191,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
                 DispatchQueue.main.async { [weak self] in self?.outline.reloadData() }
             }
         }
+        ancestryObservers.append(
+            NotificationCenter.default.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
+                guard let paths = n.userInfo?["paths"] as? Set<String> else { return }
+                self?.foldersChanged(paths)
+            })
         for name in [CloudAccounts.remoteChanged, CloudAccounts.changed] {
             ancestryObservers.append(
                 NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -209,7 +217,59 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.frame = bounds
     }
 
+    // MARK: Following the disk
+
+    /// Watches the tree's top and every open folder: one made, renamed or deleted there (by another app, the Terminal
+    /// panel, another pane) shows in the tree, and a deleted one stops being there to click.
+    private lazy var watcher = FolderWatcher { [weak self] paths in
+        DispatchQueue.main.async { self?.foldersChanged(paths) }
+    }
+
+    /// The folders the tree shows the contents of: its top and the expanded ones. While one is listed again, the
+    /// children it shows meanwhile count: the watch must not drop (and restart without) what's open below it.
+    private func openFolders() -> [Node] {
+        var out: [Node] = [], pending = [root]
+        while let n = pending.popLast() {
+            out.append(n)
+            pending += (n.shownChildren ?? []).filter { outline.isItemExpanded($0) }
+        }
+        return out
+    }
+
+    static let relistDelay: TimeInterval = 0.3
+
+    /// Tests of the listing mechanics turn it off: a re-list the disk asks for would race theirs.
+    var watchesDisk = true { didSet { watchOpenFolders() } }
+
+    func watchOpenFolders() {
+        guard remoteTree == nil, watchesDisk else { return watcher.watch([]) }
+        watcher.watch(openFolders().map(\.url))
+    }
+
+    /// Lists again the open folders among `paths` (real or as given), keeping what's expanded under them.
+    func foldersChanged(_ paths: Set<String>) {
+        guard remoteTree == nil else { return }
+        let changed = Set(paths.map(FilePath.canonical))
+        for n in openFolders() where n.shownChildren != nil && (changed.contains(FilePath.canonical(n.url.path)) || paths.contains(n.url.path)) {
+            relist(n)
+        }
+    }
+
+    /// Lists `n` again; one listing under way finishes first (a folder that keeps changing, such as the temporary
+    /// folder, would otherwise restart it at every change and never show anything), then it's listed once more.
+    private func relist(_ n: Node) {
+        if n.isLoading {
+            n.changedWhileListing = true
+            return
+        }
+        n.invalidate()
+        startListing(n)
+    }
+
+    func outlineViewItemDidExpand(_ notification: Notification) { watchOpenFolders() }
+
     deinit {
+        watcher.stop()
         settingsObserver.map(NotificationCenter.default.removeObserver)
         ancestryObservers.forEach(NotificationCenter.default.removeObserver)
     }
@@ -248,6 +308,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         outline.reloadData()
         outline.expandItem(nil)
         followCurrent()
+        watchOpenFolders()
     }
 
     /// Expands down to the current folder and selects it.
@@ -408,6 +469,15 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
                 guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
                 self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
                 if self.followWaiting { self.followCurrent() }
+                // Changed meanwhile: listed once more, a moment later (a folder that never stops changing is read at
+                // most a few times a second, and what follows the view's folder through it gets its turn first).
+                if node.changedWhileListing {
+                    node.changedWhileListing = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.relistDelay) { [weak self, weak node] in
+                        guard let self, let node, self.root === tree else { return }
+                        self.relist(node)
+                    }
+                }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadingLabelDelay) { [weak self, weak node] in
@@ -481,6 +551,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     func outlineViewItemDidCollapse(_ notification: Notification) {
         (notification.userInfo?["NSObject"] as? RemoteFolderTree.Node)?.collapse()
+        watchOpenFolders()
     }
 
     private func nodeURL(_ item: Any?) -> URL? { (item as? Node)?.url ?? (item as? RemoteFolderTree.Node)?.url }

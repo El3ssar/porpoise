@@ -22,6 +22,9 @@ final class TransferToolbarButton: NSButton {
     private var lastRefresh = Date.distantPast
     private var shownStates = ""
     private var shownProgress = ""
+    /// For tests: whether the 0.25 s timer runs, and what's remembered.
+    private(set) var tickingForTests = false
+    var rememberedForTests: Int { dismissedFailure.count + didShowAttention.count }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -69,11 +72,19 @@ final class TransferToolbarButton: NSButton {
             didShowAttention.insert(attention.id)
             showTransfers()
         }
-        if timer == nil && !jobs.isEmpty {
+        // Ticks only while something moves: running, queued, or just finished (it goes after 3 s). A failure waiting to be
+        // read is redrawn when activities change, not 4 times a second for as long as it waits.
+        let moving = jobs.contains { $0.state.isActive || $0.state == .queued || ($0.finishedAt.map { now.timeIntervalSince($0) < 3 } ?? false) }
+        let ids = Set(FileOperationsController.shared.activities.map(\.id))
+        dismissedFailure.formIntersection(ids)
+        didShowAttention.formIntersection(ids)
+        tickingForTests = moving
+        if timer == nil && moving {
             let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.refresh() }
             RunLoop.main.add(timer, forMode: .common); self.timer = timer
-        } else if jobs.isEmpty {
-            timer?.invalidate(); timer = nil; popover.performClose(nil)
+        } else if !moving {
+            timer?.invalidate(); timer = nil
+            if jobs.isEmpty { popover.performClose(nil) }
         }
     }
 

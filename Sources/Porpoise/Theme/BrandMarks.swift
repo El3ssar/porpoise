@@ -33,8 +33,24 @@ enum BrandMarks {
         return img
     }
 
+    /// Avatars made, by picture, size and name: Places redraws on every hover move, and decoding the picture each
+    /// time was a full image decode per redraw.
+    private static let avatars: NSCache<NSString, NSImage> = {
+        let c = NSCache<NSString, NSImage>()
+        c.countLimit = 64
+        return c
+    }()
+
     /// The account's picture in a circle, or its initial on a colour derived from the email when there's no picture.
     static func avatar(_ data: Data?, name: String, email: String, size: CGFloat) -> NSImage {
+        let key = "\(data?.hashValue ?? 0)|\(data?.count ?? -1)|\(size)|\(name)|\(email)" as NSString
+        if let cached = avatars.object(forKey: key) { return cached }
+        let image = makeAvatar(data, name: name, email: email, size: size)
+        avatars.setObject(image, forKey: key)
+        return image
+    }
+
+    private static func makeAvatar(_ data: Data?, name: String, email: String, size: CGFloat) -> NSImage {
         let photo = data.flatMap(NSImage.init(data:))
         return NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
             let circle = NSBezierPath(ovalIn: r)

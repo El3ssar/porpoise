@@ -1,5 +1,7 @@
+import AVFoundation
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
@@ -74,6 +76,31 @@ import Testing
         // And it stays: a read of the item begun before it changed doesn't land afterwards.
         try await Task.sleep(for: .milliseconds(300))
         #expect(self.text(in: panel).contains("4 KB"))
+    }
+
+    /// W-236 m1 (W-243): a read stuck on one volume (a share whose server went away) doesn't hold the panel's
+    /// details for items on another.
+    @Test func aStuckVolumeDoesntHoldTheInformationPanel() async throws {
+        let shareQueue = InformationPanel.detailQueue(for: URL(fileURLWithPath: "/System/Volumes/Data/stuck/x"))
+        #expect(shareQueue !== InformationPanel.detailQueue(for: URL(fileURLWithPath: "/Users/someone/x")))
+        #expect(
+            InformationPanel.detailQueue(for: URL(fileURLWithPath: "/Users/a")) === InformationPanel.detailQueue(for: URL(fileURLWithPath: "/tmp/b")))
+        let release = DispatchSemaphore(value: 0)
+        shareQueue.async { release.wait() }  // stuck, as a read on a dead share is
+        defer { release.signal() }
+        let s = try Scratch("info-stuck")
+        let file = try s.file("here.txt", "hello")
+        let pane = ViewContainer(url: s.url)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 1 })
+        let panel = InformationPanel(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
+        pane.list.select(file)
+        panel.show(hovered: nil, container: pane)
+        // Its permissions come from the off-main read: they show though the other volume's queue is stuck.
+        #expect(await eventually { self.text(in: panel).contains("Read & Write") })
     }
 
     /// #10: a URL that isn't shown is looked up once per listing, however many thumbnails ask about it.
@@ -175,6 +202,249 @@ import Testing
     private final class FailingProvider: RemoteProvider {
         func list(_ folder: URL) throws -> [FileItem] { throw CocoaError(.fileReadNoPermission) }
         func rootTitle(_ url: URL) -> String { "Failing fixture" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
+
+    /// #8: in Column view on a server, a column other than the focused one shows what an operation changed in it.
+    @Test func otherColumnsOnAServerFollowChanges() async throws {
+        let root = try #require(URL(string: "sftp://columns-\(UUID().uuidString.prefix(6).lowercased()).invalid/"))
+        let server = ChangingServer()
+        RemoteFS.use(server, for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        let pane = ViewContainer(url: root)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 2 })
+        pane.setMode(.columns)
+        pane.setURL(root.appendingPathComponent("a/"))
+        let browser = try #require(pane.columnBrowser)
+        try #require(await eventually { browser.before.first.map { !$0.model.isLoading && $0.model.rows.count == 2 } == true })
+        server.extra = ["new.txt"]
+        FileOperationsController.notifyChanged([root.appendingPathComponent("new.txt")])
+        #expect(await eventually { browser.before.first?.model.rows.contains { $0.item.name == "new.txt" } == true })
+    }
+
+    private final class ChangingServer: RemoteProvider, @unchecked Sendable {
+        var extra: [String] = []
+        func list(_ folder: URL) throws -> [FileItem] {
+            if folder.lastPathComponent == "a" {
+                return [FileItem(url: folder.appendingPathComponent("inner.txt"), name: "inner.txt", isDirectory: false)]
+            }
+            return [
+                FileItem(url: folder.appendingPathComponent("a/"), name: "a", isDirectory: true),
+                FileItem(url: folder.appendingPathComponent("b.txt"), name: "b.txt", isDirectory: false),
+            ] + extra.map { FileItem(url: folder.appendingPathComponent($0), name: $0, isDirectory: false) }
+        }
+        func rootTitle(_ url: URL) -> String { "Changing" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
+
+    /// #9: the Folders panel shows a folder made in an open folder by another app, and stops showing one deleted.
+    @Test(.timeLimit(.minutes(3))) func theFoldersPanelFollowsTheDisk() async throws {
+        let s = try Scratch("folders-follow")
+        try s.folder("Here/Old")
+        let here = s.path("Here")
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        panel.currentURL = here
+        func node(_ url: URL) -> FoldersPanel.Node? {
+            (0..<outline.numberOfRows).lazy.compactMap { outline.item(atRow: $0) as? FoldersPanel.Node }
+                .first { FilePath.canonical($0.url.path) == FilePath.canonical(url.path) }
+        }
+        try #require(await eventually { node(here) != nil })
+        outline.expandItem(try #require(node(here)))
+        try #require(await eventually { node(s.path("Here/Old")) != nil })
+        try FileManager.default.createDirectory(at: s.path("Here/New"), withIntermediateDirectories: false)
+        #expect(await eventually { node(s.path("Here/New")) != nil })
+        try FileManager.default.removeItem(at: s.path("Here/Old"))
+        #expect(await eventually { node(s.path("Here/Old")) == nil })
+    }
+
+    /// #15: a double-click on one of several selected items opens them all (Finder); one click on it, left alone,
+    /// still makes it the only one.
+    @Test func aDoubleClickOnTheSelectionOpensItAll() async throws {
+        let s = try Scratch("double-click")
+        for n in ["a.txt", "b.txt", "c.txt"] { try s.file(n, n) }
+        let model = DirectoryModel(location: s.url, prefetchFolders: false)
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 3 })
+        let list = ItemListView(model: model)
+        let opener = Opener()
+        list.delegate = opener
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let scroll = NSScrollView(frame: window.contentView!.bounds)
+        scroll.documentView = list
+        window.contentView = scroll
+        defer { window.close() }
+        list.frame = scroll.bounds
+        list.computeLayout()
+        let saved = ItemListView.doubleClickInterval
+        ItemListView.doubleClickInterval = { 0.2 }
+        defer { ItemListView.doubleClickInterval = saved }
+        func click(_ type: NSEvent.EventType, count: Int) throws {
+            let f = list.frames[0]
+            let e = try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: list.convert(CGPoint(x: f.midX, y: f.midY), to: nil), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1))
+            if type == .leftMouseDown { list.mouseDown(with: e) } else { list.mouseUp(with: e) }
+        }
+        model.selection = Set(model.rows.map(\.item.url))
+        try click(.leftMouseDown, count: 1); try click(.leftMouseUp, count: 1)
+        #expect(model.selection.count == 3)  // not yet: it may be a double-click
+        try click(.leftMouseDown, count: 2); try click(.leftMouseUp, count: 2)
+        #expect(opener.opened.map { Set($0.map(\.name)) } == [["a.txt", "b.txt", "c.txt"]])
+        try await Task.sleep(for: .milliseconds(400))
+        #expect(model.selection.count == 3)  // the collapse was called off
+        try click(.leftMouseDown, count: 1); try click(.leftMouseUp, count: 1)
+        #expect(await eventually { model.selection == [model.rows[0].item.url] })
+    }
+
+    /// #15: dropping apps on the library follows the same modifiers as every other drop target.
+    @Test func installDropsFollowTheModifiers() {
+        #expect(AppsGridView.installOperation(sameVolume: true, modifiers: []) == .move)
+        #expect(AppsGridView.installOperation(sameVolume: false, modifiers: []) == .copy)
+        #expect(AppsGridView.installOperation(sameVolume: true, modifiers: .option) == .copy)
+        #expect(AppsGridView.installOperation(sameVolume: false, modifiers: .command) == .move)
+    }
+
+    private final class Opener: ItemListViewDelegate {
+        var opened: [[FileItem]] = []
+        func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) { opened.append(items) }
+        func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? { nil }
+        func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {}
+        func itemList(_ view: ItemListView, rename item: FileItem, to name: String) {}
+        func itemListDidBecomeActive(_ view: ItemListView) {}
+        func itemList(_ view: ItemListView, hovered item: FileItem?) {}
+        func itemListBackgroundDoubleClicked(_ view: ItemListView) {}
+        func itemList(_ view: ItemListView, middleClicked item: FileItem) {}
+        func itemListQuickLook(_ view: ItemListView) {}
+    }
+
+    /// #16: VoiceOver hears what an item's cloud badge shows, and can download it as the badge's click does.
+    @Test func voiceOverHearsAndUsesTheCloudBadge() async throws {
+        let account = UUID().uuidString.lowercased()
+        let root = try #require(URL(string: "gdrive://\(account)/my-drive/"))
+        let previous = CloudOfflineHub.service
+        let offline = DemoOfflineService()
+        let file = root.appendingPathComponent("report.pdf")
+        offline.states[file] = .cloudOnly
+        CloudOfflineHub.service = offline
+        RemoteFS.use(OneFileProvider(file), for: root)
+        defer { RemoteFS.use(nil, for: root); CloudOfflineHub.service = previous; ItemListView.downloadForTesting = nil }
+        let model = DirectoryModel(location: root, prefetchFolders: false)
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 1 })
+        let list = ItemListView(model: model)
+        let element = ItemAccessibilityElement(list: list, index: 0)
+        let value = try #require(element.accessibilityValue() as? String)
+        #expect(value.contains(try #require(CloudState.cloudOnly.help)), "\(value)")
+        var downloaded: [URL] = []
+        ItemListView.downloadForTesting = { downloaded.append($0.url) }
+        let action = try #require(element.accessibilityCustomActions()?.first)
+        #expect(action.name == "Download" && action.handler?() == true && downloaded == [file])
+    }
+
+    /// #16: a place is the same VoiceOver element across redraws, and VO-Shift-M shows its menu.
+    @Test func placesAreStableForVoiceOverAndHaveTheirMenu() throws {
+        let panel = PlacesPanel(frame: CGRect(x: 0, y: 0, width: 240, height: 500))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 240, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = panel
+        defer { window.close() }
+        let home = PlaceEntry(title: "Home", url: URL(fileURLWithPath: NSHomeDirectory()), icon: "user-home", section: .places)
+        panel.rows = [.init(kind: .entry(home), y: 0, height: 28)]
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0) == PlaceAccessibilityElement(panel: panel, index: 0))
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0).hash == PlaceAccessibilityElement(panel: panel, index: 0).hash)
+        var titles: [String] = []
+        PlaceAccessibilityElement.presentForTesting = { titles = $0.items.map(\.title) }
+        defer { PlaceAccessibilityElement.presentForTesting = nil }
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0).accessibilityPerformShowMenu())
+        #expect(titles.contains("Open in New Tab"))
+    }
+
+    /// #16: an app's VoiceOver frame follows the app, not the row it had, when the library is filtered.
+    @Test func appFramesFollowTheirAppAfterFiltering() throws {
+        let s = try Scratch()
+        let model = DirectoryModel(location: s.url, prefetchFolders: false)
+        let apps = (0..<6).map { i in
+            FileItem(url: URL(fileURLWithPath: "/Applications/Fixture-\(i).app"), name: "Fixture-\(i).app", isDirectory: true, isApplication: true)
+        }
+        model.searchResults = apps
+        let grid = AppsGridView(model: model)
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        scroll.documentView = grid
+        grid.updateLayout(width: 800)
+        let last = try #require((grid.accessibilityChildren() as? [NSAccessibilityElement])?.last)
+        let before = last.accessibilityFrameInParentSpace()
+        model.searchResults = [apps[5]]
+        grid.updateLayout(width: 800)
+        let first = try #require((grid.accessibilityChildren() as? [NSAccessibilityElement])?.first)
+        #expect(
+            last.accessibilityFrameInParentSpace() == first.accessibilityFrameInParentSpace() && before != first.accessibilityFrameInParentSpace())
+    }
+
+    /// #18: a stream starts when its item says it's ready (no polling), and never when it failed.
+    @Test func aPlayerItemIsAwaitedNotPolled() async throws {
+        let s = try Scratch("settled")
+        // One second of 8 kHz mono silence.
+        var wav = Data("RIFF".utf8)
+        func le32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        func le16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        le32(36 + 8000); wav.append(Data("WAVEfmt ".utf8)); le32(16); le16(1); le16(1); le32(8000); le32(8000); le16(1); le16(8)
+        wav.append(Data("data".utf8)); le32(8000); wav.append(Data(repeating: 128, count: 8000))
+        let good = s.path("silence.wav"), bad = s.path("broken.wav")
+        try wav.write(to: good)
+        try Data("not audio".utf8).write(to: bad)
+        var answers: [String: Bool] = [:]
+        var keep: [NSKeyValueObservation] = [], players: [AVPlayer] = []
+        for (name, url) in [("good", good), ("bad", bad)] {
+            let player = AVPlayer(url: url)  // an item is only read once a player has it
+            players.append(player)
+            keep.append(InformationPanel.whenSettled(try #require(player.currentItem)) { answers[name] = $0 })
+        }
+        #expect(await eventually { answers.count == 2 })
+        #expect(answers == ["good": true, "bad": false])
+        withExtendedLifetime((keep, players)) {}
+    }
+
+    /// #18: Settings' tabs show only their own buttons (icon-only toolbar), set when the window appears, not a turn later.
+    @Test func settingsTabsAreIconOnlyWhenShown() throws {
+        let settings = SettingsWindowController(page: "Advanced")
+        let window = try #require(settings.window)
+        defer { window.close() }
+        window.orderFront(nil)
+        #expect(window.toolbar?.displayMode == .iconOnly)
+    }
+
+    /// #22: an account's avatar is made once per picture and size, not decoded again on every Places redraw.
+    @Test func avatarsAreMadeOnce() {
+        let a = BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 20)
+        #expect(BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 20) === a)
+        #expect(BrandMarks.avatar(nil, name: "Ann", email: "ann@example.invalid", size: 26) !== a)
+        #expect(BrandMarks.avatar(Data([1, 2, 3]), name: "Ann", email: "ann@example.invalid", size: 20) !== a)
+    }
+
+    private final class OneFileProvider: RemoteProvider {
+        let file: URL
+        init(_ file: URL) { self.file = file }
+        func list(_ folder: URL) throws -> [FileItem] { [FileItem(url: file, name: file.lastPathComponent, isDirectory: false, size: 10)] }
+        func rootTitle(_ url: URL) -> String { "One" }
         func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
         func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
         func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }

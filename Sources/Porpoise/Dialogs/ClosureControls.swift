@@ -40,16 +40,27 @@ final class ClosureStepper: NSStepper {
     @objc private func fire() { handler?(self); onChange?(integerValue) }
 }
 
+/// Runs its handler once for each change typed: on Return (its action; the field keeps the focus) or when focus
+/// moves on, never both, and not again when an unchanged field is left (an invalid value showed two alerts).
 final class ClosureTextField: NSTextField {
     private var handler: ((NSTextField) -> Void)?
+    private var edited = false
     convenience init(string: String, _ h: @escaping (NSTextField) -> Void) {
         self.init(string: string)
         handler = h; target = self; action = #selector(fire)
     }
-    @objc private func fire() { handler?(self) }
+    override func textDidChange(_ notification: Notification) {
+        super.textDidChange(notification)
+        edited = true
+    }
+    @objc private func fire() {
+        guard edited else { return }
+        edited = false
+        handler?(self)
+    }
     override func textDidEndEditing(_ notification: Notification) {
         super.textDidEndEditing(notification)
-        handler?(self)
+        fire()
     }
 }
 

@@ -155,6 +155,26 @@ import Testing
         #expect(opened == [draft.url!])
     }
 
+    /// W-243 (dialogs #21): a connection that fails to save leaves no password behind in the Keychain.
+    @Test @MainActor func aFailedSaveLeavesNoOrphanedPassword() throws {
+        let scratch = try Scratch("connection-secret-orphan")
+        let parent = try scratch.file("parent", "not a directory")
+        let profiles = ConnectionProfiles(storeURL: parent.appendingPathComponent("connections.json"))
+        let credentials = ConnectionCredentials.inMemory()
+        let w = window(profiles, credentials)
+        defer { w.close() }
+        w.addProfile(nil)
+        let form = try #require(w.form)
+        form.choose(.ftps)
+        form.type(["Name:": "Files", "Server:": "files.example.com", "User:": "me", "Password:": "pw-123"])
+        let draft = form.draft
+        #expect(!w.saveForm())
+        #expect(!credentials.hasSecret(for: draft))
+        try FileManager.default.removeItem(at: parent)
+        #expect(w.saveForm())
+        #expect(credentials.hasSecret(for: draft))
+    }
+
     @Test @MainActor func failedImportRemainsAnUnsavedEditableDraft() throws {
         let scratch = try Scratch("connection-import-failure")
         let parent = try scratch.file("parent", "not a directory")

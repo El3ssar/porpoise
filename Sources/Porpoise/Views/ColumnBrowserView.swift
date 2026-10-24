@@ -7,6 +7,8 @@ protocol ColumnNavigating: AnyObject {
     func columnKey(right: Bool, from list: ItemListView)
     /// A click in `list` (the focus goes to its column, if it's another one).
     func columnClicked(_ list: ItemListView)
+    /// The mouse went up after a press in `list` (a click, or a drag that started there ended).
+    func columnMouseUp(_ list: ItemListView)
 }
 
 /// A Column view column that isn't the focused one: a folder on the path before it, or the folder its one selected
@@ -162,7 +164,6 @@ final class ColumnBrowserView: NSView {
     private let scroller = Animator(name: "columns.scroll")
     /// A click in another column moves the focus there once the mouse is up (a drag may start from it meanwhile).
     private var pendingFocus: BrowserColumn?
-    private var focusPoll: Timer?
     private var previewWork: DispatchWorkItem?
     /// Whether a mouse button is down (tests set it: the real mouse may be in someone's hand).
     nonisolated(unsafe) static var mouseIsDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
@@ -187,6 +188,28 @@ final class ColumnBrowserView: NSView {
         setAccessibilityRole(.browser)
         setAccessibilityLabel("Columns")
         Theme.whenChanged(self) { [weak self] in self?.strip.backgroundColor = Theme.viewBackground }
+        // Servers and cloud folders aren't watched as this Mac's are: the other columns follow an operation's changes
+        // and the service's own (the focused column is the pane's, which already does).
+        let center = NotificationCenter.default
+        observers.append(
+            center.addObserver(forName: FileOperationsController.foldersChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let remote = n.userInfo?["remote"] as? Set<String>, !remote.isEmpty else { return }
+                self.reloadOtherColumns { remote.contains(FileOperationsController.remoteKey($0)) }
+            })
+        observers.append(
+            center.addObserver(forName: CloudAccounts.remoteChanged, object: nil, queue: .main) { [weak self] n in
+                guard let self, let id = n.object as? String else { return }
+                self.reloadOtherColumns { CloudAccounts.shared.backend?.accountID(for: $0) == id }
+            })
+    }
+
+    private var observers: [NSObjectProtocol] = []
+
+    /// Reads again the columns other than the focused one, on servers and in the cloud, whose folder `changed` names.
+    func reloadOtherColumns(where changed: (URL) -> Bool) {
+        for column in before + (after.map { [$0] } ?? []) where !column.url.isFileURL && changed(column.url) {
+            column.model.reload()
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -199,7 +222,7 @@ final class ColumnBrowserView: NSView {
     }
 
     deinit {
-        focusPoll?.invalidate()
+        observers.forEach(NotificationCenter.default.removeObserver)
         scroller.stop()
     }
 
@@ -620,21 +643,12 @@ final class ColumnBrowserView: NSView {
     func columnSelectionChanged(_ c: BrowserColumn) {
         guard c.list.window != nil else { return }
         pendingFocus = c
-        if !Self.mouseIsDown() { return focusPending() }
-        guard focusPoll == nil else { return }
-        let t = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, !Self.mouseIsDown() else { return }
-                self.focusPending()
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        focusPoll = t
+        // While the mouse is down the focus waits: a drag may start from the column (its mouse-up, or the drag's
+        // end, moves it then: `columnMouseUp`).
+        if !Self.mouseIsDown() { focusPending() }
     }
 
     private func focusPending() {
-        focusPoll?.invalidate()
-        focusPoll = nil
         guard let c = pendingFocus else { return }
         pendingFocus = nil
         focus(c)
@@ -666,8 +680,6 @@ final class ColumnBrowserView: NSView {
     private func focusNow(_ list: ItemListView) {
         guard let c = column(of: list) else { return }
         pendingFocus = nil
-        focusPoll?.invalidate()
-        focusPoll = nil
         focus(c)
     }
 
@@ -677,8 +689,7 @@ final class ColumnBrowserView: NSView {
         before = []
         after = nil
         spare = []
-        focusPoll?.invalidate()
-        focusPoll = nil
+        pendingFocus = nil
         previewWork?.cancel()
         settleWork?.cancel()
     }
@@ -690,6 +701,11 @@ extension ColumnBrowserView: ColumnNavigating {
     /// ← goes to the column before (its folder selected); → into the selected folder, selecting its first item.
     func columnClicked(_ list: ItemListView) {
         if let c = column(of: list) { columnSelectionChanged(c) }
+    }
+
+    func columnMouseUp(_ list: ItemListView) {
+        guard let c = pendingFocus, c.list === list else { return }
+        focusPending()
     }
 
     func columnKey(right: Bool, from list: ItemListView) {

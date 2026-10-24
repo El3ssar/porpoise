@@ -48,7 +48,8 @@ import Testing
         pane.reload()
         try #require(await eventually { pane.model.rows.count == 3 })
         list.mouseUp(with: mouse(.leftMouseUp, at: p, in: window))
-        #expect(pane.model.selection == [s.path("c.txt")], "the click lands on c.txt, not on the row it had")
+        // Once the double-click interval is over (W-243: a second click would have opened both).
+        #expect(await eventually { pane.model.selection == [s.path("c.txt")] }, "the click lands on c.txt, not on the row it had")
     }
 
     /// #14: the wheel over a crumb lists the sibling folders off the main thread, and once per turn of the wheel.

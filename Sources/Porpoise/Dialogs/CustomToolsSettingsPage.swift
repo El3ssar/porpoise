@@ -24,7 +24,10 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
         selectionButtons = actions.arrangedSubviews.dropFirst().compactMap { $0 as? NSButton }
         let files = NSStackView(views: [
             button("Import…") { [weak self] in self?.importFile() }, button("Export…") { [weak self] in self?.exportFile() },
-            button("Add Examples") { [weak self] in self?.save((self?.tools ?? []) + CustomToolDocument.examples) },
+            button("Add Examples") { [weak self] in
+                guard let self else { return }
+                self.save(self.tools + Self.examples(missingFrom: self.tools))
+            },
         ])
         let stack = NSStackView(views: [scroll, actions, files, status]); stack.orientation = .vertical; stack.alignment = .leading;
         stack.spacing = 10
@@ -79,7 +82,33 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
         selectionButtons[safe: 2]?.isEnabled = table.selectedRow > 0
         selectionButtons[safe: 3]?.isEnabled = table.selectedRow >= 0 && table.selectedRow < tools.count - 1
     }
-    private func remove() { guard let selected else { return }; save(tools.filter { $0.id != selected.id }) }
+    /// The examples not already in the list (the same name, program and arguments): adding them twice adds nothing.
+    static func examples(missingFrom tools: [CustomTool]) -> [CustomTool] {
+        CustomToolDocument.examples.filter { e in
+            !tools.contains { $0.name == e.name && $0.executable == e.executable && $0.arguments == e.arguments }
+        }
+    }
+
+    /// Asks first: a hand-written tool, once removed, can't be had back.
+    private func remove() {
+        guard let selected else { return }
+        let a = NSAlert()
+        a.messageText = "Remove “\(selected.name)”?"
+        a.informativeText = "The tool and its shortcut are removed. You can export your tools first to keep a copy."
+        a.addButton(withTitle: "Remove")
+        a.addButton(withTitle: "Cancel")
+        let removeIt = { [weak self] in
+            guard let self else { return }
+            self.save(self.tools.filter { $0.id != selected.id })
+        }
+        if let answer = Self.confirmRemovalForTesting {
+            if answer() { removeIt() }
+            return
+        }
+        a.runSheet(for: window) { if $0 == .alertFirstButtonReturn { removeIt() } }
+    }
+
+    static var confirmRemovalForTesting: (() -> Bool)?
     private func move(_ delta: Int) {
         let from = table.selectedRow, to = from + delta
         guard tools.indices.contains(from), tools.indices.contains(to) else { return }

@@ -45,6 +45,7 @@ final class ConflictDialog: NSObject {
             : LinkedBrowsing.sideNames(info.source.url.deletingLastPathComponent(), destinationFolder).1
         let bothFolders = info.source.isBrowsableFolder && info.destination.isBrowsableFolder
         let delta = info.source.modificationDate.flatMap { source in info.destination.modificationDate.map { source.timeIntervalSince($0) } }
+        // No date on either side: neither newer nor older (Return then skips).
         let newer = delta.map { $0 > info.comparisonOptions.timestampTolerance } ?? false
         let older = delta.map { $0 < -info.comparisonOptions.timestampTolerance } ?? false
         window.title = "Names Clash"
@@ -101,12 +102,10 @@ final class ConflictDialog: NSObject {
         }
         window.contentView!.addSubview(strip)
         _ = label("⇄  Replace if different, skip if identical", CGRect(x: 32, y: 133, width: 388, height: 18), size: 12, weight: .semibold)
-        method.addItems(withTitles: ["By size & date · 2 s tolerance", "By size only", "By contents"])
-        method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
         method.font = .systemFont(ofSize: FontSize.small)
         method.controlSize = .small
         method.frame = CGRect(x: 238, y: 103, width: 234, height: 24)
-        method.removeAllItems(); method.addItems(withTitles: ["Size & date · 2 s", "Size only", "Contents"])
+        method.addItems(withTitles: Self.methodTitles(tolerance: info.comparisonOptions.timestampTolerance))
         method.selectItem(at: methods.firstIndex(of: info.comparisonOptions.method) ?? 0)
         method.target = self; method.action = #selector(methodChanged)
         counts.frame = CGRect(x: 32, y: 107, width: 202, height: 16)
@@ -137,7 +136,11 @@ final class ConflictDialog: NSObject {
             return button
         }
         _ = button(kind == .move ? "Stop Moving" : "Stop Copying", x: 16, width: 114, action: #selector(cancel), key: "\u{1b}")
-        _ = button("Skip", x: 274, width: 64, action: #selector(skip), key: !newer && !bothFolders ? "\r" : "")
+        // Return replaces only a same-kind item that is older: a folder is never replaced by a file (nor a file by a
+        // folder) just by pressing Return.
+        let replacesByDefault = Self.replacesByDefault(
+            newer: newer, bothFolders: bothFolders, sameKind: info.source.isDirectory == info.destination.isDirectory)
+        _ = button("Skip", x: 274, width: 64, action: #selector(skip), key: replacesByDefault ? "" : "\r")
         let keep = button("Keep Both", x: 344, width: 94, action: #selector(keepBoth), key: "d")
         keep.keyEquivalentModifierMask = .command
         keep.toolTip = "Save as “\(info.suggestedName)”"
@@ -149,7 +152,7 @@ final class ConflictDialog: NSObject {
                 : info.destination.isDirectory != info.source.isDirectory
                     ? (info.destination.isDirectory ? "Replace Folder" : "Replace File") : "Replace"
         let split = ConflictSplitView(frame: CGRect(x: 446, y: 19, width: 154, height: 30))
-        split.primary = newer || bothFolders
+        split.primary = replacesByDefault
         split.showsDivider = !bothFolders
         window.contentView!.addSubview(split)
         let replace = ConflictActionButton(title: title, target: self, action: #selector(replace))
@@ -273,6 +276,15 @@ final class ConflictDialog: NSObject {
         }
         NSApp.runModal(for: window)
         return answer
+    }
+
+    /// Whether Return replaces: folders merge; otherwise only a newer item of the same kind.
+    static func replacesByDefault(newer: Bool, bothFolders: Bool, sameKind: Bool) -> Bool { bothFolders || newer && sameKind }
+
+    /// The comparison methods, the date tolerance as the transfer uses it ("2 s", "1 min").
+    static func methodTitles(tolerance: TimeInterval) -> [String] {
+        let t = tolerance >= 60 && tolerance.truncatingRemainder(dividingBy: 60) == 0 ? "\(Int(tolerance / 60)) min" : "\(Int(tolerance.rounded())) s"
+        return ["Size & date · \(t)", "Size only", "Contents"]
     }
 }
 

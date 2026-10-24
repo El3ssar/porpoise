@@ -26,6 +26,8 @@ extension ItemListView: NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         FileDragSource.ended(session, operation: operation, window: window)
+        // The press that started it is over (no mouse-up comes to the view after a drag).
+        if mode == .columns { columnNavigator?.columnMouseUp(self) }
     }
 }
 

@@ -75,6 +75,9 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     private var observers: [NSObjectProtocol] = []
     private var forceOpaque = false
     private var busy = true
+    /// Esc while busy stops reading and comparing the files (the window closes); while saving, or comparing again
+    /// after a change was copied, it does nothing (closing then would ask about unsaved edits mid-save).
+    private var escapeStops = true
     private var lineEnding = "LF"
     private var dirty: Bool { leftText != savedLeft || rightText != savedRight }
     override var undoManager: UndoManager? { undo }
@@ -346,7 +349,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         let cancellation = DiskCancellation(isCancelled: { [token] in token.isCancelled }); diffCancellation = cancellation
         generation += 1; let version = generation
         guard let a = leftText, let b = rightText else { busy = false; updateVisibility(); return }
-        busy = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing…";
+        busy = true; escapeStops = true; facts.stringValue = "Comparing…"; progressText.stringValue = "Comparing…";
         loading.isIndeterminate = true; updateVisibility()
         let whitespace = ignore.state == .on, inline = textMode.selectedSegment == 1
         diffQueue.async { [weak self] in
@@ -443,7 +446,7 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     }
     func copyChange(_ index: Int, toRight: Bool) {
         guard !busy, !readOnly, let d = textCanvas.presentation?.difference else { return }
-        busy = true; updateVisibility()
+        busy = true; escapeStops = false; updateVisibility()
         Self.queue.async { [weak self] in
             let new = d.copying(index, toRight: toRight)
             DispatchQueue.main.async {
@@ -463,10 +466,26 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     @objc func undoFileOperation(_ sender: Any?) { undo.undo() }
     @objc func redoFileOperation(_ sender: Any?) { undo.redo() }
     @objc func saveDocument(_ sender: Any?) { save(completion: nil) }
+
+    /// Saves `text` where `url` really is: through a symlink to its target (the link stays a link), and in place for
+    /// a file with more than one name (a replacement would leave the other names on the old contents). Otherwise
+    /// atomically, as editors save.
+    static func write(_ text: String, to url: URL) throws {
+        let target = url.resolvingSymlinksInPath()
+        var st = stat()
+        if lstat(target.path, &st) == 0, st.st_nlink > 1 {
+            let h = try FileHandle(forWritingTo: target)
+            defer { try? h.close() }
+            try h.truncate(atOffset: 0)
+            try h.write(contentsOf: Data(text.utf8))
+        } else {
+            try text.write(to: target, atomically: true, encoding: .utf8)
+        }
+    }
     private func save(completion: (() -> Void)?, failed: (() -> Void)? = nil) {
         guard !busy, !readOnly else { failed?(); return }
         let a = leftText, b = rightText, sa = savedLeft, sb = savedRight, left = leftURL, right = rightURL
-        busy = true; facts.stringValue = "Saving…"; updateVisibility()
+        busy = true; escapeStops = false; facts.stringValue = "Saving…"; updateVisibility()
         Self.queue.async { [weak self] in
             var writtenLeft = false, writtenRight = false
             do {
@@ -481,8 +500,8 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
                         throw FileDiffSaveError.changed(right.lastPathComponent)
                     }
                 }
-                if a != sa, let a { try a.write(to: left, atomically: true, encoding: .utf8); writtenLeft = true }
-                if b != sb, let b { try b.write(to: right, atomically: true, encoding: .utf8); writtenRight = true }
+                if a != sa, let a { try Self.write(a, to: left); writtenLeft = true }
+                if b != sb, let b { try Self.write(b, to: right); writtenRight = true }
                 let leftMetadata = try ComparedFile(url: left, readText: false), rightMetadata = try ComparedFile(url: right, readText: false)
                 let offset = try FileComparison.firstDifference(left, right)
                 DispatchQueue.main.async {
@@ -589,7 +608,10 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
         }
     }
     func handleKey(_ event: NSEvent) -> Bool {
-        if event.keyCode == 53 && busy { window?.performClose(nil); return true }
+        if event.keyCode == 53 && busy {
+            if escapeStops { window?.performClose(nil) }
+            return true
+        }
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else { return false }
         if event.modifierFlags.contains(.control) {
             if event.keyCode == 125 { move(1); return true }

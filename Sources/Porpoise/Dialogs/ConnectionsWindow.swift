@@ -12,7 +12,8 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
     private let profiles: ConnectionProfiles
     private let credentials: ConnectionCredentials
     /// Opens a location in the window the Connections window was opened from.
-    private let open: (URL) -> Void
+    /// Where Connect opens a server: the window that asked last (an earlier one may have closed since).
+    private(set) var open: (URL) -> Void
     /// Reads ~/.ssh/config (tests give their own).
     private let sshConfig: () -> SSHConfig
 
@@ -30,6 +31,7 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
         let w: ConnectionsWindow
         if let shown = current, shown.window?.isVisible == true {
             w = shown
+            w.open = open
             w.window?.makeKeyAndOrderFront(nil)
         } else {
             w = ConnectionsWindow(profiles: .shared, credentials: .shared, open: open)
@@ -344,15 +346,16 @@ final class ConnectionsWindow: SecondaryWindowController, NSTableViewDataSource,
             f.problemLabel.stringValue = problem
             return false
         }
-        if !f.secret.isEmpty {
-            do { try credentials.saveSecret(f.secret, for: p) } catch {
-                f.problemLabel.stringValue = error.localizedDescription
-                return false
-            }
-        }
+        // The connection first: a secret saved for one that then failed to save would stay in the Keychain, orphaned.
         do { try profiles.save(p).get() } catch {
             f.problemLabel.stringValue = "Connection wasn’t saved. " + error.localizedDescription + " Try Save again."
             return false
+        }
+        if !f.secret.isEmpty {
+            do { try credentials.saveSecret(f.secret, for: p) } catch {
+                f.problemLabel.stringValue = "The connection was saved, but not its password: " + error.localizedDescription
+                return false
+            }
         }
         f.problemLabel.stringValue = ""
         select(p.id)
