@@ -10,8 +10,12 @@ FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=
 INTENT_PROTOCOLS="$(dirname "$(xcrun --find swiftc)")/../share/swift/SwiftConstantValues/AppIntents.json"
 INTENTS_AVAILABLE=0
 if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 && [ -r "$INTENT_PROTOCOLS" ]; then
+  # Xcode SDK catalog layouts differ from the frontend's top-level protocol-array format.
+  # Normalize in build/, without changing the SDK or silently disabling release metadata.
+  COMPILER_INTENT_PROTOCOLS="$PWD/build/app-intents-protocols.json"
+  python3 scripts/app-intents-protocols.py --input "$INTENT_PROTOCOLS" --output "$COMPILER_INTENT_PROTOCOLS"
   INTENTS_AVAILABLE=1
-  FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$INTENT_PROTOCOLS")
+  FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$COMPILER_INTENT_PROTOCOLS")
 elif [ "${PORPOISE_RELEASE:-}" = 1 ]; then
   echo "Release packaging requires full Xcode to extract Shortcuts metadata." >&2
   exit 1

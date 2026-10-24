@@ -41,7 +41,7 @@ jobs:
       - name: Workflow integrity
         run: python3 scripts/test-workflow-pins.py && python3 scripts/test-ci-proof.py && python3 scripts/test-bundled-tools.py && python3 scripts/test-performance-budgets.py
       - name: Crash symbol tooling
-        run: python3 scripts/test-symbols.py && python3 scripts/test-release-dry-run.py
+        run: python3 scripts/test-symbols.py && python3 scripts/test-release-dry-run.py && python3 scripts/test-app-intents-protocols.py
       - name: Format
         run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseCLI Sources/PorpoiseHelper Tests
       # The committed helper is rebuilt whenever what it's built from changes, and has no home folder paths in it.
