@@ -232,7 +232,10 @@ public final class CloudEditCoordinator {
                 guard let self else { done(true); return }
                 if entry.mark == .saved { entry.mark = .editing }
                 entry.location = item.url
-                if let known, known.id != entry.id { self.dismiss(known.id) }
+                // The older copy goes unless the other app saved it meanwhile; then it stays to be sent.
+                if let known, known.id != entry.id, !(await binding.pending()).contains(where: { $0.id == known.id }) {
+                    self.dismiss(known.id)
+                }
                 self.add(entry, binding: binding); launch(entry.localURL); self.watch(entry.id)
                 self.post("Editing “\(entry.name)”: changes you save go to \(binding.provider.title).", false)
                 done(true)
