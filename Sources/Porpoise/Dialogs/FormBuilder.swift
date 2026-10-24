@@ -302,6 +302,16 @@ final class FormBuilder: NSObject {
         }
     }
 
+    /// A label and a read-only value beside it, re-read on every refresh.
+    func value(_ label: String, _ text: @escaping () -> String) {
+        let t = NSTextField(wrappingLabelWithString: "")
+        t.preferredMaxLayoutWidth = 300
+        let update: () -> Void = { [weak t] in t?.stringValue = text() }
+        update()
+        refreshers.append(update)
+        contentStack.addArrangedSubview(labeled(label, t))
+    }
+
     /// A status line (✓ / ✕ / ·) with a button; re-checked on every refresh (a window becoming key, a permission check ending).
     func status(
         _ label: String, _ state: @escaping () -> (Bool?, String), button: @escaping () -> String,

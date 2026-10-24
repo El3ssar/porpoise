@@ -26,10 +26,9 @@ enum AccountsSettingsPage {
 
     static func build(_ f: FormBuilder) {
         f.section("Accounts and servers")
-        f.status(
-            "Connected:", { (nil, summary(CloudAccounts.shared.accounts.count, ConnectionProfiles.shared.profiles.count)) },
-            button: { "Open Accounts & Servers…" }
-        ) { _ in AccountsServersWindow.showFromFront() }
+        f.value("Connected:") { summary(CloudAccounts.shared.accounts.count, ConnectionProfiles.shared.profiles.count) }
+        // The page's main action, in the control column under the count.
+        f.button("Open Accounts & Servers…") { AccountsServersWindow.showFromFront() }
         f.observe(CloudAccounts.changed)
         f.observe(ConnectionProfiles.changed)
         _ = f.note("Each cloud account and saved server, with its own settings, is in the Accounts & Servers window (Go › Accounts & Servers…, ⌥⌘K).")
@@ -141,7 +140,7 @@ final class AccountDetailView: NSStackView {
             text.preferredMaxLayoutWidth = 300
             let id = accountID
             let remove = ClosureButton(title: "Remove Recent Downloads") { _ in service.removeRecent(account: id) }
-            remove.isEnabled = u.recent > 0
+            remove.isHidden = u.recent == 0  // nothing to remove: no button (the line says so)
             let column = NSStackView(views: [text, remove])
             column.orientation = .vertical
             column.alignment = .leading
@@ -268,7 +267,7 @@ final class OfflineUsageView: NSStackView {
             let remove = ClosureButton(title: "Remove Recent Downloads") { _ in service.removeRecent(account: a.id) }
             remove.controlSize = .small
             remove.font = .systemFont(ofSize: Tokens.FontSize.small)
-            remove.isEnabled = u.recent > 0
+            remove.isHidden = u.recent == 0  // nothing to remove: no button (the line says so)
             let row = NSStackView(views: [text, remove])
             row.spacing = 10
             addArrangedSubview(row)
