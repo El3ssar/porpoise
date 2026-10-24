@@ -18,7 +18,7 @@ import Testing
         _ = try await c.perform(.copy, [folder, missing], to: s.path("dst"))
         let activity = try #require(c.activities.last)
         #expect(activity.errors.count == 3 && activity.failedSources == [folder, missing])
-        #expect(activity.errorDetails.map(\.source) == [a, b, missing])
+        #expect(activity.errorDetails.map { $0.source.map { FilePath.entry($0.path) } } == [a, b, missing].map { FilePath.entry($0.path) })
         #expect(activity.errorDetails.map(\.message) == activity.errors)
     }
 

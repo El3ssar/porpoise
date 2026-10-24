@@ -72,6 +72,7 @@ import Testing
                 let target = FileItem(
                     url: URL(fileURLWithPath: "/fixture/dst/a"), name: "a", isDirectory: false, size: 3, modificationDate: targetDate)
                 let dialog = ConflictDialog(info: ConflictInfo(source: source, destination: target, suggestedName: "a (1)"), kind: .copy)
+                dialog.window.isReleasedWhenClosed = false
                 defer { dialog.window.close() }
                 let views = descendants(try #require(dialog.window.contentView))
                 let defaults = views.compactMap { $0 as? NSButton }.filter { $0.keyEquivalent == "\r" }
