@@ -101,7 +101,7 @@ public final class FileOperationsController {
         guard !urls.isEmpty else { return }
         let cut = clipboardIsCut
         let changeCount = clipboard.changeCount
-        run(
+        runWithMoveReceipts(
             cut ? .move : .copy, urls, to: folder, window: window,
             moved: { [weak self] moved in
                 if cut, let self, self.clipboard.changeCount == changeCount, self.cutChangeCount == changeCount, !moved.isEmpty {
@@ -125,7 +125,18 @@ public final class FileOperationsController {
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
         allowDeleteFallback: Bool = true, allowAuthorization: Bool = true, resumePoints: [URL: ResumePoint] = [:],
-        completedTransfers: [URL: URL] = [:], moved: (([URL: URL]) -> Void)? = nil, done: (([URL]) -> Void)? = nil
+        completedTransfers: [URL: URL] = [:], done: (([URL]) -> Void)? = nil
+    ) {
+        runWithMoveReceipts(
+            kind, urls, to: folder, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback,
+            allowAuthorization: allowAuthorization, resumePoints: resumePoints, completedTransfers: completedTransfers, moved: nil, done: done)
+    }
+
+    /// Receipts identify actual moves. A separate entry point preserves existing trailing completion closures.
+    public func runWithMoveReceipts(
+        _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
+        allowDeleteFallback: Bool = true, allowAuthorization: Bool = true, resumePoints: [URL: ResumePoint] = [:],
+        completedTransfers: [URL: URL] = [:], moved: (([URL: URL]) -> Void)?, done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {

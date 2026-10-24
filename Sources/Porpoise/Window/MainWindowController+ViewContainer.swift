@@ -98,7 +98,7 @@ extension MainWindowController {
                 if AccountActions.openWebDocument(item.url) { continue }
                 if !item.url.isFileURL { RemoteOpener.open(item); continue }
                 await withCheckedContinuation { continuation in
-                    localFileOpening.open(item, window: window) { continuation.resume() }
+                    self.localFileOpening.open(item, window: self.window) { continuation.resume() }
                 }
             }
         }

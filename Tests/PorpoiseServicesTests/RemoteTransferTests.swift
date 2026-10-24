@@ -13,7 +13,7 @@ import Testing
         let remote = URL(string: "unknown://host/remote.txt")!
         let c = makeController(ScriptedUI())
         var moved: [URL: URL] = [:], finished = false
-        c.run(.move, [remote, file], to: destination, window: nil, moved: { moved = $0 }) { _ in finished = true }
+        c.runWithMoveReceipts(.move, [remote, file], to: destination, window: nil, moved: { moved = $0 }) { _ in finished = true }
         #expect(await poll { finished })
         #expect(moved == [file: destination.appendingPathComponent("local.txt")])
         let activity = try #require(c.activities.last)

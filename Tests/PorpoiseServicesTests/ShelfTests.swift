@@ -119,7 +119,7 @@ import Testing
         let other = st.current.items
         let c = makeController(ScriptedUI(conflicts: [.init(.rename("a kept.txt")), .init(.skip)]))
         var finished = false
-        c.run(.move, [a, b], to: s.path("dst"), window: nil, moved: { st.moved($0, sources: sources) }) { _ in finished = true }
+        c.runWithMoveReceipts(.move, [a, b], to: s.path("dst"), window: nil, moved: { st.moved($0, sources: sources) }) { _ in finished = true }
         #expect(await poll { finished })
         #expect(st.current.items == other)
         #expect(st.shelves[0].items.map(\.url) == [s.path("dst/a kept.txt"), b])
