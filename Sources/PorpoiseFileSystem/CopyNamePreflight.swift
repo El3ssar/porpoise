@@ -17,24 +17,27 @@ public enum CopyNamePreflight {
         excluded: (URL) -> Bool = { _ in false }
     ) throws {
         guard isPackedMetadataVolume(target.deletingLastPathComponent()) else { return }
-        func context(_ siblings: [URL]) throws -> (names: Set<String>, userSidecars: Set<String>) {
-            var names: Set<String> = [], userSidecars: Set<String> = []
+        func context(_ siblings: [URL]) throws -> (names: Set<String>, userSidecars: [String: String]) {
+            var names: Set<String> = []
+            var userSidecars: [String: String] = [:]
             for sibling in siblings {
                 try cancellation.check()
                 if excluded(sibling) { continue }
                 let name = sibling.lastPathComponent
-                names.insert(name)
-                if name.hasPrefix("._"), !CopyVerification.isGeneratedAppleDouble(sibling) { userSidecars.insert(name) }
+                let key = nameKey(name)
+                names.insert(key)
+                if name.hasPrefix("._"), !CopyVerification.isGeneratedAppleDouble(sibling) { userSidecars[key] = name }
             }
             return (names, userSidecars)
         }
-        func walk(_ source: URL, _ target: URL, names: Set<String>, userSidecars: Set<String>, displayParent: String) throws {
+        func walk(_ source: URL, _ target: URL, names: Set<String>, userSidecars: [String: String], displayParent: String) throws {
             try cancellation.check()
             if excluded(source) { return }
             let name = target.lastPathComponent
             let generated = source.lastPathComponent.hasPrefix("._") && CopyVerification.isGeneratedAppleDouble(source)
-            if name.hasPrefix("._"), !generated, names.contains(String(name.dropFirst(2))) { throw reserved(name, parent: displayParent) }
-            if userSidecars.contains("._" + name) { throw reserved("._" + name, parent: displayParent) }
+            let key = nameKey(name)
+            if name.hasPrefix("._"), !generated, names.contains(String(key.dropFirst(2))) { throw reserved(name, parent: displayParent) }
+            if let sidecar = userSidecars["._" + key] { throw reserved(sidecar, parent: displayParent) }
             try check(target, generatedSource: generated, displayParent: displayParent)
             var info = stat()
             guard lstat(source.path, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
@@ -68,6 +71,12 @@ public enum CopyNamePreflight {
         return .failed(
             "“\(path)” is reserved for file metadata on this drive when its counterpart is present. This also applies to ._ files extracted from archives. Rename the item or choose another location."
         )
+    }
+    private static let nameLocale = Locale(identifier: "en_US_POSIX")
+    /// FAT-family names are case insensitive. Uppercase before folding also covers dotless-I variants;
+    /// retain the original sidecar spelling separately for the refusal message.
+    private static func nameKey(_ name: String) -> String {
+        name.uppercased(with: nameLocale).folding(options: .caseInsensitive, locale: nameLocale)
     }
     private static func isPackedMetadataVolume(_ folder: URL) -> Bool {
         guard folder.isFileURL else { return false }

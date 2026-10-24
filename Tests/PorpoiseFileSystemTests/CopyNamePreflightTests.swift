@@ -22,15 +22,31 @@ struct CopyNamePreflightTests {
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [false, true])
-    func aSelectedPairIsRefusedInEitherOrder(_ fileSystem: String, _ reversed: Bool) throws {
+    func aSelectedPairFromDifferentFoldersIsRefusedInEitherOrder(_ fileSystem: String, _ reversed: Bool) throws {
         let s = try Scratch(), disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
-        let file = try s.file("ordinary", "ordinary bytes"), sidecar = try s.file("._ordinary", "user sidecar bytes")
+        let file = try s.file("first/ordinary", "ordinary bytes"), sidecar = try s.file("second/._ordinary", "user sidecar bytes")
         let job = FileJob(kind: .copy, sources: reversed ? [sidecar, file] : [file, sidecar], destinationFolder: disk.volume)
         _ = try job.run()
         #expect(job.errors.count == 2 && job.errors.allSatisfy { $0.contains("reserved for file metadata") })
         #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("ordinary")))
         #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("._ordinary")))
-        #expect(s.read("._ordinary") == "user sidecar bytes")
+        #expect(s.read("second/._ordinary") == "user sidecar bytes")
+    }
+
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [("Foo", "._foo"), ("É", "._é"), ("I", "._ı")])
+    func plannedPairsUseTheDrivesCaseInsensitiveNames(_ fileSystem: String, _ pair: (String, String)) throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
+        let source = try s.folder("tree"), probe = disk.volume.appendingPathComponent("case-probe")
+        try FileManager.default.createDirectory(at: probe, withIntermediateDirectories: false)
+        try Data().write(to: probe.appendingPathComponent(pair.0))
+        #expect(FileJob.itemExists(at: probe.appendingPathComponent(String(pair.1.dropFirst(2)))))
+        try s.file("tree/" + pair.0, "ordinary bytes")
+        try s.file("tree/" + pair.1, "user sidecar bytes")
+        let job = FileJob(kind: .copy, sources: [source], destinationFolder: disk.volume)
+        _ = try job.run()
+        #expect(job.errors.contains { $0.contains("reserved for file metadata") && $0.contains(pair.1) })
+        #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("tree")))
+        #expect(s.read("tree/" + pair.1) == "user sidecar bytes")
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [false, true])
