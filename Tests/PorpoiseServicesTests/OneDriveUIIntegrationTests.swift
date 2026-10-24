@@ -139,7 +139,7 @@ import Testing
         fixture.backend.setActive(false)
         var temporary: OneDriveCloudBackend? = OneDriveCloudBackend(store: fixture.store)
         let observed = NSHashTable<OneDriveCloudBackend>.weakObjects()
-        observed.add(try #require(temporary))
+        observed.add(temporary)
         temporary = nil
         #expect(observed.allObjects.isEmpty)
     }

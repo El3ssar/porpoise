@@ -141,7 +141,7 @@ import Testing
         fixture.backend.setActive(false)
         var temporary: BoxCloudBackend? = BoxCloudBackend(store: fixture.store)
         let observed = NSHashTable<BoxCloudBackend>.weakObjects()
-        observed.add(try #require(temporary))
+        observed.add(temporary)
         temporary = nil
         #expect(observed.allObjects.isEmpty)
     }
