@@ -536,8 +536,8 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     }
 
     private func cancelNameEditing() {
-        nameField?.stringValue = urls[0].lastPathComponent
         window?.makeFirstResponder(nil)
+        nameField?.stringValue = urls[0].lastPathComponent
     }
 
     private func commitName() {
@@ -557,7 +557,10 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy sel: Selector) -> Bool {
         if sel == #selector(NSResponder.cancelOperation(_:)) { cancelNameEditing(); return true }
-        if sel == #selector(NSResponder.insertNewline(_:)) { commitName(); return true }
+        if sel == #selector(NSResponder.insertNewline(_:)) {
+            window?.makeFirstResponder(nil)
+            commitName(); return true
+        }
         return false
     }
 }
