@@ -288,9 +288,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return own
     }
 
+    /// Compared by their real paths: a home reached through a symlink (one under /var → /private/var) holds the folders
+    /// under its real path too.
     private static func isInHome(_ url: URL) -> Bool {
-        let home = Self.home.path
-        return url.path == home || url.path.hasPrefix(home + "/")
+        let home = realFolder(Self.home).path, path = realFolder(url).path
+        return path == home || path.hasPrefix(home + "/")
     }
 
     // MARK: Following the view
@@ -333,7 +335,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         var u = Self.realFolder(target)
         // Only inside the root: a symlink out of Home (~/code → /Volumes/x/code) resolves to a path that never
         // reaches it, and the chain would invent a node for a folder that isn't there.
-        guard u.path.hasPrefix(root.url.path == "/" ? "/" : root.url.path + "/") || u.path == root.url.path else { return }
+        let realRoot = Self.realFolder(root.url).path
+        guard u.path.hasPrefix(realRoot == "/" ? "/" : realRoot + "/") || u.path == realRoot else { return }
+        // Home's folders are under Home's path as the tree has it (a home reached through a symlink: /var/x, real
+        // /private/var/x, W-266).
+        if realRoot != root.url.path { u = URL(fileURLWithPath: root.url.path + u.path.dropFirst(realRoot.count)) }
         while u.path.count >= root.url.path.count && u.path != root.url.path {
             chain.insert(u, at: 0)
             u = u.deletingLastPathComponent()
@@ -532,13 +538,14 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         v.imageView?.image = Icons.shared.image(IconTheme.folderIconName(url), size: 16)
         if let n = item as? RemoteFolderTree.Node {
             v.textField?.stringValue = n.name + (n.isLoading ? " — Loading…" : "")
-            v.toolTip = n.message
+            v.toolTip = n.message ?? n.name
             v.setAccessibilityLabel(n.name + (n.isLoading ? ", loading" : ""))
         } else {
             let n = item as? Node
             let loading = n?.isLoading == true
             v.textField?.stringValue = (n?.name ?? "") + (loading ? " — Loading…" : "")
-            v.toolTip = nil
+            // The whole name: a narrow sidebar shows long ones shortened in the middle.
+            v.toolTip = n?.name
             v.setAccessibilityLabel(loading ? (n?.name ?? "") + ", loading" : nil)
         }
         return v
@@ -557,15 +564,19 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func nodeURL(_ item: Any?) -> URL? { (item as? Node)?.url ?? (item as? RemoteFolderTree.Node)?.url }
 
     private func makeCell() -> NSTableCellView {
-        let v = NSTableCellView()
+        // The name field ends at the cell's edge and follows its width: one wider than the cell was clipped there with
+        // no ellipsis ("-Users-dan", W-266).
+        let v = NSTableCellView(frame: CGRect(x: 0, y: 0, width: 100, height: 24))
         v.identifier = Self.cellID
         let img = NSImageView()
         img.frame = CGRect(x: 2, y: 4, width: 16, height: 16)
         let t = NSTextField(labelWithString: "")
         t.font = Theme.font
         t.textColor = Theme.windowText
-        t.lineBreakMode = .byTruncatingTail
-        t.frame = CGRect(x: 22, y: 3, width: 400, height: 17)
+        // Names that differ at the end (dated, numbered, -Users-…-project folders) stay apart (DESIGN-CONTRACT T5).
+        t.lineBreakMode = .byTruncatingMiddle
+        t.cell?.truncatesLastVisibleLine = true
+        t.frame = CGRect(x: 22, y: 3, width: v.bounds.width - 24, height: 17)
         t.autoresizingMask = [.width]
         v.addSubview(img)
         v.addSubview(t)
