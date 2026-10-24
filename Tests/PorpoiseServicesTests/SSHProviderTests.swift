@@ -216,10 +216,11 @@ struct SSHProviderTests {
         #expect(fm.fileExists(atPath: server.home.path))
     }
 
-    @Test func reusesOneConnectionUntilDisconnected() throws {
+    @Test func reusesOneConnectionUntilDisconnected() async throws {
         let dir = try server.folder()
         let p = server.provider()
         p.disconnect()  // a connection left by an earlier test
+        try #require(try await poll { try fm.contentsOfDirectory(atPath: server.controlDir.path).isEmpty })
         let before = server.logins
 
         for _ in 0..<4 { _ = try p.list(server.url(dir.path)) }
@@ -227,7 +228,8 @@ struct SSHProviderTests {
         #expect(try fm.contentsOfDirectory(atPath: server.controlDir.path).count == 1)  // the master's socket
 
         p.disconnect()
-        #expect(try fm.contentsOfDirectory(atPath: server.controlDir.path).isEmpty)
+        // ssh -O exit acknowledges the request; the master's socket cleanup can still be pending.
+        try #require(try await poll { try fm.contentsOfDirectory(atPath: server.controlDir.path).isEmpty })
         _ = try p.list(server.url(dir.path))
         #expect(server.logins == before + 2)
     }
