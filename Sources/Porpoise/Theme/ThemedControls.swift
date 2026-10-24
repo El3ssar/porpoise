@@ -277,12 +277,14 @@ final class TabButton: NSButton {
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 50) }
 
     override func draw(_ dirtyRect: NSRect) {
+        // The selected tab's symbol takes the accent; its title stays in the text colour, which reads in every palette
+        // (accent-coloured text falls below 4.5:1 in several).
         let color = isSelected ? Theme.accent : Theme.windowText
         if isSelected || isHighlighted {
             (isHighlighted ? Theme.buttonPressedBackground : Theme.buttonHoverBackground).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6).fill()
         }
-        let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: color]
+        let titleAttributes: [NSAttributedString.Key: Any] = [.font: Self.titleFont, .foregroundColor: Theme.windowText]
         let size = (title as NSString).size(withAttributes: titleAttributes)
         let titleY = isFlipped ? bounds.maxY - size.height - 4 : bounds.minY + 4
         (title as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2, y: titleY), withAttributes: titleAttributes)
