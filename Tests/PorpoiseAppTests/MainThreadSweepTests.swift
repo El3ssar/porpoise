@@ -112,4 +112,27 @@ import Testing
         let mounts = (try? String(contentsOfFile: "/etc/auto_master", encoding: .utf8)) ?? ""
         if mounts.contains("auto_home") { #expect(SessionState.exists(URL(fileURLWithPath: "/System/Volumes/Data/home/nobody/gone"))) }
     }
+
+    /// V11: the Shelf works out where its items are off the main thread, and remembers those that moved with one save
+    /// (it saved, and reloaded itself, once per moved item from inside the reload).
+    @Test func theShelfFindsItsItemsOffTheMainThreadAndSavesOnce() async throws {
+        let s = try Scratch()
+        let a = try s.file("a.txt", "a"), b = try s.file("b.txt", "b")
+        let store = ShelfStore(file: s.path("shelves.json"))
+        store.add([a, b])
+        try FileManager.default.createDirectory(at: s.path("moved"), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: a, to: s.path("moved/a.txt"))
+        try FileManager.default.moveItem(at: b, to: s.path("moved/b.txt"))
+        var saves = 0
+        let observer = NotificationCenter.default.addObserver(forName: ShelfStore.changed, object: store, queue: nil) { _ in saves += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let panel = ShelfPanel(frame: CGRect(x: 0, y: 0, width: 240, height: 400), store: store)
+        // Nothing moved yet on the main thread: the items as they were added.
+        #expect(saves == 0 && store.current.items.map(\.url.lastPathComponent) == ["a.txt", "b.txt"])
+        #expect(store.current.items.allSatisfy { !$0.url.path.contains("/moved/") })
+        #expect(await eventually { store.current.items.allSatisfy { $0.url.path.contains("/moved/") } })
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(saves == 1, "one save for both")
+        _ = panel
+    }
 }
