@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First launch: the browser window at once, with the welcome as a sheet on it (only when launched plainly).
         let welcome = args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
         openInitialWindows(args)
+        DispatchQueue.main.async { AppAutomation.shared.start() }
         if welcome { OnboardingWindowController.show(on: windows.first?.window) }
         Updates.shared.start()
         PrivilegedHelper.migrateFromLoginItems()

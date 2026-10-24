@@ -135,7 +135,7 @@ jobs:
 
       - name: Format
         if: steps.ci.outputs.passed != 'true'
-        run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
+        run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseCLI Sources/PorpoiseHelper Tests
 
       - name: Fetch fd and ripgrep
         run: scripts/fetch-search-tools.sh

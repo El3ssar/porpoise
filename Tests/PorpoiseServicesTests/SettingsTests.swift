@@ -10,6 +10,7 @@ import Testing
     let s = Settings.shared
 
     @Test func defaultsWhenNothingIsStored() {
+        #expect(!s.allowCommandLineControl)
         #expect(s.startup == .lastSession)
         #expect(s.showGitStatus)
         #expect(s.homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path)
@@ -334,7 +335,8 @@ import Testing
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
         #expect(
             keys == [
-                "showGitStatus", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize", "filterBar", "alwaysTabBar",
+                "showGitStatus", "allowCommandLineControl", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize",
+                "filterBar", "alwaysTabBar",
                 "tabClose", "tabStyle",
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",
                 "pvFolders", "pvMax", "pvRemote", "statusBar2", "zoomSlider2", "editableUrl", "fullPathUrl", "confirmTrash", "reviewAppLeftovers",

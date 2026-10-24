@@ -58,6 +58,9 @@ public final class FileOperationsController {
     var isInterrupting = false
     /// Tests: adjusts each local job before it's queued (no clones, slower chunks…).
     var prepareJob: ((FileJob) -> Void)?
+    #if PORPOISE_TEST_HOOKS
+    var authorizationAttempted: (() -> Void)?
+    #endif
     var environment = JobEnvironmentMonitor.shared
 
     public init() {}
@@ -113,7 +116,8 @@ public final class FileOperationsController {
     /// `sound` plays once the job has done something (Finder's trash sounds).
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
-        allowDeleteFallback: Bool = true, resumePoints: [URL: ResumePoint] = [:], completedTransfers: [URL: URL] = [:], done: (([URL]) -> Void)? = nil
+        allowDeleteFallback: Bool = true, allowAuthorization: Bool = true, resumePoints: [URL: ResumePoint] = [:],
+        completedTransfers: [URL: URL] = [:], done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
@@ -130,6 +134,7 @@ public final class FileOperationsController {
         prepareJob?(job)
         let activity = Activity(kind: kind, sources: urls, destination: folder, job: job)
         activity.originWindow = window
+        activity.allowsAuthorization = allowAuthorization
         activity.start = { [weak self, weak activity] in
             guard let self, let activity, activity.state == .queued else { return }
             self.start(activity, job: job, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback, done: done)
@@ -177,7 +182,11 @@ public final class FileOperationsController {
                 let ruleErrors =
                     rulesPreventElevation && !job.denied.isEmpty
                     ? ["Items requiring administrator access were kept because the helper cannot apply this job's transfer rules."] : []
-                let errs = job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? []) + ruleErrors
+                let automationErrors =
+                    !activity.allowsAuthorization && !job.denied.isEmpty ? ["Automation transfers never use administrator access."] : []
+                let errs =
+                    automationErrors + job.errors + (fatal.map { [($0 as? LocalizedError)?.errorDescription ?? $0.localizedDescription] } ?? [])
+                    + ruleErrors
                 self.ended(activity, errors: errs, cause: job.firstError ?? fatal)
                 // Quitting: nothing more to say or do now; the journal resumes it next time.
                 if job.isInterrupted { return }
@@ -194,7 +203,9 @@ public final class FileOperationsController {
                     }
                 }
                 if !job.denied.isEmpty && !job.isCancelled && !rulesPreventElevation {
-                    self.retryDenied(kind, job.denied, targets: job.deniedTargets, to: folder, window: window) { more in
+                    self.retryDenied(
+                        kind, job.denied, targets: job.deniedTargets, to: folder, window: window, allowAuthorization: activity.allowsAuthorization
+                    ) { more in
                         if backgroundRetry { self.ui?.jobFinished(activity) }
                         if record != nil || !more.isEmpty { sound?.play() }
                         done?(job.results + more)

@@ -43,7 +43,7 @@ jobs:
       - name: Crash symbol tooling
         run: python3 scripts/test-symbols.py && python3 scripts/test-release-dry-run.py
       - name: Format
-        run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseHelper Tests
+        run: swift format lint --strict -r Sources/PorpoiseCore Sources/PorpoiseFileSystem Sources/PorpoiseHelperKit Sources/PorpoiseServices Sources/Porpoise Sources/PorpoiseCLI Sources/PorpoiseHelper Tests
       # The committed helper is rebuilt whenever what it's built from changes, and has no home folder paths in it.
       - name: Helper is current
         run: scripts/build-helper.sh --check

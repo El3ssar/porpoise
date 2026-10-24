@@ -17,6 +17,9 @@ public final class Activity: Identifiable {
     public let sources: [URL]
     public let destination: URL?
     public weak var originWindow: AnyObject?
+    /// Automation never gets administrator retries, including Activity Retry and journal recovery.
+    public internal(set) var allowsAuthorization = true
+    var awaitingAutomationApproval = false
     public internal(set) var incomingItem: FileItem?
     var incomingStartBytes: Int64 = 0
     public var incomingFraction: Double {
@@ -150,11 +153,13 @@ extension FileOperationsController {
             // Looking at every source and writing the journal waits for nothing here: it happens on the journal's queue.
             let (id, kind, sources, destination) = (activity.id, activity.kind, activity.sources, activity.destination)
             let resumePoints = job.resumePoints
+            let allowsAuthorization = activity.allowsAuthorization
             let created = Date()
             activity.isJournaled = true
             journals.begin {
                 var journal = JobJournal(id: id, kind: kind, sources: sources, destination: destination)
                 journal.created = created
+                journal.allowsAuthorization = allowsAuthorization ? nil : false
                 // Items resumed from an earlier journal keep their partial copies.
                 for (i, item) in journal.items.enumerated() {
                     if let point = resumePoints[item.source] {
@@ -343,6 +348,7 @@ extension FileOperationsController {
 
     /// Runs the failed items again.
     public func retry(_ activity: Activity, window: AnyObject?) {
+        guard !activity.awaitingAutomationApproval else { return }
         if activity.verificationCancelled {
             verify(activity)
             activityDidChange()
@@ -356,7 +362,9 @@ extension FileOperationsController {
             again = activity.failedSources.isEmpty ? activity.sources : activity.failedSources
         }
         activities.removeAll { $0 === activity }
-        run(activity.kind, again, to: activity.destination, window: window, completedTransfers: activity.job?.completedTransfers ?? [:])
+        run(
+            activity.kind, again, to: activity.destination, window: window, allowAuthorization: activity.allowsAuthorization,
+            completedTransfers: activity.job?.completedTransfers ?? [:])
     }
 
     /// Removes the jobs that ended from the list (they stay in the history).
@@ -373,6 +381,7 @@ extension FileOperationsController {
         for a in running {
             let control = a.verificationControl ?? a.control
             if !control.hasEnded { control.interrupt() }
+            if a.awaitingAutomationApproval { control.finish() }
         }
         let end = Date().addingTimeInterval(timeout)
         while running.contains(where: {

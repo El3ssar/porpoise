@@ -8,6 +8,7 @@ public struct RecoveryPlan: Identifiable, Sendable {
     public let id: UUID
     public let kind: FileOperationKind
     public let destination: URL?
+    public var allowsAuthorization = true
     /// Items to process again; large files with a good partial copy continue from it.
     public var sources: [URL] = []
     var cloudBatchID: UUID?
@@ -71,6 +72,7 @@ extension FileOperationsController {
         guard let kind = journal.operation else { return nil }
         var plan = RecoveryPlan(id: journal.id, kind: kind, destination: journal.destination)
         plan.journal = journal
+        plan.allowsAuthorization = journal.allowsAuthorization ?? true
         if let d = journal.destination, !FileJob.itemExists(at: d) {
             plan.notes.append("The destination “\(d.lastPathComponent)” is no longer there.")
             // Our partial copies went with it; nothing to resume.
@@ -207,7 +209,9 @@ extension FileOperationsController {
         guard !rest.isEmpty else { return journals.remove(plan.id) }
         var next: Activity?
         journals.handOff(from: plan.id) {
-            run(plan.kind, rest, to: plan.destination, window: window, resumePoints: out.resumePoints, done: done)
+            run(
+                plan.kind, rest, to: plan.destination, window: window, allowAuthorization: plan.allowsAuthorization, resumePoints: out.resumePoints,
+                done: done)
             next = activities.last
         } then: { [weak self] handedOn in
             guard let self, !handedOn else { return }

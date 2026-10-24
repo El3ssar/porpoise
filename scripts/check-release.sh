@@ -37,7 +37,9 @@ done <<<"$(files -e 'DebugBridge' -e 'app\.porpoise\.Porpoise\.debug\.')"
 while IFS= read -r f; do
     if [ -n "$f" ]; then fail "$f" "contains a PORPOISE_* test switch"; fi
 done <<<"$(files -w -F -f "$WORK/names")"
-for code in "$APP" "$APP/Contents/Helpers/Porpoise Helper.app"; do
+[ -x "$APP/Contents/Helpers/porpoise" ] || fail "$APP/Contents/Helpers/porpoise" "CLI executable is missing"
+[ -f "$APP/Contents/Resources/Metadata.appintents/extract.actionsdata" ] || fail "$APP" "App Intents metadata is missing"
+for code in "$APP" "$APP/Contents/Helpers/Porpoise Helper.app" "$APP/Contents/Helpers/porpoise"; do
     if [ ! -e "$code" ]; then
         fail "$code" "is missing"
     elif codesign -d --entitlements - --xml "$code" 2>/dev/null | grep -q 'get-task-allow'; then

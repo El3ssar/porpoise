@@ -215,6 +215,7 @@ final class SettingsWindowController: SecondaryWindowController {
         page("Shortcuts", "keyboard", ShortcutSettingsPage.build)
         page("Custom Tools", "hammer", CustomToolsSettingsPage.build)
         page("Advanced", "gearshape.2") { f in
+            CLIAutomationSettings.build(f)
             f.section("Ask for confirmation when")
             f.check("Moving files or folders to the Trash", s.confirmTrash) { s.confirmTrash = $0 }
             f.check("Moving an app to the Trash: review its leftover files", s.reviewAppLeftovers) { s.reviewAppLeftovers = $0 }
