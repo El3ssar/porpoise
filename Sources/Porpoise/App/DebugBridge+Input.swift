@@ -6,6 +6,7 @@ import PorpoiseFileSystem
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import Quartz
 
 extension DebugBridge {
     /// Clicks, keys, menus, gestures and navigation, as a user would do them.
@@ -32,6 +33,7 @@ extension DebugBridge {
         "searchbar": DebugBridge.searchbarCommand,
         "navigate": DebugBridge.navigateCommand,
         "action": DebugBridge.actionCommand,
+        "preview": DebugBridge.previewCommand,
         "select": DebugBridge.selectCommand,
         "hit": DebugBridge.hitCommand,
         "wheel": DebugBridge.wheelCommand,
@@ -259,6 +261,13 @@ extension DebugBridge {
         } else {
             NSApp.sendAction(NSSelectorFromString(arg), to: nil, from: nil)
         }
+    }
+
+    /// Establish the documented Quick Look data source for inactive test instances, without activating them.
+    func previewCommand(_ arg: String) {
+        guard let wc, let panel = QLPreviewPanel.shared() else { return }
+        wc.beginPreviewPanelControl(panel)
+        wc.quickLook(nil)
     }
 
     func selectCommand(_ arg: String) {
