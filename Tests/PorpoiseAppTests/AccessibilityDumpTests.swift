@@ -19,7 +19,7 @@ struct AccessibilityDumpTests {
         let deep = try s.folder("Projects/Clients/Acme/2026/Reports")
         let report = try s.file("Projects/Clients/Acme/2026/Reports/Quarterly.pdf", "pdf")
         _ = try s.file("Projects/Clients/Acme/2026/Reports/Notes.txt", "notes")
-        FinderTags.set(["Red", "Blue"], on: report)
+        try FinderTags.set(["Red", "Blue"], on: report)
         Settings.store.set(false, forKey: "perFolder")
         AppDelegate.shared.newWindow(at: deep)
         let wc = try #require(AppDelegate.shared.windows.last)

@@ -16,7 +16,11 @@ final class ProviderSource: LocationContentSource {
         let provider = provider
         DispatchQueue.global(qos: .userInitiated).async {
             var listing = LocationListing()
-            do { listing.items = try provider.list(folder) } catch { listing.error = .provider(error.localizedDescription) }
+            do {
+                let result = try provider.listWithNotice(folder)
+                listing.items = result.items
+                listing.error = result.notice.map(LocationLoadError.provider)
+            } catch { listing.error = .provider(error.localizedDescription) }
             var kids: [URL: [FileItem]] = [:]
             for e in expanded { kids[e] = (try? provider.list(e)) ?? [] }
             listing.children = kids

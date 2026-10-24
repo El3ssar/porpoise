@@ -84,6 +84,7 @@ public final class DirectoryModel {
     public private(set) var rows: [Row] = [] {
         didSet {
             rowsRevision &+= 1
+            selectionSnapshotCache = nil
             rowIndex = nil; rowIndexByPath = nil; rowFileKeys = nil; missedLookups = []
         }
     }
@@ -256,7 +257,9 @@ public final class DirectoryModel {
 
     /// Constant-time invalidation for selection-dependent UI caches.
     public private(set) var selectionRevision: UInt64 = 0
-    public var selection: Set<URL> = [] { didSet { if selection != oldValue { selectionRevision &+= 1; onSelectionChanged?() } } }
+    public var selection: Set<URL> = [] {
+        didSet { if selection != oldValue { selectionRevision &+= 1; selectionSnapshotCache = nil; onSelectionChanged?() } }
+    }
     public var currentURL: URL?
     public var anchorURL: URL?
 
@@ -402,7 +405,10 @@ public final class DirectoryModel {
         tagCache[item.url] = t
         return t
     }
-    public func refreshTags() { tagCache = [:] }
+    public func refreshTags() {
+        tagCache = [:]
+        if props.sortRole == .tags || props.effectiveGroupRole == .tags { rebuild() }
+    }
     private func tagMap(_ list: [FileItem]) -> [URL: [String]] {
         var m: [URL: [String]] = [:]
         for it in list {
@@ -652,7 +658,8 @@ public final class DirectoryModel {
     private var sortedTop: [FileItem]?
 
     private var preparesLocalRows: Bool {
-        !isSearching && source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000
+        props.sortRole == .tags || props.effectiveGroupRole == .tags
+            || !isSearching && source is LocalSource && items.count + children.values.reduce(0, { $0 + $1.count }) >= 2000
     }
     private var rowPreparation: LocationLoad?
     private var rowPreparationGeneration: UInt64 = 0
@@ -673,9 +680,11 @@ public final class DirectoryModel {
     private func prepareLocalRows(keepingOrder: Bool) {
         let generation = rowPreparationGeneration
         let snapshot = DirectoryModelPreparation(
-            items: items, incoming: incomingItems, children: children, expanded: expanded, props: props, filter: filter,
+            items: searchResults ?? items, incoming: isSearching ? [] : incomingItems, children: children, expanded: expanded, props: props,
+            filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
-            knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil)
+            knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil,
+            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [])
         // Never let a later filter/mode change reuse order from a superseded listing.
         if !keepingOrder { sortedTop = nil }
         rowPreparation = prepareRows(snapshot) { [weak self] result in
@@ -703,7 +712,7 @@ public final class DirectoryModel {
     /// to what's shown.
     public func rebuild(keepingOrder: Bool = false, adding: [FileItem]? = nil) {
         cancelRowPreparation()
-        // Small directories keep their immediate editing semantics. Search has its own incremental preparation.
+        // Tag ordering needs IO even for a small listing. Search has its own incremental preparation.
         if preparesLocalRows {
             prepareLocalRows(keepingOrder: keepingOrder)
             return
@@ -999,7 +1008,27 @@ public final class DirectoryModel {
     }
 
     /// In row order. Without copying every row's item first: the status bar asks on every selection change.
-    public var selectedItems: [FileItem] { selectedRows.map { rows[$0].item } }
+    public var selectedItems: [FileItem] { selectedSnapshot.items }
+
+    public struct SelectionSnapshot {
+        public let items: [FileItem]
+        public let urls: [URL]
+        public let cloudURLs: [URL]
+        public let isLocal: Bool
+        public let isManageable: Bool
+    }
+    private var selectionSnapshotCache: SelectionSnapshot?
+    /// Menu validation asks about the same selection repeatedly. Every row or selection change drops this snapshot.
+    public var selectedSnapshot: SelectionSnapshot {
+        if let selectionSnapshotCache { return selectionSnapshotCache }
+        let items = selectedRows.map { rows[$0].item }, urls = items.map(\.url)
+        let local = urls.allSatisfy(\.isFileURL)
+        let snapshot = SelectionSnapshot(
+            items: items, urls: urls, cloudURLs: local ? [] : urls.filter { !$0.isFileURL && PlacesModel.isCloud($0) }, isLocal: local,
+            isManageable: local || urls.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) })
+        selectionSnapshotCache = snapshot
+        return snapshot
+    }
 
     /// The rows of the selected items, in order. A few are looked up (the status bar, the preview and Column view ask
     /// on every arrow key, and going through 100,000 rows each time made the keys lag); many are gone through.

@@ -65,6 +65,22 @@ import Testing
         try S3Credentials.remove(accountID: location.accountID)
         #expect(throws: (any Error).self) { try S3Credentials.read(accountID: location.accountID) }
     }
+    @Test @MainActor func unsupportedKeysDoNotHideSafeSiblings() async throws {
+        let local = try Scratch()
+        let file = try local.file("input", "bytes")
+        for key in ["safe.txt", "line\nbreak.txt"] { try await client.upload(file, key: key) }
+        let provider = provider, root = location.url
+        let source = ProviderSource(location: root, provider: provider)
+        var listed: LocationListing?
+        let load = source.load(root, expanded: []) { listed = $0 }
+        defer { load.cancel() }
+        try #require(await eventually { listed != nil })
+        #expect(listed?.items.contains { $0.name == "safe.txt" } == true)
+        #expect(listed?.items.contains { $0.name.contains("\n") } == false)
+        #expect(listed?.error != nil)
+        await #expect(throws: (any Error).self) { try await offThePool { try provider.list(root) } }
+    }
+
     @Test func paginatedPrefixesAndStagedDownload() async throws {
         let provider = provider, root = location.url
         let items = try await offThePool { try provider.list(root) }

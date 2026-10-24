@@ -12,13 +12,13 @@ extension MainWindowController {
 
     // MARK: Selection helpers
 
-    var selectedURLs: [URL] { view.model.selectedItems.map(\.url) }
+    var selectedURLs: [URL] { view.model.selectedSnapshot.urls }
     var hasSelection: Bool { !view.model.selection.isEmpty }
     /// Selected items are all local files (tags, sharing, archives, Launch Services…).
-    var selectionIsLocal: Bool { hasSelection && selectedURLs.allSatisfy(\.isFileURL) }
+    var selectionIsLocal: Bool { hasSelection && view.model.selectedSnapshot.isLocal }
     /// Selected items can be cut, trashed or renamed: local files or SFTP/FTP/ADB items.
     var selectionIsManageable: Bool {
-        hasSelection && selectedURLs.allSatisfy { $0.isFileURL || (RemoteFS.isRemote($0) && LocationKind.of($0) != .archive) }
+        hasSelection && view.model.selectedSnapshot.isManageable
     }
     /// What "this" means for location-wide actions: the selection, else the current folder.
     var actionTargets: [URL] { hasSelection ? selectedURLs : [view.url] }

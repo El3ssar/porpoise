@@ -64,8 +64,8 @@ import Testing
         #expect(m.props.mode == .icons && m.props.sortRole == .name)
     }
 
-    /// Sorted by tags, search results aren't sorted off the main thread first (tags are read while showing them).
-    @Test func searchResultsSortedByTagsShowAtOnce() async throws {
+    /// The show callback installs the search immediately; metadata preparation completes off main.
+    @Test func searchResultsSortedByTagsFinishPreparation() async throws {
         let s = try Scratch()
         let a = try #require(FileItem.load(try s.file("a.txt"))), b = try #require(FileItem.load(try s.file("b.txt")))
         let m = try await DirectoryModel.loaded(s.url)
@@ -74,7 +74,8 @@ import Testing
         m.sortSearchResults([b, a]) { apply in
             apply(); shown = true
         }
-        #expect(shown && m.isSearching && m.rows.count == 2)
+        try #require(await eventually { !m.isLoading })
+        #expect(shown && m.isSearching && m.rows.map(\.item.name) == ["a.txt", "b.txt"])
     }
 
     /// Recent Locations lists the folders visited (one deleted since is left out).

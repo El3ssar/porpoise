@@ -33,8 +33,39 @@ public enum FinderTags {
     }
 
     /// Writes tag names; macOS assigns the standard colors itself.
-    public static func set(_ names: [String], on url: URL) {
-        try? (url as NSURL).setResourceValue(names, forKey: .tagNamesKey)
+    public static func set(_ names: [String], on url: URL) throws {
+        try (url as NSURL).setResourceValue(names, forKey: .tagNamesKey)
+    }
+
+    public struct Failure: Sendable {
+        public let url: URL
+        public let message: String
+    }
+
+    /// Successful siblings keep their changes; unreadable tags are never replaced with an assumed empty set.
+    public static func toggle(_ tag: String, on urls: [URL]) -> [Failure] {
+        var failures: [Failure] = []
+        var values: [(URL, [String])] = []
+        for url in urls {
+            do { values.append((url, try url.resourceValues(forKeys: [.tagNamesKey]).tagNames ?? [])) } catch {
+                failures.append(Failure(url: url, message: error.localizedDescription))
+            }
+        }
+        let remove = failures.isEmpty && values.allSatisfy { $0.1.contains(tag) }
+        for (url, current) in values {
+            var names = current.filter { $0 != tag }
+            if !remove { names.append(tag) }
+            do { try set(names, on: url) } catch { failures.append(Failure(url: url, message: error.localizedDescription)) }
+        }
+        return failures
+    }
+
+    private static let writeQueue = DispatchQueue(label: "app.porpoise.tag-writes", qos: .userInitiated)
+    public static func toggleAsync(_ tag: String, on urls: [URL], done: @escaping ([Failure]) -> Void) {
+        writeQueue.async {
+            let failures = toggle(tag, on: urls)
+            DispatchQueue.main.async { done(failures) }
+        }
     }
 
     public static func url(for tag: String) -> URL {

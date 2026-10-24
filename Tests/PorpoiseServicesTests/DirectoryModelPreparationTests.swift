@@ -14,6 +14,100 @@ import Testing
         }
     }
 
+    @Test func smallTagSortAndGroupingUseGenerationBoundPreparation() throws {
+        let s = try Scratch()
+        let m = DirectoryModel(location: s.url)
+        var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
+        m.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
+        m.applyEdit(ListingEdit(folder: s.url, added: files(s.url, count: 3)))
+        m.props.sortRole = .tags
+        #expect(pending.count == 1)
+        m.props.sortRole = .name
+        m.props.groupRole = .tags
+        #expect(pending.count == 2)
+        m.props.groupRole = nil
+        for request in pending { request.1(try #require(request.0.build())) }
+        #expect(!m.isLoading && m.rows.count == 3)
+    }
+
+    @Test func repeatedSelectionReadsKeepOrderAndInvalidateAfterChanges() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        // Preparation is immediate here so this measures selection reads only.
+        m.prepareRows = { input, done in
+            done(input.build()!); return LocationLoad()
+        }
+        m.applyEdit(ListingEdit(folder: s.url, added: files(s.url, count: 100_000)))
+        m.selection = Set(m.rows.map(\.item.url))
+        let expected = m.rows.map(\.item.url)
+        var counts = 0
+        for sample in 0..<5 {
+            let start = ContinuousClock.now
+            for _ in 0..<30 { counts += m.selectedItems.count }
+            print("W261 selection 100k x30 sample=\(sample): \(start.duration(to: .now))")
+        }
+        #expect(counts == 15_000_000 && m.selectedItems.map(\.url) == expected)
+        m.selection = [expected[20], expected[10]]
+        #expect(m.selectedItems.map(\.url) == [expected[10], expected[20]])
+        m.props.sortOrder = .descending
+        #expect(m.selectedItems.map(\.url) == [expected[20], expected[10]])
+        m.selection = []
+        #expect(m.selectedItems.isEmpty)
+    }
+
+    @Test func tagSortedContentSearchKeepsSearchGroupsOffMain() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
+        m.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
+        let named = FileItem(url: s.path("needle.txt"), name: "needle.txt", isDirectory: false)
+        let content = FileItem(url: s.path("other.txt"), name: "other.txt", isDirectory: false)
+        m.searchMatches = SearchMatches(text: "needle", contents: true)
+        m.searchResults = [content, named]
+        m.props.sortRole = .tags
+        let request = try #require(pending.last)
+        request.1(try #require(request.0.build()))
+        #expect(m.rows.map(\.item.name) == ["needle.txt", "other.txt"])
+        #expect(m.groups.map(\.title) == ["Name matches", "Content matches"])
+        m.refreshTags()
+        #expect(pending.count == 2)
+    }
+
+    @Test func tagOrderingMainThreadReturnTiming() async throws {
+        let s = try Scratch()
+        for n in 0..<1000 { try s.file("file\(n).txt") }
+        let m = DirectoryModel(location: s.url)
+        m.reload()
+        try #require(await eventually { !m.isLoading })
+        let start = ContinuousClock.now
+        m.props.sortRole = .tags
+        print("W261 tag sort 1k main return: \(start.duration(to: .now))")
+        try #require(await eventually { !m.isLoading })
+        #expect(m.rows.count == 1000)
+    }
+
+    @Test func selectionCapabilitiesKeepMixedCloudAndArchiveSemantics() throws {
+        let s = try Scratch(), m = DirectoryModel(location: s.url)
+        let local = s.path("local"), cloud = DriveLocation(accountID: UUID(), collection: .folder("file")).url
+        let archive = URL(string: "archive:/fixture/a")!
+        let urls = [local, cloud, archive]
+        m.applyEdit(
+            ListingEdit(
+                folder: s.url,
+                added: urls.enumerated().map {
+                    FileItem(url: $0.element, name: "item\($0.offset)", isDirectory: false)
+                }))
+        m.selection = Set(urls)
+        #expect(m.selectedSnapshot.cloudURLs == [cloud])
+        #expect(!m.selectedSnapshot.isLocal && !m.selectedSnapshot.isManageable)
+        m.selection = [local, cloud]
+        #expect(!m.selectedSnapshot.isLocal && m.selectedSnapshot.isManageable)
+        m.selection = [local]
+        #expect(m.selectedSnapshot.isLocal && m.selectedSnapshot.isManageable && m.selectedSnapshot.cloudURLs.isEmpty)
+    }
+
     @Test func geometryChangesKeepTheRowsAndOrderWhileExpansionStillRebuilds() throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
@@ -142,7 +236,7 @@ import Testing
     @Test func productionQueueCancelsPublicationAndReadsTagsOnItsWorker() async throws {
         let s = try Scratch()
         let a = try s.file("a.txt"), b = try s.file("b.txt")
-        FinderTags.set(["Red"], on: b)
+        try FinderTags.set(["Red"], on: b)
         var props = ViewProperties()
         props.sortRole = .tags
         props.groupRole = .tags
@@ -190,7 +284,7 @@ import Testing
     }
 
     @Test(arguments: SortingChoice.allCases)
-    func preparedRowsMatchSynchronousModelAcrossSortingAndGrouping(_ choice: SortingChoice) throws {
+    func preparedRowsMatchSynchronousModelAcrossSortingAndGrouping(_ choice: SortingChoice) async throws {
         let s = try Scratch()
         let names = ["Z10.log", "Z2.log", "é.md", "E.txt", ".hidden", "backup~"]
         var items: [FileItem] = []
@@ -200,7 +294,7 @@ import Testing
         }
         let folder = try s.folder("folder")
         items.append(try #require(FileItem.load(folder)))
-        FinderTags.set(["Red"], on: s.path("Z2.log"))
+        try FinderTags.set(["Red"], on: s.path("Z2.log"))
         Settings.shared.sortingChoice = choice
         Settings.shared.hideBackupFiles = true
         for role in [ItemRole.name, .size, .extension_, .tags] {
@@ -215,6 +309,7 @@ import Testing
                 reference.props = props
                 reference.applyEdit(ListingEdit(folder: s.url, added: items))
                 reference.filter = NameFilter(text: "")
+                try #require(await eventually { !reference.isLoading })
                 let input = DirectoryModelPreparation(
                     items: items, incoming: [], children: [:], expanded: [], props: props, filter: reference.filter,
                     choice: choice, hideBackups: true, sizes: [:], knownTags: [:], ordered: nil)

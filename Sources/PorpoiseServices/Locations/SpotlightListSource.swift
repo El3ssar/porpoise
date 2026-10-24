@@ -10,7 +10,7 @@ final class SpotlightListSource: LocationContentSource {
     static let defaultStyle = ViewProperties.resultList(byName: true)
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
-        let found: ([FileItem]) -> Void = { deliver(LocationListing(items: $0)) }
+        let found = deliver
         let query: MetadataListQuery?
         if LocationKind.of(folder) == .smartFolder {
             query = MetadataListQuery.smartFolder(URL(fileURLWithPath: folder.path), done: found)

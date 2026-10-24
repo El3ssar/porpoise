@@ -50,7 +50,8 @@ public struct CloudProviderDescriptor: Sendable {
         let key = CatalogKey(
             store: ObjectIdentifier(Settings.store), dropbox: Settings.store.string(forKey: "dropboxAppKey"),
             oneDrive: Settings.store.string(forKey: "oneDriveClientID"), box: Settings.store.string(forKey: "boxClientID"),
-            boxSecret: Settings.store.string(forKey: "boxClientSecret"), testing: Settings.isTesting)
+            boxSecret: Settings.store.object(forKey: "boxClientSecret") != nil, secretRevision: BoxApplicationSecret.revision,
+            testing: Settings.isTesting)
         return catalogLock.withLock {
             if let cachedCatalog, cachedCatalog.key == key { return cachedCatalog.catalog }
             let catalog = catalog(dropbox: .selected(), oneDrive: .selected(), box: .selected())
@@ -63,7 +64,8 @@ public struct CloudProviderDescriptor: Sendable {
         var dropbox: String?
         var oneDrive: String?
         var box: String?
-        var boxSecret: String?
+        var boxSecret: Bool
+        var secretRevision: UInt64
         var testing: Bool
     }
     private static let catalogLock = NSLock()

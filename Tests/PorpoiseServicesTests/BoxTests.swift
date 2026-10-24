@@ -8,6 +8,17 @@ import Testing
 
 /// The engine checks Drive, Dropbox and OneDrive pass, against the fake Box server (scripts/fake-box-server.py).
 @Suite(.serialized) struct BoxTests {
+    @Test func userApplicationSecretLeavesPreferencesAfterSelection() throws {
+        let suite = "porpoise-box-migration-" + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(UUID().uuidString, forKey: "boxClientID")
+        defaults.set("fixture-secret", forKey: "boxClientSecret")
+        #expect(BoxConfiguration.selected(defaults: defaults, environment: [:]).clientSecret == "fixture-secret")
+        #expect(defaults.object(forKey: "boxClientSecret") == nil)
+        #expect(BoxConfiguration.selected(defaults: defaults, environment: [:]).clientSecret == "fixture-secret")
+    }
+
     @Test func opaqueLocationsNamesAndSHA1() throws {
         let id = UUID()
         let location = BoxLocation(accountID: id, itemID: "ID/opaque+%=😀é", kind: .file)

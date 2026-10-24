@@ -91,7 +91,7 @@ extension NameIndex {
             for w in words.dropFirst() { checks.append(.name(scratch.copy(w))) }
             if !query.extensions.isEmpty { checks.append(.ext(query.extensions.map { scratch.copy(Array($0.utf8)) })) }
             for p in query.paths where !p.isEmpty { checks.append(.map(scratch.pathMap(cols, Array(p.utf8), roots: rootPaths()), want: 1)) }
-            if let re = query.regex { checks.append(.map(scratch.regexMap(cols, re, cancelled: cancelled), want: 1)) }
+            if let re = query.regex { checks.append(.map(scratch.regexMap(cols, re, name: name, cancelled: cancelled), want: 1)) }
             if cancelled() { return [] }
 
             let chunks = max(1, min(n / 8192, ProcessInfo.processInfo.activeProcessorCount * 4))
@@ -299,12 +299,12 @@ struct SearchScratch {
             }
     }
 
-    /// 1 for entries whose folded name matches `re`: POSIX regexec on the name's bytes where the pattern allows (no
-    /// String per name), else NSRegularExpression.
-    mutating func regexMap(_ cols: Columns, _ re: NSRegularExpression, cancelled: () -> Bool) -> UnsafeMutablePointer<UInt8> {
+    /// Regular expressions match names as written. POSIX is used only for ASCII names and patterns;
+    /// Unicode names keep ICU case and character-class semantics.
+    mutating func regexMap(_ cols: Columns, _ re: NSRegularExpression, name: (Int) -> String, cancelled: () -> Bool) -> UnsafeMutablePointer<UInt8> {
         let m = map(cols.count)
         let n = cols.count, k = Self.chunks(n)
-        if let ere = Self.posixPattern(re.pattern) {
+        if re.pattern.utf8.allSatisfy({ $0 < 128 }), let ere = Self.posixPattern(re.pattern) {
             var compiled = regex_t()
             if regcomp(&compiled, ere, REG_EXTENDED | REG_ICASE | REG_NOSUB) == 0 {
                 defer { regfree(&compiled) }
@@ -312,8 +312,13 @@ struct SearchScratch {
                     DispatchQueue.concurrentPerform(iterations: k) { c in
                         if cancelled() { return }
                         for i in (n * c / k)..<(n * (c + 1) / k) {
-                            let p = cols.arena + Int(cols.starts[i])
-                            if p.withMemoryRebound(to: CChar.self, capacity: 1, { regexec(rp, $0, 0, nil, 0) }) == 0 { m[i] = 1 }
+                            if (i & 1023) == 0 && cancelled() { return }
+                            let s = name(i)
+                            let matches =
+                                s.utf8.allSatisfy { $0 < 128 }
+                                ? s.withCString { regexec(rp, $0, 0, nil, 0) == 0 }
+                                : re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil
+                            if matches { m[i] = 1 }
                         }
                     }
                 }
@@ -323,8 +328,7 @@ struct SearchScratch {
         DispatchQueue.concurrentPerform(iterations: k) { c in
             for i in (n * c / k)..<(n * (c + 1) / k) {
                 if (i & 1023) == 0 && cancelled() { return }
-                let (p, len) = cols.name(i)
-                let s = String(decoding: UnsafeBufferPointer(start: p, count: len), as: UTF8.self)
+                let s = name(i)
                 if re.firstMatch(in: s, range: NSRange(location: 0, length: s.utf16.count)) != nil { m[i] = 1 }
             }
         }

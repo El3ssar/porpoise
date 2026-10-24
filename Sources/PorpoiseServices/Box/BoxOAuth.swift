@@ -43,7 +43,7 @@ public struct BoxConfiguration: Sendable {
         let sources: [(String?, String?)] = [
             // The environment is for test instances only; the settings are the user's own app (Settings › Accounts).
             testing ? (TestEnvironment.boxClientID.value(in: environment), TestEnvironment.boxClientSecret.value(in: environment)) : (nil, nil),
-            (defaults.string(forKey: "boxClientID"), defaults.string(forKey: "boxClientSecret")),
+            (defaults.string(forKey: "boxClientID"), try? BoxApplicationSecret.read(defaults: defaults)),
             (bundle.object(forInfoDictionaryKey: "BoxClientID") as? String, bundle.object(forInfoDictionaryKey: "BoxClientSecret") as? String),
         ]
         guard let source = sources.first(where: { nonempty($0.0) != nil }) else { return Self(clientID: "", clientSecret: "") }

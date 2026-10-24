@@ -38,7 +38,7 @@ import Testing
         let s = try Scratch()
         let tagged = try s.file("Report.txt", "hello")
         let plain = try s.file("Notes.txt", "x")
-        FinderTags.set(["Red"], on: tagged)
+        try FinderTags.set(["Red"], on: tagged)
         let model = try await DirectoryModel.loaded(s.url) { m in
             m.props.mode = .details
             m.props.setRoles([.modificationTime, .extension_], for: .details)

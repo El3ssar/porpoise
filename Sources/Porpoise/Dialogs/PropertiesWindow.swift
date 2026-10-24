@@ -536,13 +536,15 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
     }
 
     private func toggleTag(_ tag: String) {
-        let all = urls.allSatisfy { FinderTags.read($0).contains { $0.name == tag } }
-        for u in urls {
-            var names = FinderTags.read(u).map(\.name).filter { $0 != tag }
-            if !all { names.append(tag) }
-            FinderTags.set(names, on: u)
+        let urls = urls
+        FinderTags.toggleAsync(tag, on: urls) { [weak self] failures in
+            FileOperationsController.notifyChanged(urls)
+            guard let self, let first = failures.first else { return }
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t change tags on \(FileFormat.itemCount(failures.count))."
+            alert.informativeText = first.message
+            alert.runSheet(for: self.window) { _ in }
         }
-        FileOperationsController.notifyChanged(urls)
     }
 
     @objc private func lockedChanged(_ b: NSButton) {

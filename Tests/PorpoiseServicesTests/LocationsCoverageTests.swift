@@ -258,7 +258,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             let resume = stallSpotlight()
             defer { resume() }
             var files: [FileItem]?
-            let q = RecentFilesQuery { files = $0 }
+            let q = RecentFilesQuery { files = $0.items }
             #expect(await eventually { files != nil })
             #expect(files?.isEmpty == true)
             _ = q

@@ -189,7 +189,14 @@ extension MainWindowController {
     /// Validation for editing commands that touch a cloud folder or cloud items; nil: not a cloud case. The menu item's
     /// tooltip says why it's disabled ("You have view-only access to “Q3”").
     func validateCloudItem(_ item: NSMenuItem) -> Bool? {
-        let cloudSelection = selectedURLs.filter(PlacesModel.isCloud)
+        guard let action = item.action,
+            [
+                #selector(renameItem(_:)), #selector(moveToTrash(_:)), #selector(deleteItem(_:)), #selector(cut(_:)),
+                #selector(copy(_:)), #selector(createFolder(_:)), #selector(createFile(_:)), #selector(createFromTemplate(_:)),
+                #selector(paste(_:)),
+            ].contains(action)
+        else { return nil }
+        let cloudSelection = view.model.selectedSnapshot.cloudURLs
         let inCloud = PlacesModel.isCloud(view.url)
         guard inCloud || !cloudSelection.isEmpty else { return nil }
         let accounts = CloudAccounts.shared
