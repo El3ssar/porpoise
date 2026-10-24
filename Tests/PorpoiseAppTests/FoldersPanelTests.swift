@@ -131,10 +131,12 @@ extension AppearanceLayoutTests {
         let rows = (0..<outline.numberOfRows).compactMap { url($0)?.lastPathComponent }
         #expect(rows == ["a", "b", "c", "sibling", "files"])
 
-        // A folder of files: the outline's callbacks answer at once (no listing in them), the triangle from a few entries.
+        // A folder of files: the outline's callbacks answer at once (no listing or probe in them); the triangle goes
+        // once a probe of its first entries, off the main thread, finds no folder.
         let node = try #require(
             (0..<outline.numberOfRows).lazy.compactMap { outline.item(atRow: $0) as? FoldersPanel.Node }.first { $0.url.path == files.path })
-        #expect(!outline.isExpandable(node))
+        _ = panel.outlineView(outline, isItemExpandable: node)
+        await expectEventually { node.knownExpandable == false && !outline.isExpandable(node) }
         let cold = FoldersPanel.Node(files)
         #expect(panel.outlineView(outline, numberOfChildrenOfItem: cold) == 0)
         #expect(cold.isLoading)

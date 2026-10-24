@@ -80,13 +80,23 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             return c
         }
 
-        /// Cheap check (first entries only, bounded before any full listing) unless the children are already known.
-        func isExpandable(showHidden: Bool) -> Bool {
-            if let c = children { return !c.isEmpty }
-            if let e = expandable { return e }
-            let e = !Self.subfolderNames(of: url, showHidden: showHidden, limit: FoldersPanel.expandabilityScanLimit, firstOnly: true).isEmpty
-            expandable = e
-            return e
+        /// Whether it has subfolders, if known yet: from its children, or from a probe (`probeExpandable`).
+        var knownExpandable: Bool? { children.map { !$0.isEmpty } ?? expandable }
+        /// A probe of its first entries is running.
+        private(set) var probing = false
+
+        func beginProbe() { probing = true }
+
+        /// What a probe found; dropped if the folder was invalidated meanwhile (it's probed again).
+        func finishProbe(_ e: Bool) {
+            guard probing else { return }
+            probing = false
+            if children == nil { expandable = e }
+        }
+
+        /// Cheap check (first entries only, bounded before any full listing). Safe off the main thread.
+        static func hasSubfolder(_ url: URL, showHidden: Bool) -> Bool {
+            !subfolderNames(of: url, showHidden: showHidden, limit: FoldersPanel.expandabilityScanLimit, firstOnly: true).isEmpty
         }
 
         /// Adds a hidden subfolder that the view is in (or under), so the tree can show the way there.
@@ -105,6 +115,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             staleChildren = children ?? staleChildren
             children = nil
             expandable = nil
+            probing = false
             listing = nil
         }
 
@@ -423,7 +434,26 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
     func outlineView(_ o: NSOutlineView, isItemExpandable item: Any) -> Bool {
         if let node = item as? RemoteFolderTree.Node { return node.isExpandable }
-        return (item as? Node)?.isExpandable(showHidden: showHidden) ?? false
+        guard let node = item as? Node else { return false }
+        if let e = node.knownExpandable { return e }
+        // Not known yet: probed on the listing queue (never here: a folder on a network share, or one whose first
+        // entries need a stat each, would hold the window); it shows a triangle meanwhile, gone if none is found.
+        probeExpandable(node)
+        return true
+    }
+
+    private func probeExpandable(_ node: Node) {
+        guard !node.probing else { return }
+        node.beginProbe()
+        let url = node.url, hidden = showHidden, tree = root
+        listingQueue.async {
+            let e = Node.hasSubfolder(url, showHidden: hidden)
+            DispatchQueue.main.async { [weak self, weak node] in
+                guard let self, let node, self.root === tree, self.remoteTree == nil, node.probing else { return }
+                node.finishProbe(e)
+                if !e, self.outline.row(forItem: node) >= 0 { self.outline.reloadItem(node) }
+            }
+        }
     }
 
     func outlineView(_ o: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {

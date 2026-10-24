@@ -57,4 +57,25 @@ import Testing
         panel.show(hovered: nil, container: pane)
         #expect(await eventually { text(in: panel).contains(s.url.lastPathComponent) })
     }
+
+    /// #13: the Folders panel's outline callbacks never read the disk: whether a folder has subfolders is probed on
+    /// its listing queue, the triangle shown until then.
+    @Test func theFoldersPanelProbesForSubfoldersOffTheMainThread() async throws {
+        let s = try Scratch()
+        try s.folder("Has/Sub")
+        try s.file("Plain/a.txt", "a")
+        let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
+        let has = FoldersPanel.Node(s.path("Has")), plain = FoldersPanel.Node(s.path("Plain"))
+        // Answered at once, nothing read yet.
+        #expect(panel.outlineView(outline, isItemExpandable: has) && panel.outlineView(outline, isItemExpandable: plain))
+        #expect(has.knownExpandable == nil && has.probing && plain.probing)
+        #expect(await eventually { has.knownExpandable == true && plain.knownExpandable == false })
+        #expect(panel.outlineView(outline, isItemExpandable: has) && !panel.outlineView(outline, isItemExpandable: plain))
+        // A folder that changed on disk is probed again.
+        try s.folder("Plain/New")
+        plain.invalidate()
+        _ = panel.outlineView(outline, isItemExpandable: plain)
+        #expect(await eventually { plain.knownExpandable == true })
+    }
 }
