@@ -241,7 +241,17 @@ import Testing
         let w = window(view)
         defer { w.close(); CustomToolRunner.shared.clearFinished() }
         let run = try await CustomToolRunner.shared.start(id: tool.id, context: CustomToolContext(folder: s.url, items: []))
-        try #require(await eventually { view.output.string.contains("line 2") })
+        // Its own row (the runner is shared: other tests' runs may be listed too).
+        func selectRun() {
+            if let i = CustomToolRunner.shared.runs.firstIndex(where: { $0 === run }), view.table.selectedRow != i {
+                view.table.selectRowIndexes(IndexSet(integer: i), byExtendingSelection: false)
+            }
+        }
+        selectRun()
+        try #require(
+            await eventually {
+                selectRun(); return view.output.string.contains("line 2")
+            })
         view.output.setSelectedRange(NSRange(location: 0, length: 6))
         try #require(await eventually { view.output.string.contains("line 5") })
         #expect(view.output.selectedRange() == NSRange(location: 0, length: 6))
