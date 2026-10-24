@@ -71,19 +71,25 @@ extension MainWindowController {
 
     static func tagNames(of url: URL) -> [String] { (try? url.resourceValues(forKeys: [.tagNamesKey]).tagNames) ?? [] }
 
+    private static let tagWriteQueue = DispatchQueue(label: "app.porpoise.tag-writes", qos: .userInitiated)
+
     /// Adds the tag to every selected item, or removes it if they all have it (Finder).
     func toggleTag(_ tag: String) {
         let urls = selectedURLs.filter(\.isFileURL)
         guard !urls.isEmpty else { return }
-        let all = urls.allSatisfy { Self.tagNames(of: $0).contains(tag) }
-        for u in urls {
-            var tags = Self.tagNames(of: u)
-            tags.removeAll { $0 == tag }
-            if !all { tags.append(tag) }
-            try? (u as NSURL).setResourceValue(tags, forKey: .tagNamesKey)
+        let target = view, folder = view.url
+        Self.tagWriteQueue.async {
+            let failures = FinderTags.toggle(tag, on: urls)
+            DispatchQueue.main.async { [weak target] in
+                guard let target, target.url == folder else { return }
+                target.model.refreshTags()
+                target.list.needsDisplay = true
+                if let first = failures.first {
+                    target.messageBar.show(
+                        "Couldn’t change tags on \(FileFormat.itemCount(failures.count)). \(first.message)", error: true)
+                }
+            }
         }
-        view.model.refreshTags()
-        view.list.needsDisplay = true
     }
 
     /// Download: iCloud Drive items download now; account items stay on this Mac until Remove Download.
