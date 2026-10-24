@@ -32,8 +32,10 @@ import Testing
         return item
     }
 
-    /// Column view shows one pane (no split): every other mode.
-    @Test(arguments: ViewMode.allCases.filter { $0 != .columns }) func togglingWithLeftActiveAndChangingFocus(mode: ViewMode) async throws {
+    /// W-248 (the operator's call): in a split, the Information panel (F10) sits at the window's right, right of both
+    /// panes, whichever is active; switching panes changes what it shows, never where it is. Column view shows one
+    /// pane (no split): every other mode.
+    @Test(arguments: ViewMode.allCases.filter { $0 != .columns }) func inASplitTheInformationPanelStaysAtTheRight(mode: ViewMode) async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { true }
@@ -54,55 +56,53 @@ import Testing
         }
         wc.focusLeftPane(nil)
         wc.window?.makeFirstResponder(wc.tab.primary.list)
-        let share = wc.tab.splitShare, rightFrame = right.frame
+        let share = wc.tab.splitShare
         let item = panelItem()
         wc.togglePanel(item)
-        #expect(wc.showInformation && wc.tab.informationPane === wc.tab.primary)
-        #expect(wc.hSplit.arrangedSubviews.first === wc.informationSpace && wc.tab.primary.superview === wc.tab)
-        #expect(right.frame == rightFrame && wc.tab.splitShare == share)
+        wc.window?.contentView?.layoutSubtreeIfNeeded()
+        #expect(wc.showInformation && wc.validateMenuItem(item) && item.state == .on)
+        #expect(wc.hSplit.arrangedSubviews.last === wc.information && wc.tab.primary.superview === wc.tab && right.superview === wc.tab)
+        #expect(wc.tab.splitShare == share)
         #expect(text(in: wc.information).contains("left.txt"))
-        #expect(wc.validateMenuItem(item) && item.state == .on)
-
         #expect(wc.window?.firstResponder === wc.tab.primary.list)
-        let leftInfo = wc.information.convert(wc.information.bounds, to: wc.tab)
-        #expect(leftInfo.maxX <= right.frame.minX)
+        // Right of both panes, at the window's right edge.
+        func panelFrame() -> CGRect { wc.information.convert(wc.information.bounds, to: nil) }
+        let atLeft = panelFrame()
+        let content = try #require(wc.window?.contentView?.bounds)
+        #expect(atLeft.minX >= right.convert(right.bounds, to: nil).maxX && abs(atLeft.maxX - content.maxX) < 1)
         wc.toolbar.layoutSubtreeIfNeeded()
         let ranges = wc.tab.paneRanges
-        let slot = wc.hSplit.convert(wc.hSplit.bounds, to: nil)
-        #expect(ranges[0] == slot.minX...slot.maxX)
-        #expect(abs(ranges[1].lowerBound - ranges[0].upperBound - SplitDividerView.lineWidth) < 0.5)
+        #expect(ranges.allSatisfy { $0.upperBound <= atLeft.minX })
+        // Each location bar starts over its pane; the left one ends there too (the right one may run on over the
+        // panel to the toolbar's own buttons, as with no split).
         for (index, navigator) in wc.tab.navigators.enumerated() {
             let frame = navigator.convert(navigator.bounds, to: nil)
-            #expect(frame.minX >= ranges[index].lowerBound && frame.maxX <= ranges[index].upperBound)
+            #expect(ranges[index].contains(frame.minX), "\(index) \(frame) \(ranges)")
+            if index == 0 { #expect(frame.maxX <= ranges[0].upperBound) }
         }
 
+        // The right pane active: the panel stays where it is, at once (no slide or fade), showing that pane's item.
         wc.focusRightPane(nil)
-        #expect(wc.tab.informationPane === right && right.superview === wc.tab)
+        #expect(panelFrame() == atLeft && wc.information.alphaValue == 1)
         #expect(text(in: wc.information).contains("right.txt"))
         #expect(wc.window?.firstResponder === right.list)
-        let rightInfo = wc.information.convert(wc.information.bounds, to: wc.tab)
-        #expect(rightInfo.minX >= wc.tab.primary.frame.maxX)
-        #expect(wc.validateMenuItem(item) && item.state == .on)
-
-        // Focus arriving from the file view (a click / Tab) takes the same ownership path as pane shortcuts.
+        // And back (from the file view: a click / Tab), the same.
         wc.window?.makeFirstResponder(wc.tab.primary.list)
-        #expect(wc.view === wc.tab.primary && wc.tab.informationPane === wc.tab.primary)
+        #expect(wc.view === wc.tab.primary && panelFrame() == atLeft && wc.information.alphaValue == 1)
         #expect(text(in: wc.information).contains("left.txt"))
         wc.focusRightPane(nil)
 
-        // An inactive pane's hover must not replace the highlighted pane's preview.
+        // An inactive pane's hover doesn't replace the active pane's item.
         NotificationCenter.default.post(name: .hoverChanged, object: wc.tab.primary, userInfo: ["url": leftFile])
         try await Task.sleep(for: .milliseconds(120))
         #expect(text(in: wc.information).contains("right.txt"))
-        let leftFrame = wc.tab.primary.frame
         wc.togglePanel(item)
-        #expect(!wc.showInformation && wc.tab.informationHost == nil)
-        #expect(wc.tab.primary.frame == leftFrame)
+        #expect(!wc.showInformation && wc.information.superview == nil)
         #expect(wc.validateMenuItem(item) && item.state == .off)
-
     }
 
-    @Test func rapidFocusChangesFinishTheInspectorHandoff() async throws {
+    /// Switching panes, with motion on, never animates the panel.
+    @Test func switchingPanesNeverMovesOrFadesThePanel() async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
@@ -112,16 +112,18 @@ import Testing
         defer { wc.window?.close() }
         wc.showInformation = true
         wc.rebuildPanels()
-        wc.focusRightPane(nil)
-        #expect(wc.informationMoveAnimator.isRunning && wc.informationGhost != nil)
-        wc.focusLeftPane(nil)
-        await expectEventually { !wc.informationMoveAnimator.isRunning }
-        #expect(wc.informationGhost == nil && wc.information.alphaValue == 1)
-        #expect(wc.tab.informationPane === wc.tab.primary)
+        wc.window?.contentView?.layoutSubtreeIfNeeded()
+        let frame = wc.information.convert(wc.information.bounds, to: nil)
+        for _ in 0..<3 {
+            wc.focusRightPane(nil)
+            #expect(wc.information.convert(wc.information.bounds, to: nil) == frame && wc.information.alphaValue == 1)
+            wc.focusLeftPane(nil)
+            #expect(wc.information.convert(wc.information.bounds, to: nil) == frame && wc.information.alphaValue == 1)
+        }
         #expect(wc.tab.containers.allSatisfy { $0.list.layoutWidthOverride == nil })
     }
 
-    @Test(arguments: [ViewMode.icons, .details]) func inspectorSurvivesAnimatedSplitChanges(mode: ViewMode) async throws {
+    @Test(arguments: [ViewMode.icons, .details]) func thePanelStaysAcrossAnimatedSplitChanges(mode: ViewMode) async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { false }
@@ -138,24 +140,20 @@ import Testing
         let probe = AttachmentProbe()
         wc.information.addSubview(probe)
         let window = wc.information.window
+        let frame = wc.information.convert(wc.information.bounds, to: nil)
         var attached = true
         var frames: [CGRect] = []
-        wc.toggleSplit(nil)
-        await expectEventually {
-            attached = attached && wc.information.window === window && wc.hSplit.superview === wc.tab
-            frames.append(wc.information.convert(wc.information.bounds, to: wc.tab))
-            return !wc.tab.isSliding && wc.tab.closing == nil
+        for _ in 0..<2 {
+            wc.toggleSplit(nil)
+            await expectEventually {
+                attached = attached && wc.information.window === window
+                frames.append(wc.information.convert(wc.information.bounds, to: nil))
+                return !wc.tab.isSliding && wc.tab.closing == nil
+            }
         }
-        #expect(wc.tab.informationPane === wc.view && wc.view === wc.tab.secondary)
-        wc.toggleSplit(nil)
-        await expectEventually {
-            attached = attached && wc.information.window === window && wc.hSplit.superview === wc.tab
-            frames.append(wc.information.convert(wc.information.bounds, to: wc.tab))
-            return !wc.tab.isSliding && wc.tab.closing == nil
-        }
-        #expect(wc.tab.informationPane === wc.view && wc.view === wc.tab.primary)
-        #expect(wc.view.list.layoutWidthOverride == nil)
-        #expect(attached && probe.detachments == 0 && Set(frames.map(\.minX)).count > 2)
+        #expect(wc.view === wc.tab.primary && wc.view.list.layoutWidthOverride == nil)
+        // Opening and closing a split happen beside it: it never moves.
+        #expect(attached && probe.detachments == 0 && frames.allSatisfy { $0 == frame })
     }
 
     @Test func inspectorLayoutPreservesScrollTypingHoverAndDetailsHeader() async throws {
@@ -283,7 +281,7 @@ import Testing
         #expect(wc.validateMenuItem(item) && item.state == .off && !wc.showInformation)
     }
 
-    @Test func inspectorFollowsTabsAndSurvivesClosingEitherSplit() async throws {
+    @Test func thePanelFollowsTabsAndSurvivesClosingEitherSplit() async throws {
         _ = NSApplication.shared
         let reduces = Animator.reducesMotion
         Animator.reducesMotion = { true }
@@ -295,16 +293,16 @@ import Testing
         wc.rebuildPanels()
         let original = wc.tab
         wc.addTab(url: scratch.url)
-        #expect(original.informationHost == nil && wc.tab.informationPane === wc.view)
+        #expect(wc.hSplit.arrangedSubviews.last === wc.information)
         wc.showTab(0)
-        #expect(wc.tab === original && original.informationPane === wc.view)
+        #expect(wc.tab === original && wc.hSplit.arrangedSubviews.last === wc.information)
         for secondary in [false, true] {
             if !wc.tab.isSplit { wc.toggleSplit(nil) }
             if secondary { wc.focusRightPane(nil) } else { wc.focusLeftPane(nil) }
             wc.tab.closeSplit(closeActive: true, animated: false)
             wc.syncToActiveView()
-            #expect(!wc.tab.isSplit && wc.tab.informationPane === wc.view)
-            #expect(wc.hSplit.arrangedSubviews.count == 2 && wc.view.superview === wc.tab)
+            #expect(!wc.tab.isSplit && wc.view.superview === wc.tab)
+            #expect(wc.hSplit.arrangedSubviews.count == 2 && wc.hSplit.arrangedSubviews.last === wc.information)
         }
     }
 }

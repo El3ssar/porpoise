@@ -19,14 +19,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     let centerColumn = CenterColumnView()
     let outer = ThinSplitView()  // [full-height sidebar, main column]
     let mainColumn = MainColumnView()
-    let vSplit = ThinSplitView()  // [center column, terminal]  (inside the main column)
-    let hSplit = ThinSplitView()  // [empty sizing space, information], behind the active pane
-    let informationSpace = NSView()
-    weak var informationTab: PorpoiseTab?
+    let vSplit = ThinSplitView()  // [hSplit, terminal]  (inside the main column)
+    /// [center column, information]: the Information panel sits at the window's right, beside both panes of a split,
+    /// and stays there whichever pane is active (the operator's call, W-248).
+    let hSplit = ThinSplitView()
     weak var lastSyncedView: ViewContainer?
-    let informationMoveAnimator = Animator(name: "information.focus")
-    var informationGhost: NSView?
-    var informationGlides: [ItemTransitions] = []
     let leftStack = ThinSplitView()  // [places, folders, shelf]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
@@ -437,7 +434,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     }
 
     func windowWillClose(_ notification: Notification) {
-        finishInformationMove()
         spacePreview?.close()
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
