@@ -99,6 +99,28 @@ public enum HostKeys {
         guard r.status == 0 else { throw RemoteError.failed("Could not remove the old key of \(name): \(r.err)") }
     }
 
+    /// Approve a changed key in isolation. A failed command never removes established trust.
+    static func replacing(
+        name: String, in file: String, fingerprint: String, approve: (String) throws -> Shell.Result
+    ) throws -> Shell.Result {
+        let original = URL(fileURLWithPath: file)
+        let before = try Data(contentsOf: original)
+        let temporary = original.deletingLastPathComponent().appendingPathComponent(".porpoise-known-hosts-\(UUID().uuidString)")
+        try FileManager.default.copyItem(at: original, to: temporary)
+        defer {
+            try? FileManager.default.removeItem(at: temporary)
+            try? FileManager.default.removeItem(atPath: temporary.path + ".old")
+        }
+        try remove(name: name, from: temporary.path)
+        let result = try approve(temporary.path)
+        guard result.status == 0 else { return result }
+        guard known(name: name, in: [temporary.path]).contains(where: { $0.fingerprint == fingerprint }),
+            try Data(contentsOf: original) == before
+        else { throw RemoteError.failed("The saved host keys changed during approval. Connect again to review them.") }
+        try Data(contentsOf: temporary).write(to: original, options: .atomic)
+        return result
+    }
+
     /// The ssh agent the app's ssh uses, and how many keys it holds.
     public enum Agent: Equatable, Sendable {
         case keys(Int)

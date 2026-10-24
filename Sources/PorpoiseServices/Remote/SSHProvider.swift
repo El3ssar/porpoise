@@ -11,7 +11,7 @@ final class SSHProvider: RemoteProvider {
     let user: String?
     let host: String
     let port: Int?
-    private let ssh = "/usr/bin/ssh"
+    private var ssh: String { isolation?.executable ?? "/usr/bin/ssh" }
 
     /// Exit status our scripts use for "the destination already exists".
     private static let existsStatus: Int32 = 3
@@ -30,6 +30,7 @@ final class SSHProvider: RemoteProvider {
         var options: [String]
         var controlDir: URL
         var askPass: String? = nil
+        var executable: String = "/usr/bin/ssh"
     }
     let isolation: Isolation?
     /// Where the connection's saved profile (jump hosts, key) is looked up.
@@ -161,17 +162,22 @@ final class SSHProvider: RemoteProvider {
         let command = ["--", target, "sh -c " + RemoteParsing.quote(script)]
         let r = try Shell.run(ssh, baseArgs + command, env: env, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
         guard r.status == ReconnectPolicy.sshErrorStatus, let change = HostKeyFingerprint.change(inSSHError: r.err) else { return r }
-        let name = HostKeyFingerprint.knownHostsName(host: host, port: port)
+        guard let name = HostKeys.effective(host: host, user: user, port: port, options: baseArgs)?.knownHostsName else {
+            throw RemoteError.failed("Could not resolve the server's host-key settings.")
+        }
         guard let file = change.knownHostsFile, Self.confirmChangedHostKey(name, change) else {
             throw RemoteError.failed("The key of \(name) has changed (now \(change.fingerprint)), and it wasn't accepted.")
         }
-        try HostKeys.remove(name: name, from: file)
         // Asked again, ssh takes the accepted fingerprint as the answer only if the key it's shown has exactly that one.
-        let approve = ["-o", "BatchMode=no", "-o", "StrictHostKeyChecking=ask"]
+        let approve = ["-o", "BatchMode=no", "-o", "StrictHostKeyChecking=ask", "-o", "ControlPath=none"]
         var approveEnv = env
         approveEnv[HostKeyFingerprint.answerVariable] = change.fingerprint
         if approveEnv["SSH_ASKPASS"] == nil { approveEnv["SSH_ASKPASS"] = AskPass.scriptPath; approveEnv["SSH_ASKPASS_REQUIRE"] = "force" }
-        return try Shell.run(ssh, approve + baseArgs + command, env: approveEnv, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
+        return try HostKeys.replacing(name: name, in: file, fingerprint: change.fingerprint) { temporary in
+            try Shell.run(
+                ssh, ["-o", "UserKnownHostsFile=\(temporary)"] + approve + baseArgs + command,
+                env: approveEnv, stdin: stdin, stdoutFile: stdoutFile, stdinFile: stdinFile)
+        }
     }
 
     private static func confirmChangedHostKey(_ name: String, _ change: HostKeyFingerprint.Change) -> Bool {
