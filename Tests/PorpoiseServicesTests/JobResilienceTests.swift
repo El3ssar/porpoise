@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
@@ -15,8 +14,7 @@ struct JobResilienceTests {
         let scratch = try Scratch("sleep-job")
         let source = try Self.largeFile(scratch.path("source"), bytes: 1_000_000_000)
         let destination = try scratch.folder("destination")
-        let center = NotificationCenter()
-        let monitor = JobEnvironmentMonitor(center: center, monitorsNetwork: false)
+        let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
         let operations = FileOperationsController()
         operations.environment = monitor
         operations.journals = JournalStore(folder: scratch.path("journals"))
@@ -51,14 +49,14 @@ struct JobResilienceTests {
         }
         let activity = try #require(operations.activities.first)
         #expect(offset > 0 && offset < 1_000_000_000 && !activity.state.isEnded)
-        center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        monitor.setSleeping(true)
         // Clear only the temporary worker pause: the monitor's sleep hold must now
         // keep it paused independently, before testing the user's own Pause below.
         activity.control.resume()
         #expect(activity.control.isPaused)
         #expect(activity.statusText.contains("Waiting for wake"))
         operations.pause(activity)
-        center.post(name: NSWorkspace.didWakeNotification, object: nil)
+        monitor.setSleeping(false)
         #expect(activity.control.isPaused && activity.state == .paused)
         operations.resume(activity)
         try #require(await eventually(120) { activity.state.isEnded })
@@ -69,7 +67,7 @@ struct JobResilienceTests {
     }
 
     @Test func networkHoldsOnlyRemoteJobsAndClearWithoutLosingManualPause() {
-        let monitor = JobEnvironmentMonitor(center: NotificationCenter(), monitorsNetwork: false)
+        let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
         let local = JobControl(), remote = JobControl()
         var notice: String?
         monitor.register(local, network: false) { _ in }
@@ -86,7 +84,7 @@ struct JobResilienceTests {
     @Test func cloudTasksUseTheSameNetworkHoldAndAsyncBudget() async throws {
         let scratch = try Scratch("cloud-policy")
         let local = try scratch.file("result", "verified")
-        let monitor = JobEnvironmentMonitor(center: NotificationCenter(), monitorsNetwork: false)
+        let monitor = JobEnvironmentMonitor(monitorsNetwork: false)
         monitor.setOnline(false)
         let operations = FileOperationsController()
         operations.environment = monitor
