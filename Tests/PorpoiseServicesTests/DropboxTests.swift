@@ -84,6 +84,18 @@ import Testing
         await client.changes.start(); await client.changes.start(); await client.changes.stop()
     }
 
+    @Test func sharedCollectionSurvivesChangeFeedRename() async throws {
+        let server = try FakeDropboxServer(); let client = try server.client()
+        let file = try await client.metadata("id:hello")
+        client.metadataCache.store([file], key: "collection:shared")
+        try await client.changes.check()
+        try await server.configure(["files": [["id": file.id, "path": "/renamed.txt", "text": "changed"]]])
+        try await client.changes.check()
+        let shared = try #require(client.metadataCache.snapshot("collection:shared"))
+        #expect(shared.files.map(\.id) == [file.id])
+        #expect(shared.files.first?.name == "renamed.txt")
+    }
+
     @Test func conditionalMutationsConflictAndUncertainNeverReplay() async throws {
         let server = try FakeDropboxServer(); let client = try server.client()
         let id = UUID(); let folder = try await client.createFolder(name: "café😀", operationID: id)

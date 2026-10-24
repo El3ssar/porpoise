@@ -51,7 +51,7 @@ private func dropboxChangePage(_ client: DropboxClient, cursor: String?) async t
                 changed, removed: Array(removed),
                 belongs: { key, file in
                     file.parentPath == (paths[key] ?? key.lowercased())
-                }, retainExisting: { $0 == "shared" }, since: since)
+                }, retainExisting: { $0 == "collection:shared" }, since: since)
             client.emit(CloudChangeBatch(changed: changed.map { client.contentSource.remoteItem($0) }, removed: actualRemoved))
         })
 }
