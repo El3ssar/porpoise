@@ -66,6 +66,28 @@ import Testing
         }
     }
 
+    /// At the window's narrowest, every page's rows still end inside the 20-pt margin: nothing is cut on the right.
+    @Test(.isolatedSettings) func everyPageFitsTheNarrowestWindow() throws {
+        let w = SettingsWindowController()
+        let window = try #require(w.window)
+        defer { window.close() }
+        let narrowest = window.contentMinSize.width
+        #expect(narrowest >= 560 && narrowest <= 760, "\(narrowest)")
+        for (page, scroll) in try scrolls(w) {
+            let doc = try #require(scroll.documentView)
+            scroll.frame = CGRect(x: 0, y: 0, width: narrowest, height: 580)
+            scroll.tile()
+            doc.layoutSubtreeIfNeeded()
+            #expect(doc.frame.width <= narrowest + 0.5, "\(page) is \(doc.frame.width) wide in a \(narrowest)-pt window")
+            for v in Self.views(in: doc) where !v.isHiddenOrHasHiddenAncestor && v.enclosingScrollView === scroll {
+                guard v is NSControl, let superview = v.superview else { continue }
+                let end = superview.convert(v.alignmentRect(forFrame: v.frame), to: doc).maxX
+                let name = (v as? NSButton)?.title ?? (v as? NSTextField)?.stringValue ?? "\(type(of: v))"
+                #expect(end <= narrowest - Tokens.Space.xl + 1, "\(page): \(name) ends at \(end) of \(narrowest)")
+            }
+        }
+    }
+
     /// A page longer than the window fades out at the bottom while more is below, and stops fading at the end.
     @Test(.isolatedSettings) func longPagesFadeAtTheBottomUntilScrolledToTheEnd() throws {
         let w = SettingsWindowController(page: "General")

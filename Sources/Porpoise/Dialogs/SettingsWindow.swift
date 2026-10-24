@@ -63,9 +63,11 @@ final class SettingsWindowController: SecondaryWindowController {
         // on a change of page).
         w.title = tabs.tabViewItems[safe: tabs.selectedTabViewItemIndex]?.label ?? "Settings"
         w.styleMask = [.titled, .closable, .resizable]
-        // Wide enough for every page's toolbar item (narrower hides the last ones behind a » menu).
-        w.setContentSize(NSSize(width: 760, height: 580))
-        w.contentMinSize = NSSize(width: 560, height: 420)
+        // Wide enough for every page's toolbar item (narrower hides the last ones behind a » menu), and never narrower
+        // than the widest page's rows: a check box's title doesn't wrap, so a narrower window would cut it.
+        let minWidth = Self.minimumWidth(builders)
+        w.setContentSize(NSSize(width: max(760, minWidth), height: 580))
+        w.contentMinSize = NSSize(width: minWidth, height: 420)
         w.isReleasedWhenClosed = false
         self.builders = builders
         super.init(window: w)
@@ -75,6 +77,13 @@ final class SettingsWindowController: SecondaryWindowController {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The narrowest width at which every page's rows fit inside its margins (at least 560). A page's fitting width
+    /// ends at its widest row (its leading-aligned rows don't pull on the trailing inset), so the margin is added.
+    static func minimumWidth(_ builders: [FormBuilder]) -> CGFloat {
+        let widest = builders.map { $0.view.fittingSize.width }.max() ?? 0
+        return min(1200, max(560, ceil(widest + Tokens.Space.xl)))
+    }
 
     /// Shows `page` (a current or an old page name) and scrolls its `section` heading to the top.
     func show(page: String, section: String? = nil) {
