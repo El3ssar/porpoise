@@ -10,12 +10,27 @@ public final class TransferStageJournal: @unchecked Sendable {
     struct Identity: Codable, Equatable, Sendable {
         let volume: String
         let inode: UInt64
-        init(_ url: URL) throws {
+        init(_ url: URL, volumeUUID: (URL) -> String?) throws {
             var info = stat()
             guard lstat(url.path, &info) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
             let volumeURL = info.st_mode & S_IFMT == S_IFLNK ? url.deletingLastPathComponent() : url
-            guard let uuid = try volumeURL.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString else { throw POSIXError(.ENOTSUP) }
-            volume = uuid; inode = info.st_ino
+            if let uuid = volumeUUID(volumeURL) {
+                volume = "uuid:" + uuid
+            } else {
+                var filesystem = statfs()
+                if statfs(volumeURL.path, &filesystem) == 0 {
+                    let from = withUnsafeBytes(of: filesystem.f_mntfromname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+                    let type = withUnsafeBytes(of: filesystem.f_fstypename) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+                    let mount = URL(string: from.hasPrefix("//") ? "mount:" + from : from)
+                    let safe = mount.map(RemoteFS.withoutPassword)?.absoluteString ?? from
+                    var hash = ChecksumHasher(.sha256)
+                    hash.update(Data(safe.utf8))
+                    volume = "mount:" + type + ":" + hash.finalize()
+                } else {
+                    volume = "device:\(info.st_dev)"
+                }
+            }
+            inode = info.st_ino
         }
     }
     struct Record: CloudJournalRecord {
@@ -38,10 +53,18 @@ public final class TransferStageJournal: @unchecked Sendable {
     }
     let store: CloudJournal<Record>
     private let lock = NSLock()
+    private let volumeUUID: @Sendable (URL) -> String?
     private var active: Set<UUID> = []
     private static let recoveryQueue = DispatchQueue(label: "porpoise.transfer-stage-recovery", qos: .utility)
 
-    public init(folder: URL) { store = CloudJournal(folder: folder) }
+    public convenience init(folder: URL) {
+        self.init(folder: folder, volumeUUID: { try? $0.resourceValues(forKeys: [.volumeUUIDStringKey]).volumeUUIDString })
+    }
+    init(folder: URL, volumeUUID: @escaping @Sendable (URL) -> String?) {
+        store = CloudJournal(folder: folder)
+        self.volumeUUID = volumeUUID
+    }
+    private func identity(_ url: URL) throws -> Identity { try Identity(url, volumeUUID: volumeUUID) }
 
     private func id(_ holding: URL) throws -> UUID {
         guard let id = UUID(uuidString: String(holding.lastPathComponent.suffix(36))) else { throw CloudJournalError.invalidRecord }
@@ -54,11 +77,11 @@ public final class TransferStageJournal: @unchecked Sendable {
             var record =
                 try store.load(id)
                 ?? Record(
-                    operationID: id, holding: holding, identity: Identity(holding), parentIdentity: Identity(holding.deletingLastPathComponent()))
-            guard try Identity(holding) == record.identity else { throw CloudJournalError.invalidRecord }
+                    operationID: id, holding: holding, identity: identity(holding), parentIdentity: identity(holding.deletingLastPathComponent()))
+            guard try identity(holding) == record.identity else { throw CloudJournalError.invalidRecord }
             record.source = source; record.target = target.map(RemoteFS.withoutPassword); record.verified = verified
-            if record.sourceIdentity == nil { record.sourceIdentity = try Identity(source) }
-            if verified, let target, target.isFileURL { record.targetIdentity = try Identity(target) }
+            if record.sourceIdentity == nil { record.sourceIdentity = try identity(source) }
+            if verified, let target, target.isFileURL { record.targetIdentity = try identity(target) }
             try saveActive(record)
         case .finished(let holding): try finish(holding)
         case .deleting(let holding):
@@ -72,7 +95,7 @@ public final class TransferStageJournal: @unchecked Sendable {
     func stage(_ holding: URL) throws {
         let id = try id(holding)
         try saveActive(
-            Record(operationID: id, holding: holding, identity: Identity(holding), parentIdentity: Identity(holding.deletingLastPathComponent())))
+            Record(operationID: id, holding: holding, identity: identity(holding), parentIdentity: identity(holding.deletingLastPathComponent())))
     }
     private func saveActive(_ record: Record) throws {
         let inserted = lock.withLock { active.insert(record.operationID).inserted }
@@ -111,24 +134,26 @@ public final class TransferStageJournal: @unchecked Sendable {
                 defer { _ = lock.withLock { active.remove(record.operationID) } }
                 do {
                     // An unmounted source volume must not look like an already removed holding folder.
-                    guard let parent = try? Identity(record.holding.deletingLastPathComponent()), parent.volume == record.parentIdentity.volume else {
+                    guard let parent = try? identity(record.holding.deletingLastPathComponent()), parent.volume == record.parentIdentity.volume else {
                         continue
                     }
                     guard parent == record.parentIdentity else {
                         throw CloudJournalError.invalidRecord
                     }
                     if !FileJob.itemExists(at: record.holding) { try finish(record.holding); continue }
-                    guard try Identity(record.holding) == record.identity, !record.preserved else { throw CloudJournalError.invalidRecord }
+                    guard try identity(record.holding) == record.identity, !record.preserved else { throw CloudJournalError.invalidRecord }
                     if let source = record.source {
                         let claimed = record.holding.appendingPathComponent(source.lastPathComponent)
                         if FileJob.itemExists(at: claimed) {
-                            guard try Identity(claimed) == record.sourceIdentity else { throw CloudJournalError.invalidRecord }
+                            guard try identity(claimed) == record.sourceIdentity else { throw CloudJournalError.invalidRecord }
                             if !record.verified {
                                 guard !record.deleting else { throw CloudJournalError.invalidRecord }
                                 try restore(claimed, to: source)
                             } else {
                                 do {
-                                    guard let target = record.target, let identity = record.targetIdentity, try Identity(target) == identity else {
+                                    guard let target = record.target, let expectedTarget = record.targetIdentity,
+                                        try identity(target) == expectedTarget
+                                    else {
                                         throw CloudJournalError.invalidRecord
                                     }
                                     let receipt = try LocalMoveRemovalReceipt(

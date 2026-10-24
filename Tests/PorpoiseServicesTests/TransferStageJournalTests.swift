@@ -8,6 +8,21 @@ import Testing
 @testable import PorpoiseServices
 
 struct TransferStageJournalTests {
+    @Test func missingVolumeUUIDKeepsMovesAndStagingRecoveryAvailable() throws {
+        let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"), volumeUUID: { _ in nil })
+        let source = try s.file("source", "bytes"), target = try s.file("target", "bytes")
+        let receipt = try LocalMoveRemovalReceipt(source: source, onCheckpoint: { try journal.checkpoint($0) })
+        try receipt.removeSource(afterVerifying: target)
+        #expect(!FileJob.itemExists(at: source) && s.read("target") == "bytes")
+        #expect(try journal.store.all().isEmpty)
+        let stage = try s.folder(".porpoise-transfer-" + UUID().uuidString)
+        try journal.stage(stage)
+        journal.release(stage)
+        let record = try #require(try journal.store.all().first)
+        #expect(record.identity.volume.hasPrefix("mount:") || record.identity.volume.hasPrefix("device:"))
+        let relaunched = TransferStageJournal(folder: s.path("journal"), volumeUUID: { _ in nil })
+        #expect(relaunched.recover().isEmpty && !FileJob.itemExists(at: stage))
+    }
     @Test func remoteTargetPasswordsNeverEnterRecoveryRecords() throws {
         let s = try Scratch(), journal = TransferStageJournal(folder: s.path("journal"))
         let source = try s.file("source", "bytes")
