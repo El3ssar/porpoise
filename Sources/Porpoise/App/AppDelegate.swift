@@ -1,6 +1,7 @@
 import AppKit
 import PorpoiseCore
 import PorpoiseServices
+import QuartzCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let shared = AppDelegate()
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var skippedRestore = false
     private var settingsWindow: SettingsWindowController?
     private var lookObservation: NSKeyValueObservation?
+    private var drewInitialWindow = false
     /// Set while a session is being reopened: still set at the next launch, reopening it crashed or hung, and that launch
     /// opens the home folder instead of trying again.
     static let restoringKey = "session.restoring"
@@ -277,6 +279,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         #endif
         wc.showWindow(nil)
         wc.window?.makeKeyAndOrderFront(nil)
+        guard !drewInitialWindow else { return }
+        drewInitialWindow = true
+        // Present the browser before next-turn Git discovery or background decoding of optional custom tools.
+        wc.window?.contentView?.layoutSubtreeIfNeeded()
+        wc.window?.contentView?.displayIfNeeded()
+        CATransaction.flush()
+        DispatchQueue.main.async { Settings.shared.prepareCustomToolsAfterFirstWindow() }
     }
 
     #if PORPOISE_TEST_HOOKS

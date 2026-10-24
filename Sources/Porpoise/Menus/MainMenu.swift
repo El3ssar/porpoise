@@ -218,7 +218,7 @@ extension AppDelegate {
         tools.addItem(mi("Remove App and Leftovers…", #selector(W.removeAppAndLeftovers(_:)), icon: "trash-empty"))
         tools.addItem(mi("Empty Trash", #selector(W.emptyTrash(_:)), K.backspace, [.command, .shift], icon: "trash-empty"))
         tools.addItem(.separator())
-        for tool in Settings.shared.customTools {
+        for tool in Settings.shared.customToolsIfLoaded {
             let item = NSMenuItem(title: tool.name, action: #selector(W.runCustomTool(_:)), keyEquivalent: tool.shortcut.normalized.key)
             item.keyEquivalentModifierMask = tool.shortcut.normalized.modifiers.appKit
             item.representedObject = tool.id.uuidString

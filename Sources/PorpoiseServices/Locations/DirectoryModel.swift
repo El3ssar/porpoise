@@ -35,6 +35,7 @@ public final class DirectoryModel {
     private var gitObservation: GitStatusObservation?
     private var gitLocation: URL?
     private var gitHasDelivered = false
+    private var gitObservationGeneration: UInt64 = 0
     public static let gitStatusChanged = Notification.Name("PorpoiseGitStatusChanged")
     public private(set) var gitStatus: GitFolderStatus?
 
@@ -44,11 +45,18 @@ public final class DirectoryModel {
         guard next != gitLocation else { return }
         gitObservation?.cancel(); gitObservation = nil
         gitLocation = next; gitStatus = nil; gitHasDelivered = false
+        gitObservationGeneration &+= 1
         guard let next else { return }
-        gitObservation = GitStatusService.shared.observe(next) { [weak self] status in
-            guard let self, self.gitLocation == next else { return }
-            self.gitStatus = status; self.gitHasDelivered = true
-            NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
+        let generation = gitObservationGeneration
+        // Window construction lists its models synchronously; the app draws that window before this next main turn.
+        // Re-evaluate generation so a navigation or a Settings change never discovers a stale repository.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.gitObservationGeneration == generation else { return }
+            self.gitObservation = GitStatusService.shared.observe(next) { [weak self] status in
+                guard let self, self.gitObservationGeneration == generation else { return }
+                self.gitStatus = status; self.gitHasDelivered = true
+                NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
+            }
         }
     }
     private var incomingItems: [FileItem] = []
