@@ -33,6 +33,23 @@ import Testing
         #expect(provider.fullPaints.value == 0 && provider.downloadCalls.value == 0)
     }
 
+    @Test func remoteFolderPreviewDoesNotMaterializeItsChildren() throws {
+        _ = NSApplication.shared
+        let scratch = try Scratch()
+        let local = try scratch.file("unused.swift", "let unused = 1")
+        let root = URL(string: "gdrive://\(UUID().uuidString)/my-drive")!
+        let provider = PreviewProvider(prefix: local, full: local)
+        RemoteFS.registerCloud(provider, for: root)
+        defer { RemoteFS.registerCloud(nil, for: root) }
+        let parent = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        parent.isReleasedWhenClosed = false
+        let panel = SpacePreviewPanel()
+        defer { panel.close(); parent.close() }
+        panel.show([FileItem(url: root.appendingPathComponent("folder"), name: "folder", isDirectory: true)], relativeTo: parent)
+        #expect(panel.state == "folder")
+        #expect(provider.progressiveCalls.value == 0 && provider.downloadCalls.value == 0 && provider.playbackCalls.value == 0)
+    }
+
     @Test func failedAutomaticRemoteTextRestoresTheIcon() async throws {
         _ = NSApplication.shared
         Settings.shared.previewRemote = true

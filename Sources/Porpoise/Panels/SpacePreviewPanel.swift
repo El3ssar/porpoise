@@ -11,6 +11,7 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
     private let body = NSView()
     private var quickLook: QLPreviewView?
     private let video = AVPlayerView()
+    private let folderIcon = NSImageView()
     private let playback = CloudPlaybackSession()
     private let status = NSTextField(labelWithString: "")
     private let heading = NSTextField(labelWithString: "")
@@ -59,7 +60,10 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
         status.alignment = .center
         status.textColor = .secondaryLabelColor
         [heading, indexLabel, previous, next, openWith, share, fullScreen].forEach(material.addSubview)
-        [code, video, status].forEach(body.addSubview)
+        [code, video, folderIcon, status].forEach(body.addSubview)
+        folderIcon.imageScaling = .scaleProportionallyDown
+        folderIcon.setAccessibilityLabel("Folder preview")
+        folderIcon.isHidden = true
         video.controlsStyle = .floating
         code.isHidden = true; video.isHidden = true
         for (button, action) in [
@@ -171,6 +175,7 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
         task?.cancel(); task = nil
         code.cancel(); code.isHidden = true
         playback.stop(); video.player = nil; video.isHidden = true
+        folderIcon.image = nil; folderIcon.isHidden = true
         quickLook?.previewItem = nil; quickLook?.close(); quickLook?.removeFromSuperview(); quickLook = nil
         currentLocal = nil
         if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
@@ -184,9 +189,16 @@ final class SpacePreviewPanel: NSPanel, NSWindowDelegate, MaterialBackedWindow {
         indexLabel.stringValue = "\(itemIndex + 1) of \(items.count)"
         previous.isEnabled = itemIndex > 0; next.isEnabled = itemIndex + 1 < items.count
         share.isEnabled = SharingPreparation.supports([item.url])
+        openWith.isEnabled = item.url.isFileURL || !item.isDirectory
         status.stringValue = "Loading preview…"; status.isHidden = false
         state = "loading"
         let id = generation
+        // A folder preview must not recursively download/extract its children just to show an icon.
+        if item.isDirectory, !item.url.isFileURL {
+            folderIcon.image = Icons.shared.image("folder", size: 128)
+            folderIcon.isHidden = false; status.isHidden = true; state = "folder"
+            return
+        }
         if let cloud = RemoteFS.provider(for: item.url) as? CloudFileProvider, item.utType?.conforms(to: .audiovisualContent) == true {
             video.isHidden = false
             playback.onPlayer = { [weak self] player, _ in
