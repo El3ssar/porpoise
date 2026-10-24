@@ -151,7 +151,17 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
                     kind, at: dst, in: folder, linkTarget: (targetField.stringValue as NSString).expandingTildeInPath, contents: tempFile)
                 let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: commands, window: window)
                 if let t = tempFile { try? FileManager.default.removeItem(at: t) }  // also when the prompt was cancelled
-                if ok { done(dst) }
+                // `mv -n` leaves an item that appeared under the name meanwhile: then nothing was created, say so.
+                if ok, ![.folder, .link].contains(kind), (try? Data(contentsOf: dst)) != data {
+                    DispatchQueue.main.async {
+                        let a = NSAlert()
+                        a.messageText = "An item named “\(dst.lastPathComponent)” appeared in the folder meanwhile."
+                        a.informativeText = "Nothing was replaced, and no new item was created."
+                        a.runSheet(for: window) { _ in }
+                    }
+                } else if ok {
+                    done(dst)
+                }
             } catch {
                 // After the sheet has gone, or the error sheet could not attach.
                 DispatchQueue.main.async { NSAlert(error: error).runSheet(for: window) { _ in } }

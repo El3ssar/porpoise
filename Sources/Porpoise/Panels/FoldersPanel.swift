@@ -463,7 +463,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         guard !node.isLoading else { return }
         let token = node.beginListing()
         let url = node.url, hidden = showHidden, tree = root
-        listingQueue.async {
+        listingQueue.async { [weak self, weak node] in
             let names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
             DispatchQueue.main.async { [weak self, weak node] in
                 guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
