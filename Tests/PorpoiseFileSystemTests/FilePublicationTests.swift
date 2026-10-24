@@ -32,8 +32,6 @@ struct FilePublicationTests {
         let file = try s.file("file", "first")
         let tree = try s.folder("tree")
         let child = try s.file("tree/sub/child", "tree bytes")
-        try s.file("tree/ordinary", "ordinary bytes")
-        try s.file("tree/._ordinary", "user sidecar bytes")
         let metadata = Data("metadata".utf8)
         for url in [tree, child] {
             #expect(metadata.withUnsafeBytes { setxattr(url.path, "com.porpoise.test", $0.baseAddress, metadata.count, 0, XATTR_NOFOLLOW) } == 0)
@@ -66,9 +64,25 @@ struct FilePublicationTests {
             #expect(count == metadata.count)
             if count >= 0 { #expect(Data(bytes.prefix(count)) == metadata) }
         }
-        #expect(try Set(CopyVerification.directoryNames(destination.appendingPathComponent("tree").path)) == ["sub", "ordinary", "._ordinary"])
-        #expect(s.read("returned/tree/._ordinary") == "user sidecar bytes")
+        #expect(try CopyVerification.directoryNames(destination.appendingPathComponent("tree").path) == ["sub"])
         #expect(try CopyVerification.directoryNames(destination.appendingPathComponent("tree/sub").path) == ["child"])
+    }
+
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
+    func malformedSourceSidecarsRetainTheOriginalWhenCopyfileOmitsThem(_ fileSystem: String) throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPPUB", megabytes: 64, fileSystem: fileSystem, in: s)
+        let source = disk.volume.appendingPathComponent("tree"), sidecar = source.appendingPathComponent("._ordinary")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
+        try Data("ordinary bytes".utf8).write(to: source.appendingPathComponent("ordinary"))
+        try Data("user sidecar bytes".utf8).write(to: sidecar)
+        let destination = try s.folder("dst")
+        let job = FileJob(kind: .move, sources: [source], destinationFolder: destination)
+        _ = try job.run()
+        // The system recursive copier omits these names. They remain real manifest entries, so the
+        // failed verification must preserve the complete original rather than discard user bytes.
+        #expect(job.errors.contains { $0.contains("source retained") })
+        #expect(try String(contentsOf: sidecar, encoding: .utf8) == "user sidecar bytes")
+        #expect(try String(contentsOf: source.appendingPathComponent("ordinary"), encoding: .utf8) == "ordinary bytes")
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"], [false, true])
