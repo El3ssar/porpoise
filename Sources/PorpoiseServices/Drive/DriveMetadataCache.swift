@@ -11,9 +11,10 @@ public final class DriveMetadataCache: @unchecked Sendable {
     public init(accountID: UUID, directory: URL? = nil) {
         self.directory = directory ?? Self.root.appendingPathComponent(accountID.uuidString)
         storage = CloudMetadataCache(directory: self.directory)
+        storage.trackFreshMetadata()
     }
     static var root: URL { Settings.supportFolder.appendingPathComponent("Drive") }
-    private func key(_ location: DriveLocation) -> String {
+    func key(_ location: DriveLocation) -> String {
         switch location.collection {
         case .myDrive: return "root"
         case .sharedWithMe: return "shared"

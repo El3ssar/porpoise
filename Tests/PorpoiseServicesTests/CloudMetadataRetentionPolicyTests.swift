@@ -168,6 +168,23 @@ struct CloudMetadataRetentionPolicyTests {
         #expect(policy.prune(to: limits) == .init(files: ["folder", "child"], listings: ["/pinned"]))
     }
 
+    @Test func shortcutDependenciesKeepTheirContextWithoutPinningTheirChildren() {
+        var policy = Policy()
+        policy.putFile("root", bytes: 10)
+        policy.putFile("outside", parents: ["root"], bytes: 10)
+        policy.putFile("target", parents: ["outside"], bytes: 10)
+        policy.putFile("folder", parents: ["root"], bytes: 10)
+        policy.putFile("shortcut", parents: ["folder"], dependencies: ["target"], bytes: 10)
+        policy.putFile("target-child", parents: ["target"], bytes: 10)
+        policy.setOwner("offline", .init(subtrees: ["folder"]))
+        #expect(policy.prune(to: .init(files: 0, listings: 0, bytes: 0)) == .init(files: ["target-child"]))
+        #expect(policy.accounting.protectedFiles == 5)
+        policy.setOwner("offline", nil)
+        policy.putListing("folder", items: ["shortcut"], context: ["folder"], bytes: 10)
+        policy.putFile("ordinary", bytes: 10)
+        #expect(policy.prune(to: .init(files: 5, listings: 1, bytes: 100)) == .init(files: ["ordinary"]))
+    }
+
     private final class Item {
         let payload = String(repeating: "x", count: 256)
         let live: Locked<Int>

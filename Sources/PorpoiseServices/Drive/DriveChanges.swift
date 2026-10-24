@@ -114,10 +114,6 @@ private func driveChangePage(_ client: DriveClient, scope: String, cursor: Strin
                 // A change made here after this page was asked for is newer than what the page says.
                 let files = client.metadataCache.learn(changes.compactMap(\.file).filter { !removed.contains($0.id) }, since: since)
                 let actualRemoved = client.metadataCache.apply(files, removed: removed, since: since)
-                client.lock.withLock {
-                    for id in actualRemoved { client.cache[id] = nil };
-                    for file in files where !actualRemoved.contains(file.id) { client.cache[file.id] = file }
-                }
                 let source = client.contentSource
                 client.emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: actualRemoved))
                 (RemoteFS.provider(for: DriveLocation(accountID: client.accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
@@ -156,10 +152,6 @@ private func driveResetBaseline(_ client: DriveClient, scope: String, token: Str
     try Task.checkCancellation()
     let ids = Set(files.map(\.id)), learned = client.metadataCache.learn(files, since: since)
     let removed = client.metadataCache.apply(learned, removed: previous.filter { !ids.contains($0.id) }.map(\.id), since: since)
-    client.lock.withLock {
-        for id in removed { client.cache[id] = nil }
-        for file in learned { client.cache[file.id] = file }
-    }
     client.metadataCache.invalidateScope(scope)
     client.emitContentChanges(.init(changed: learned.map(client.contentSource.remoteItem), removed: removed, reset: true))
     client.metadataCache.setCursor(token, scope: scope)

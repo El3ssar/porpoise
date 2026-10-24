@@ -35,6 +35,7 @@ struct CloudMetadataRetention {
     private struct File {
         var aliases: Set<String>
         var parents: Set<String>
+        var dependencies: Set<String>
         var bytes: Int
         var used: UInt64
     }
@@ -49,10 +50,10 @@ struct CloudMetadataRetention {
     private var owners: [String: Owner] = [:]
     private var clock: UInt64 = 0
 
-    mutating func putFile(_ id: String, aliases: Set<String> = [], parents: Set<String> = [], bytes: Int) {
+    mutating func putFile(_ id: String, aliases: Set<String> = [], parents: Set<String> = [], dependencies: Set<String> = [], bytes: Int) {
         precondition(bytes >= 0)
         clock &+= 1
-        files[id] = File(aliases: aliases, parents: parents, bytes: bytes, used: clock)
+        files[id] = File(aliases: aliases, parents: parents, dependencies: dependencies, bytes: bytes, used: clock)
     }
     /// Canonical IDs referenced by a complete snapshot, plus its container or other required context.
     mutating func putListing(_ key: String, items: Set<String>, context: Set<String> = [], bytes: Int) {
@@ -108,8 +109,9 @@ struct CloudMetadataRetention {
             protected.formUnion(listing.items.flatMap(resolve))
         }
         // Ancestors survive too, including chains through aliases and cyclic provider metadata.
-        protected = Self.ancestors(of: protected, parents: parents)
-        return (protected.intersection(files.keys), ownedListings, parents, canonical, canonical.values.filter { $0.count > 1 }.count)
+        let context = files.mapValues { Set($0.parents.union($0.dependencies).flatMap(resolve)) }
+        protected = Self.ancestors(of: protected, parents: context)
+        return (protected.intersection(files.keys), ownedListings, context, canonical, canonical.values.filter { $0.count > 1 }.count)
     }
 
     private static func ancestors(of items: Set<String>, parents: [String: Set<String>]) -> Set<String> {

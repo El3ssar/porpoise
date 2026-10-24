@@ -203,4 +203,44 @@ struct CloudMetadataCacheRetentionTests {
         await cache.settleRetention()
         #expect(cache.file("a") == nil && cache.retentionAccounting?.ordinaryBytes == 0)
     }
+
+    private final class Rows {
+        let onRelease: () -> Void
+        init(_ onRelease: @escaping () -> Void) { self.onRelease = onRelease }
+        deinit { onRelease() }
+    }
+    @Test func snapshotAttachedRowsAreReleasedOutsideTheReaderLock() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch), released = Flag()
+        cache.enableRetention(configuration())
+        let owner = cache.retainMetadata(.init(listings: ["folder"]))
+        weak var weakRows: Rows?
+        do {
+            let rows = Rows {
+                _ = cache.file("a"); released.set()
+            }
+            weakRows = rows
+            cache.store([Item("a")], key: "folder", since: nil, snapshotValue: ("rows", rows))
+        }
+        await cache.settleRetention()
+        #expect(weakRows != nil)
+        owner.release()
+        await cache.settleRetention()
+        #expect(weakRows == nil && released.isSet)
+        let rows: Rows? = cache.snapshotValue("folder", name: "rows")
+        #expect(rows == nil && cache.file("a") == nil)
+    }
+
+    @Test func freshnessMarkersDistinguishDiskMetadataAndEvictWithTheirRecords() async throws {
+        let scratch = try Scratch(), cache = await cache(scratch)
+        cache.remember([Item("a")])
+        await offThePool { cache.flush() }
+        let reopened = await offThePool { CloudMetadataCache<Item>(directory: scratch.url) }
+        reopened.trackFreshMetadata()
+        #expect(reopened.file("a") != nil && reopened.recentFile("a") == nil)
+        reopened.remember([Item("a", name: "new")])
+        #expect(reopened.recentFile("a")?.name == "new")
+        reopened.enableRetention(configuration())
+        await reopened.settleRetention()
+        #expect(reopened.file("a") == nil && reopened.retentionStorageCounts.fresh == 0)
+    }
 }
