@@ -41,7 +41,10 @@ extension MainWindowController: NSMenuItemValidation {
                     if submenu !== NSApp.servicesMenu, let found = find(submenu) { return found }
                     continue
                 }
+                // fn (Globe) counts too: AppKit's own Emoji & Symbols (fn E) and Enter Full Screen (fn F) would
+                // otherwise take every plain e and f typed.
                 if item.action != nil, item.keyEquivalentModifierMask.intersection([.command, .shift, .option, .control]) == mods,
+                    !item.keyEquivalentModifierMask.contains(.function) || event.modifierFlags.contains(.function),
                     KeyEquivalent.matches(item.keyEquivalent, typed: event.charactersIgnoringModifiers)
                 {
                     return item

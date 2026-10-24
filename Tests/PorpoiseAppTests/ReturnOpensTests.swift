@@ -180,4 +180,48 @@ import Testing
         #expect(shown)
         for w in NSApp.windows where !before.contains(ObjectIdentifier(w)) && w is PropertiesPanel { w.close() }
     }
+
+    /// fn (Globe) items, as AppKit adds them (Emoji & Symbols fn E, Enter Full Screen fn F), take only fn presses: a plain e or f
+    /// typed in the files or a field is just a letter.
+    @Test(arguments: [ShortcutKeySet.mac, .dolphin]) func plainLettersNeverRunGlobeKeyItems(_ keySet: ShortcutKeySet) async throws {
+        let previous = NSApplication.shared.mainMenu
+        defer { NSApp.mainMenu = previous }
+        let s = try Scratch()
+        _ = try s.file("a.txt", "a")
+        _ = try s.folder("Inner")
+        let b = try await browser(s, keySet, .icons, .single)
+        defer { b.window.close() }
+        let menu = try #require(NSApp.mainMenu?.items.first(where: { $0.submenu != nil })?.submenu)
+        let globe = [("e", #selector(NSApplication.orderFrontCharacterPalette(_:))), ("f", #selector(NSWindow.toggleFullScreen(_:)))].map {
+            let item = NSMenuItem(title: "Globe \($0.0)", action: $0.1, keyEquivalent: $0.0)
+            item.keyEquivalentModifierMask = .function
+            menu.addItem(item)
+            return item
+        }
+        defer { globe.forEach(menu.removeItem) }
+        var ran: [Selector] = []
+        let send = MainWindowController.sendMenuAction
+        defer { MainWindowController.sendMenuAction = send }
+        MainWindowController.sendMenuAction = { action, _, _ in
+            ran.append(action); return true
+        }
+        #expect(b.window.makeFirstResponder(b.wc.view.list))
+        for (code, letter) in [(UInt16(14), "e"), (3, "f")] {
+            let plain = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: b.window.windowNumber, context: nil, characters: letter, charactersIgnoringModifiers: letter,
+                    isARepeat: false, keyCode: code))
+            #expect(!globe.contains { $0 === MainWindowController.menuItem(for: plain) }, "plain \(letter)")
+            try press(code, letter, in: b.window)
+            let withGlobe = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: .function, timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: b.window.windowNumber, context: nil, characters: letter, charactersIgnoringModifiers: letter,
+                    isARepeat: false, keyCode: code))
+            #expect(globe.contains { $0 === MainWindowController.menuItem(for: withGlobe) }, "fn \(letter)")
+        }
+        let globeActions = globe.compactMap(\.action)
+        #expect(!ran.contains { globeActions.contains($0) }, "\(ran)")
+    }
 }
