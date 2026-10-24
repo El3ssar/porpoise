@@ -229,6 +229,14 @@ import Testing
         try FileManager.default.linkItem(at: target, to: other)
         try FileDiffWindow.write("both", to: target)
         #expect(s.read("other.txt") == "both" && s.read("target.txt") == "both")
+        // A plain file keeps its tags and other extended attributes (review: the atomic write dropped them).
+        let plain = try s.file("plain.txt", "old")
+        let value = Data("kept".utf8)
+        try #require(value.withUnsafeBytes { setxattr(plain.path, "com.example.porpoise", $0.baseAddress, value.count, 0, 0) } == 0)
+        try FileDiffWindow.write("new", to: plain)
+        var buffer = [UInt8](repeating: 0, count: 16)
+        let n = getxattr(plain.path, "com.example.porpoise", &buffer, buffer.count, 0, 0)
+        #expect(s.read("plain.txt") == "new" && n == value.count && Data(buffer.prefix(max(0, n))) == value)
     }
 
     /// #14: a running tool's output grows in place: what was selected stays selected (to copy it).

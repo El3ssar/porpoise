@@ -266,7 +266,8 @@ import Testing
                 .first { FilePath.canonical($0.url.path) == FilePath.canonical(url.path) }
         }
         try #require(await eventually { node(here) != nil })
-        outline.expandItem(try #require(node(here)))
+        let hereNode = try #require(node(here))
+        outline.expandItem(hereNode)
         try #require(await eventually { node(s.path("Here/Old")) != nil })
         try FileManager.default.createDirectory(at: s.path("Here/New"), withIntermediateDirectories: false)
         #expect(await eventually { node(s.path("Here/New")) != nil })

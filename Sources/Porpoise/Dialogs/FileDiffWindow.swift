@@ -467,9 +467,10 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
     @objc func redoFileOperation(_ sender: Any?) { undo.redo() }
     @objc func saveDocument(_ sender: Any?) { save(completion: nil) }
 
-    /// Saves `text` where `url` really is: through a symlink to its target (the link stays a link), and in place for
-    /// a file with more than one name (a replacement would leave the other names on the old contents). Otherwise
-    /// atomically, as editors save.
+    /// Saves `text` where `url` really is: through a symlink to its target (the link stays a link). A file with more
+    /// than one name is written in place, so every name sees it (a crash mid-write would leave it short: the price
+    /// of keeping its other names). Otherwise written beside it and swapped in with `replaceItemAt`, which keeps
+    /// the file's tags, comments, other extended attributes and ACL, as editors' safe-save does.
     static func write(_ text: String, to url: URL) throws {
         let target = url.resolvingSymlinksInPath()
         var st = stat()
@@ -478,10 +479,16 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
             defer { try? h.close() }
             try h.truncate(atOffset: 0)
             try h.write(contentsOf: Data(text.utf8))
-        } else {
-            try text.write(to: target, atomically: true, encoding: .utf8)
+            return
         }
+        guard FileManager.default.fileExists(atPath: target.path) else { return try text.write(to: target, atomically: true, encoding: .utf8) }
+        let scratch = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let staged = scratch.appendingPathComponent(target.lastPathComponent)
+        try text.write(to: staged, atomically: false, encoding: .utf8)
+        _ = try FileManager.default.replaceItemAt(target, withItemAt: staged)
     }
+
     private func save(completion: (() -> Void)?, failed: (() -> Void)? = nil) {
         guard !busy, !readOnly else { failed?(); return }
         let a = leftText, b = rightText, sa = savedLeft, sb = savedRight, left = leftURL, right = rightURL
