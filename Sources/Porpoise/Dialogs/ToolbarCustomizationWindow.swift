@@ -69,6 +69,8 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         window.title = "Customize Toolbar"; window.isReleasedWhenClosed = false
         // The heading names it; the title stays for the Window menu but isn't drawn twice.
         window.titleVisibility = .hidden
+        // Labels under the items, as in the palette, so each action is named.
+        window.toolbarStyle = .expanded
         super.init(window: window); window.delegate = self
         toolbar.delegate = self; toolbar.allowsUserCustomization = true; toolbar.autosavesConfiguration = false
         toolbar.allowsDisplayModeCustomization = false; toolbar.displayMode = .iconAndLabel
