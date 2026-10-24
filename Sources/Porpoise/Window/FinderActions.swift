@@ -39,11 +39,7 @@ extension MainWindowController {
         window?.makeFirstResponder(view.list)
     }
 
-    @objc func goAirDrop(_ sender: Any?) {
-        let airdrop = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app/Contents/Applications/AirDrop.app")
-        let files = selection.map(\.url).filter(\.isFileURL)
-        if !files.isEmpty, let s = NSSharingService(named: .sendViaAirDrop) { s.perform(withItems: files) } else { NSWorkspace.shared.open(airdrop) }
-    }
+    @objc func goAirDrop(_ sender: Any?) { SharingCoordinator.browseAirDrop() }
 
     /// Finder's Go to Folder (⌘⇧G): the editable location bar with its path selected.
     @objc func goToFolder(_ sender: Any?) { replaceLocation(sender) }

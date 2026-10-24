@@ -9,7 +9,7 @@ extension Settings {
     /// runners and shortcut validation must use `customTools`, which always returns the saved document.
     public var customToolsIfLoaded: [CustomTool] {
         customToolsLock.lock()
-        let loaded = customToolsCache?.store == ObjectIdentifier(Settings.store)
+        let loaded = customToolsCache?.store === Settings.store
         customToolsLock.unlock()
         guard loaded else { return [] }
         return loadCustomTools()
@@ -18,9 +18,9 @@ extension Settings {
     private func loadCustomTools() -> [CustomTool] {
         customToolsLock.lock(); defer { customToolsLock.unlock() }
         let store = Settings.store, data = store.data(forKey: "customTools")
-        if let cache = customToolsCache, cache.store == ObjectIdentifier(store), cache.data == data { return cache.tools }
+        if let cache = customToolsCache, cache.store === store, cache.data == data { return cache.tools }
         let tools = data.flatMap { try? CustomToolDocument.decode($0).tools } ?? []
-        customToolsCache = (ObjectIdentifier(store), data, tools)
+        customToolsCache = (store, data, tools)
         return tools
     }
 
@@ -39,7 +39,7 @@ extension Settings {
         let store = Settings.store
         customToolsLock.lock()
         store.set(data, forKey: "customTools")
-        customToolsCache = (ObjectIdentifier(store), data, tools)
+        customToolsCache = (store, data, tools)
         customToolsLock.unlock()
         NotificationCenter.default.post(name: Settings.changed, object: "customTools")
     }

@@ -105,7 +105,9 @@ extension MainWindowController: NSMenuItemValidation {
             return actionTargets.allSatisfy(\.isFileURL)
         case #selector(duplicateItem(_:)):
             return !hasSelection ? writable : selectionIsLocal
-        case #selector(shareItems(_:)), #selector(compress(_:)),
+        case #selector(shareItems(_:)), #selector(airDropItems(_:)):
+            return SharingPreparation.supports(selectedURLs)
+        case #selector(compress(_:)),
             #selector(setTag(_:)):
             return selectionIsLocal
         case #selector(cloudDownload(_:)), #selector(cloudEvict(_:)):

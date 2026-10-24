@@ -91,6 +91,7 @@ final class CountingTransferProvider: RemoteProvider, RemoteTransferTargetChecki
     let root: URL
     var lists = 0, folders = 0, targetChecks = 0
     var onUpload: () throws -> Void = {}
+    var onDownload: () -> Void = {}
     init(root: URL) { self.root = root }
     func local(_ url: URL) -> URL { root.appendingPathComponent(url.path) }
     func list(_ folder: URL) throws -> [FileItem] {
@@ -105,6 +106,7 @@ final class CountingTransferProvider: RemoteProvider, RemoteTransferTargetChecki
     func download(_ remote: URL, into folder: URL) throws -> URL {
         let target = folder.appendingPathComponent(remote.lastPathComponent)
         try FileManager.default.copyItem(at: local(remote), to: target)
+        onDownload()
         return target
     }
     func upload(_ source: URL, into folder: URL) throws {

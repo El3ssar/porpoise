@@ -15,9 +15,13 @@ extension PlacesPanel {
             if let icon { it.image = Icons.shared.menuIcon(icon) }
         }
         if let e = entry(at: i) {
-            add("Open in New Tab", "tab-new", #selector(openNewTab(_:)), e.url)
-            add("Open in New Window", "window-new", #selector(openNewWindow(_:)), e.url)
-            add("Open in Split View", "view-split-left-right", #selector(openSplit(_:)), e.url)
+            if e.url == PlacesModel.airDropURL {
+                add("Open AirDrop", "airdrop", #selector(openNewTab(_:)), e.url)
+            } else {
+                add("Open in New Tab", "tab-new", #selector(openNewTab(_:)), e.url)
+                add("Open in New Window", "window-new", #selector(openNewWindow(_:)), e.url)
+                add("Open in Split View", "view-split-left-right", #selector(openSplit(_:)), e.url)
+            }
             m.addItem(.separator())
             if e.icon == "user-trash" {
                 add("Empty Trash", "trash-empty", #selector(emptyTrash))

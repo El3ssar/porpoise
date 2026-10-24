@@ -66,14 +66,6 @@ extension MainWindowController {
                 : "Added \(added) \(added == 1 ? "item" : "items") to “\(store.current.name)”.")
     }
 
-    @objc func shareItems(_ sender: Any?) {
-        let urls = selectedURLs.filter(\.isFileURL)
-        guard let first = urls.first else { return }
-        let picker = NSSharingServicePicker(items: urls)
-        let r = view.list.rect(for: first) ?? view.list.visibleRect
-        picker.show(relativeTo: r, of: view.list, preferredEdge: .maxY)
-    }
-
     @objc func setTag(_ sender: NSMenuItem) {
         guard let tag = sender.representedObject as? String else { return }
         toggleTag(tag)

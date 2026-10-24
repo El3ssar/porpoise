@@ -40,7 +40,7 @@ import Testing
         let m = PlacesModel(storeURL: s.path("places.json"))
         #expect(
             m.titles(in: .places) == [
-                "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
+                "AirDrop", "Home", "Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos",
                 "Applications", "Trash",
             ])
         #expect(m.titles(in: .remote).contains("Network"))
@@ -106,7 +106,7 @@ import Testing
         let recent = try entry(m, "Recent Files")
 
         m.move(trash, before: home, endOf: .places)
-        #expect(m.titles(in: .places).prefix(2) == ["Trash", "Home"])
+        #expect(m.titles(in: .places).prefix(3) == ["AirDrop", "Trash", "Home"])
         m.move(trash, before: nil, endOf: .places)
         #expect(m.titles(in: .places).last == "Trash")
 
@@ -165,16 +165,16 @@ import Testing
             ]}
             """)
         let m = PlacesModel(storeURL: store)
-        #expect(m.userEntries.map(\.title) == ["Home", "Apps", "Stuff", "Network", "Server"])
-        #expect(m.userEntries.map(\.icon) == ["user-home", "view-list-icons", "folder", "network-workgroup", "folder-remote"])
+        #expect(m.userEntries.map(\.title) == ["AirDrop", "Home", "Apps", "Stuff", "Network", "Server"])
+        #expect(m.userEntries.map(\.icon) == ["airdrop", "user-home", "view-list-icons", "folder", "network-workgroup", "folder-remote"])
         #expect(m.hiddenSections == [.tags])
         #expect(m.sections().map(\.0).first == .places)
 
         // Removed afterwards: it stays removed.
         m.remove(try entry(m, "Network"))
         let again = PlacesModel(storeURL: store)
-        #expect(again.userEntries.map(\.title) == ["Home", "Apps", "Stuff", "Server"])
-        #expect(try String(contentsOf: store, encoding: .utf8).contains("\"version\":1"))
+        #expect(again.userEntries.map(\.title) == ["AirDrop", "Home", "Apps", "Stuff", "Server"])
+        #expect(try String(contentsOf: store, encoding: .utf8).contains("\"version\":2"))
     }
 
     @Test func aDamagedFileIsKeptAside() throws {
@@ -224,5 +224,22 @@ import Testing
         #expect(m.sections().allSatisfy { $0.0 != .tags })
         m.usedTags = nil
         #expect(tags().count == FinderTags.standard.count)
+    }
+
+    @Test func airDropPlaceIsMigratedOnlyOnceAndCanBeHiddenOrRemoved() throws {
+        let scratch = try Scratch(), file = scratch.path("places.json")
+        let model = PlacesModel(storeURL: file)
+        let airDrop = try #require(model.userEntries.first { $0.url == PlacesModel.airDropURL })
+        model.setHidden(airDrop, true)
+        #expect(!PlacesModel(storeURL: file).sections().flatMap(\.1).contains { $0.url == PlacesModel.airDropURL })
+        model.remove(airDrop)
+        #expect(!PlacesModel(storeURL: file).userEntries.contains { $0.url == PlacesModel.airDropURL })
+        var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        document["version"] = 1
+        try JSONSerialization.data(withJSONObject: document).write(to: file)
+        let migrated = PlacesModel(storeURL: file)
+        #expect(migrated.userEntries.filter { $0.url == PlacesModel.airDropURL }.count == 1)
+        let again = PlacesModel(storeURL: file)
+        #expect(again.userEntries == migrated.userEntries)
     }
 }

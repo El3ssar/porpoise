@@ -52,6 +52,22 @@ import Testing
         #expect(refreshes == 0)
     }
 
+    @Test func replacementStoresStartColdAfterPreviousStoresAreReleased() throws {
+        let previous = Settings.store, tools = CustomToolDocument.examples
+        let document = try CustomToolDocument(tools: tools).encoded()
+        defer { Settings.store = previous }
+        for _ in 0..<128 {
+            autoreleasepool {
+                let replacement = MemoryDefaults()
+                Settings.store = replacement
+                replacement.set(document, forKey: "customTools")
+                #expect(Settings.shared.customToolsIfLoaded.isEmpty)
+                #expect(Settings.shared.customTools == tools)
+                Settings.store = previous
+            }
+        }
+    }
+
     private func scanCount(_ root: URL) async throws -> Int {
         let canonical = URL(fileURLWithPath: FilePath.canonical(root.path))
         return try await awaitCallback("Git startup queue barrier") { continuation in

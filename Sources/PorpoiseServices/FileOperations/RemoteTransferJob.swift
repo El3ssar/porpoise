@@ -18,6 +18,8 @@ final class RemoteTransferJob {
     var onIncoming: (FileItem?) -> Void = { _ in }
     var disposeReplacedItem: ((URL, URL) throws -> Void)?
     var onNoSpace: ((Int64) -> Bool)?
+    /// Private consumer copies (sharing) are discarded, never offered as resumable user transfers.
+    var temporaryCopy = false
     var cloudBatchID = UUID()
     var cloudOperations: [URL: UUID] = [:]
     var cloudRecovered: [URL: [CloudTransferRecord]] = [:]

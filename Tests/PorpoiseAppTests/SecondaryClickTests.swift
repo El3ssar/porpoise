@@ -206,21 +206,25 @@ import Testing
         panel.delegate = recorder
         let window = window(panel)
         defer { window.close(); SecondaryClick.presentForTesting = nil }
-        let i = try #require(panel.entryIndices.first)
-        let entry = try #require(panel.entry(at: i))
         let originalURL = panel.currentURL
-        let rect = panel.rect(of: i)
-        var presented = 0
-        SecondaryClick.presentForTesting = { menu, _, _ in
-            #expect(menu.items.contains { $0.title == "Open in New Tab" })
-            #expect(panel.isCurrent(entry))
-            presented += 1
+        let folder = try #require(panel.entryIndices.first { panel.entry(at: $0)?.url.isFileURL == true })
+        let airDrop = try #require(panel.entryIndices.first { panel.entry(at: $0)?.url == PlacesModel.airDropURL })
+        for i in [folder, airDrop] {
+            let entry = try #require(panel.entry(at: i))
+            let rect = panel.rect(of: i)
+            let title = i == airDrop ? "Open AirDrop" : "Open in New Tab"
+            var presented = 0
+            SecondaryClick.presentForTesting = { menu, _, _ in
+                #expect(menu.items.contains { $0.title == title })
+                #expect(panel.isCurrent(entry))
+                presented += 1
+            }
+            for control in [false, true] {
+                for count in [1, 2] { click(panel, at: CGPoint(x: 70, y: rect.midY), control: control, count: count) }
+            }
+            #expect(presented == 4 && recorder.opened == 0)
+            #expect(panel.currentURL == originalURL && panel.contextMenuURL == nil)
         }
-        for control in [false, true] {
-            for count in [1, 2] { click(panel, at: CGPoint(x: 70, y: rect.midY), control: control, count: count) }
-        }
-        #expect(presented == 4 && recorder.opened == 0)
-        #expect(panel.currentURL == originalURL && panel.contextMenuURL == nil)
     }
 
     @Test func foldersPresentMenusForTheClickedRowWithoutNavigating() async throws {

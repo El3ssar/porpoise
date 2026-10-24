@@ -30,7 +30,8 @@ public final class Settings {
     }
     private var d: UserDefaults { Settings.store }
     let customToolsLock = NSLock()
-    var customToolsCache: (store: ObjectIdentifier, data: Data?, tools: [CustomTool])?
+    // Retain the identity: an address alone can be reused after a replaced store is released.
+    var customToolsCache: (store: UserDefaults, data: Data?, tools: [CustomTool])?
     let appearanceLock = NSLock()
     var appearanceCache: (data: Data, value: AppearancePreferences)?
 

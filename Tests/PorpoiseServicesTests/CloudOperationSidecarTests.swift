@@ -5,6 +5,28 @@ import Testing
 @testable import PorpoiseServices
 
 struct CloudOperationSidecarTests {
+    @Test func directoryEnumerationCanResolveTheStagingRootAlias() throws {
+        let scratch = try Scratch(), fm = FileManager.default
+        let root = scratch.url.appendingPathComponent("staging"), alias = scratch.url.appendingPathComponent("alias")
+        let folder = root.appendingPathComponent("recovery")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: alias, withDestinationURL: root)
+        let partial = alias.appendingPathComponent("recovery/.partial")
+        let owner = CloudOperationSidecar(partial: partial, account: "fixture", legacy: partial.appendingPathExtension("legacy"))
+        let operation = try owner.operation()
+        let enumerated = try #require(fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first)
+            .appendingPathComponent(".partial")
+        #expect(partial != enumerated)
+        let recovered = CloudOperationSidecar(partial: enumerated, account: "fixture", legacy: enumerated.appendingPathExtension("legacy"))
+        #expect(try recovered.existing() == operation)
+        let foreign = root.appendingPathComponent("foreign")
+        try fm.copyItem(at: enumerated.appendingPathExtension("cloud-operation"), to: foreign.appendingPathExtension("cloud-operation"))
+        let other = CloudOperationSidecar(partial: foreign, account: "fixture", legacy: foreign.appendingPathExtension("legacy"))
+        #expect(throws: CloudContentError.changed) { try other.existing() }
+        try recovered.remove()
+        #expect(try owner.existing() == nil)
+    }
+
     @Test(arguments: [".operation", "old.dropbox-operation"])
     func importsLegacyUUIDAndBindsItToThePartial(_ name: String) throws {
         let scratch = try Scratch(), id = UUID(), partial = scratch.url.appendingPathComponent("bytes")
