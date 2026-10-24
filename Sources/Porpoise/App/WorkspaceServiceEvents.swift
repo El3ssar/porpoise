@@ -5,20 +5,39 @@ import PorpoiseServices
 final class WorkspaceServiceEvents {
     @MainActor static let shared = WorkspaceServiceEvents(
         workspace: NSWorkspace.shared.notificationCenter,
+        distributed: DistributedNotificationCenter.default(),
+        authorizationInvalidated: { PrivilegedHelper.forgetAuthorization() },
         sleepingChanged: { JobEnvironmentMonitor.shared.setSleeping($0) })
 
-    private let workspace: NotificationCenter
-    private var observers: [NSObjectProtocol] = []
+    private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
-    init(workspace: NotificationCenter, sleepingChanged: @escaping @MainActor @Sendable (Bool) -> Void) {
-        self.workspace = workspace
+    init(
+        workspace: NotificationCenter, distributed: NotificationCenter,
+        authorizationInvalidated: @escaping @Sendable () -> Void,
+        sleepingChanged: @escaping @MainActor @Sendable (Bool) -> Void
+    ) {
         for (name, asleep) in [(NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false)] {
             observers.append(
-                workspace.addObserver(forName: name, object: nil, queue: .main) { _ in
-                    MainActor.assumeIsolated { sleepingChanged(asleep) }
-                })
+                (
+                    workspace,
+                    workspace.addObserver(forName: name, object: nil, queue: .main) { _ in
+                        MainActor.assumeIsolated { sleepingChanged(asleep) }
+                    }
+                ))
         }
+        // Authorization invalidation must not wait for main: the notification's posting thread drops it at once.
+        for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            observers.append(
+                (workspace, workspace.addObserver(forName: name, object: nil, queue: nil) { _ in authorizationInvalidated() }))
+        }
+        observers.append(
+            (
+                distributed,
+                distributed.addObserver(forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: nil) { _ in
+                    authorizationInvalidated()
+                }
+            ))
     }
 
-    deinit { observers.forEach(workspace.removeObserver) }
+    deinit { for (center, observer) in observers { center.removeObserver(observer) } }
 }

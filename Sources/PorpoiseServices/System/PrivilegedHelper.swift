@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import PorpoiseCore
 import PorpoiseHelperKit
@@ -12,6 +11,9 @@ import ServiceManagement
 /// scripts/build-helper.sh) is installed again, once, the next time it's needed. Each action it does is approved by
 /// the person (W-245): the helper asks, with Touch ID or the password, naming what it will do (`HelperTier`).
 public enum PrivilegedHelper {
+    /// The app invalidates cached approval synchronously when the screen sleeps/locks or the user switches away.
+    public static func forgetAuthorization() { HelperAuthorization.shared.drop() }
+
     private static var bundled: URL { Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Porpoise Helper.app") }
 
     /// What the helper must be signed as: its identifier and Porpoise's own certificate (nil: Porpoise is unsigned).
@@ -283,8 +285,8 @@ public enum PrivilegedHelper {
 }
 
 /// Porpoise's own authorization, which the helper asks the person's approval for. Kept for 5 minutes, so a standard
-/// approval (`HelperRights.standard`) covers the actions that follow; dropped sooner when the screen sleeps or
-/// locks, or another user takes over the Mac. A protected right is asked for every time whatever it holds.
+/// approval (`HelperRights.standard`) covers the actions that follow; the app drops it sooner when the screen sleeps
+/// or locks, or another user takes over the Mac. A protected right is asked for every time whatever it holds.
 final class HelperAuthorization: @unchecked Sendable {
     static let shared = HelperAuthorization()
     private let lock = NSLock()
@@ -295,27 +297,6 @@ final class HelperAuthorization: @unchecked Sendable {
         var ref: AuthorizationRef?
         return AuthorizationCreate(nil, nil, [], &ref) == errAuthorizationSuccess ? ref : nil
     }
-    private var observers: [NSObjectProtocol] = []
-
-    /// When the approval is forgotten: the screens sleep, or another user is switched to.
-    static let dropping: [Notification.Name] = [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification]
-
-    init(
-        observing workspace: NotificationCenter? = NSWorkspace.shared.notificationCenter,
-        distributed: NotificationCenter? = DistributedNotificationCenter.default()
-    ) {
-        for name in Self.dropping {
-            if let o = workspace?.addObserver(forName: name, object: nil, queue: nil, using: { [weak self] _ in self?.drop() }) {
-                observers.append(o)
-            }
-        }
-        if let o = distributed?.addObserver(
-            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: nil, using: { [weak self] _ in self?.drop() })
-        {
-            observers.append(o)
-        }
-    }
-
     /// The authorization to send with a request, made again once it's older than a standard approval lasts.
     func externalForm() -> Data? {
         lock.lock(); defer { lock.unlock() }
