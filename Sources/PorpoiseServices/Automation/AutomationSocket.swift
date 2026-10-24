@@ -5,15 +5,16 @@ import PorpoiseCore
 
 /// A private, same-user Unix socket. This is not an authentication boundary against other processes run by the user.
 public enum AutomationSocket {
+    public static let maximumRequest = 1024 * 1024
     public static let maximumFrame = 32 * 1024 * 1024
     public static var directory: URL {
         #if PORPOISE_TEST_HOOKS
         if let suite = TestEnvironment.defaultsSuite.value() {
-            let hash = SHA256.hash(data: Data(suite.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
-            return URL(fileURLWithPath: "/tmp/porpoise-test-\(getuid())-\(hash)", isDirectory: true)
+            let hash = SHA256.hash(data: Data(suite.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+            return URL(fileURLWithPath: FileManager.default.temporaryDirectory.appendingPathComponent("pa-\(hash)").path, isDirectory: true)
         }
         #endif
-        return URL(fileURLWithPath: "/tmp/porpoise-\(getuid())", isDirectory: true)
+        return FileManager.default.temporaryDirectory.appendingPathComponent("porpoise", isDirectory: true)
     }
 
     static func secureDirectory(_ directory: URL, create: Bool) throws {
@@ -79,11 +80,11 @@ public enum AutomationSocket {
         }
     }
 
-    static func readFrame(_ fd: Int32, deadline: Date) throws -> Data {
+    static func readFrame(_ fd: Int32, deadline: Date, maximum: Int = maximumFrame) throws -> Data {
         var header: UInt32 = 0
         try withUnsafeMutableBytes(of: &header) { try transfer(fd, bytes: $0, writing: false, deadline: deadline) }
         let count = Int(UInt32(bigEndian: header))
-        guard count > 0, count <= maximumFrame else { throw AutomationError.oversized }
+        guard count > 0, count <= maximum else { throw AutomationError.oversized }
         var data = Data(count: count)
         try data.withUnsafeMutableBytes { try transfer(fd, bytes: $0, writing: false, deadline: deadline) }
         return data
@@ -99,7 +100,7 @@ public enum AutomationSocket {
     }
 
     /// Blocking IO: call from a worker, never the app's main thread. Requests are never retried automatically.
-    public static func send(_ request: AutomationRequest, directory: URL = directory, timeout: TimeInterval = 10) throws -> AutomationResponse {
+    public static func send(_ request: AutomationRequest, directory: URL = directory, timeout: TimeInterval? = nil) throws -> AutomationResponse {
         try request.validate()
         try secureDirectory(directory, create: false)
         var info = stat()
@@ -112,7 +113,7 @@ public enum AutomationSocket {
         guard fd >= 0 else { throw AutomationError.unavailable }
         defer { close(fd) }
         try configure(fd)
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(timeout ?? ((request.action == .copy || request.action == .move) ? 120 : 10))
         let result = try withAddress(directory) { connect(fd, $0, $1) }
         if result != 0 {
             guard errno == EINPROGRESS else { throw AutomationError.unavailable }
@@ -122,7 +123,9 @@ public enum AutomationSocket {
             guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) == 0, error == 0 else { throw AutomationError.unavailable }
         }
         try sameUser(fd)
-        try writeFrame(JSONEncoder().encode(request), fd: fd, deadline: deadline)
+        let payload = try JSONEncoder().encode(request)
+        guard payload.count <= maximumRequest else { throw AutomationError.oversized }
+        try writeFrame(payload, fd: fd, deadline: deadline)
         let response = try JSONDecoder().decode(AutomationResponse.self, from: readFrame(fd, deadline: deadline))
         guard response.version == 1, response.id == request.id else { throw AutomationError.invalidResponse }
         return response
@@ -132,17 +135,24 @@ public enum AutomationSocket {
 public final class AutomationServer: @unchecked Sendable {
     public typealias Handler = @Sendable (AutomationRequest, Date) async -> AutomationResponse
     private let source: DispatchSourceRead
-    private let lockFD: Int32
+    private var lockFD: Int32
     private let directory: URL
     private let state = NSLock()
     private var connections = 0
     private let handler: Handler
+    private let requestTimeout: TimeInterval
+    private let transferTimeout: TimeInterval
     private let queue = DispatchQueue(label: "app.porpoise.automation", attributes: .concurrent)
 
-    public init(directory: URL = AutomationSocket.directory, handler: @escaping Handler) throws {
+    public init(
+        directory: URL = AutomationSocket.directory, requestTimeout: TimeInterval = 10, transferTimeout: TimeInterval = 120,
+        handler: @escaping Handler
+    ) throws {
         try AutomationSocket.secureDirectory(directory, create: true)
         self.directory = directory
         self.handler = handler
+        self.requestTimeout = requestTimeout
+        self.transferTimeout = transferTimeout
         let lockFD = Darwin.open(directory.appendingPathComponent("lock").path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
         guard lockFD >= 0 else { throw AutomationError.unsafeEndpoint }
         var info = stat()
@@ -174,18 +184,23 @@ public final class AutomationServer: @unchecked Sendable {
         source.resume()
     }
 
-    deinit {
+    public func stop() {
+        state.lock()
+        defer { state.unlock() }
+        guard lockFD >= 0 else { return }
         source.cancel()
         unlink(directory.appendingPathComponent("automation.sock").path)
         close(lockFD)
+        lockFD = -1
     }
+    deinit { stop() }
 
     private func acceptConnections(_ listener: Int32) {
         while true {
             let fd = accept(listener, nil, nil)
             if fd < 0 { return }
             state.lock()
-            let allowed = connections < 8
+            let allowed = connections < 8 && lockFD >= 0
             if allowed { connections += 1 }
             state.unlock()
             guard allowed else { close(fd); continue }
@@ -193,15 +208,25 @@ public final class AutomationServer: @unchecked Sendable {
                 do {
                     try AutomationSocket.configure(fd)
                     try AutomationSocket.sameUser(fd)
-                    let deadline = Date().addingTimeInterval(10)
-                    let request = try JSONDecoder().decode(AutomationRequest.self, from: AutomationSocket.readFrame(fd, deadline: deadline))
+                    let deadline = Date().addingTimeInterval(requestTimeout)
+                    let request = try JSONDecoder().decode(
+                        AutomationRequest.self, from: AutomationSocket.readFrame(fd, deadline: deadline, maximum: AutomationSocket.maximumRequest))
                     try request.validate()
-                    Task { [self] in
-                        let response = await self.handler(request, deadline)
-                        self.queue.async { [self] in
-                            defer { self.finish(fd) }
-                            try? AutomationSocket.writeFrame(JSONEncoder().encode(response), fd: fd, deadline: deadline)
+                    let operationDeadline = Date().addingTimeInterval(
+                        (request.action == .copy || request.action == .move) ? transferTimeout : requestTimeout)
+                    let connection = AutomationConnection(fd)
+                    let task = Task { [self] in
+                        guard !Task.isCancelled else { return }
+                        let response = await self.handler(request, operationDeadline)
+                        self.queue.async { [weak self] in
+                            if connection.finish(response: try? JSONEncoder().encode(response), deadline: operationDeadline) {
+                                self?.releaseConnection()
+                            }
                         }
+                    }
+                    queue.asyncAfter(deadline: .now() + max(0, operationDeadline.timeIntervalSinceNow)) { [weak self] in
+                        task.cancel()
+                        if connection.finish(deadline: operationDeadline) { self?.releaseConnection() }
                     }
                 } catch { finish(fd) }
             }
@@ -210,8 +235,27 @@ public final class AutomationServer: @unchecked Sendable {
 
     private func finish(_ fd: Int32) {
         close(fd)
+        releaseConnection()
+    }
+    private func releaseConnection() {
         state.lock()
         connections -= 1
         state.unlock()
+    }
+}
+
+/// Serializes response/timeout ownership so a late handler can never write to a recycled descriptor.
+private final class AutomationConnection: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fd: Int32?
+    init(_ fd: Int32) { self.fd = fd }
+    func finish(response: Data? = nil, deadline: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let fd else { return false }
+        if let response { try? AutomationSocket.writeFrame(response, fd: fd, deadline: deadline) }
+        close(fd)
+        self.fd = nil
+        return true
     }
 }

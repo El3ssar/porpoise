@@ -59,6 +59,27 @@ final class AutomationSocketTests: XCTestCase {
         }
     }
 
+    func testTimedOutHandlersReleaseSlotsAndStopUnlinksEndpoint() throws {
+        let dir = directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let gate = HandlerGate()
+        defer { gate.release() }
+        let server = try AutomationServer(directory: dir, requestTimeout: 0.03) { request, _ in
+            if request.action == .selection { await gate.wait() }
+            return AutomationResponse(id: request.id)
+        }
+        for _ in 0..<10 {
+            XCTAssertThrowsError(try AutomationSocket.send(.init(action: .selection), directory: dir, timeout: 0.05))
+        }
+        XCTAssertNil(try AutomationSocket.send(.init(action: .open, paths: ["/tmp"]), directory: dir).error)
+        server.stop()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("automation.sock").path))
+        let restarted = try AutomationServer(directory: dir) { request, _ in AutomationResponse(id: request.id) }
+        try withExtendedLifetime(restarted) {
+            XCTAssertNil(try AutomationSocket.send(.init(action: .selection), directory: dir).error)
+        }
+    }
+
     func testOversizedFrameRejectedBeforeAllocation() throws {
         var pair: [Int32] = [0, 0]
         XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair), 0)
@@ -68,6 +89,27 @@ final class AutomationSocketTests: XCTestCase {
         _ = withUnsafeBytes(of: &header) { Darwin.write(pair[1], $0.baseAddress, $0.count) }
         XCTAssertThrowsError(try AutomationSocket.readFrame(pair[0], deadline: Date().addingTimeInterval(1))) {
             XCTAssertEqual($0 as? AutomationError, .oversized)
+        }
+    }
+}
+
+private final class HandlerGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if released { continuation.resume() } else { waiters.append(continuation) }
+            }
+        }
+    }
+    func release() {
+        lock.withLock {
+            released = true
+            let pending = waiters
+            waiters = []
+            for waiter in pending { waiter.resume() }
         }
     }
 }
