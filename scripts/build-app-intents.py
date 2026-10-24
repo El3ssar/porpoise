@@ -21,14 +21,12 @@ def main():
     configuration = args.configuration.capitalize()
     native = root / ".build/arm64-apple-macosx" / args.configuration / "Porpoise.build"
     xcode = root / ".build/out/Intermediates.noindex/Porpoise.build" / configuration / "Porpoise-p.build"
-    candidates = [p for base in (native, xcode) if base.exists() for p in base.rglob("*.swiftconstvalues")]
-    intent_values = [p for p in candidates if p.name == "PorpoiseIntents.swiftconstvalues"]
-    if not intent_values:
+    builds = [(base, sorted(base.rglob("*.swiftconstvalues"))) for base in (native, xcode) if base.exists()]
+    builds = [(base, values) for base, values in builds if values]
+    if not builds:
         raise SystemExit("App Intents compiler metadata missing; build Porpoise before packaging.")
-    # Prefer the engine that most recently compiled the intent source.
-    selected = max(intent_values, key=lambda p: p.stat().st_mtime)
-    base = native if selected.is_relative_to(native) else xcode
-    values = sorted(base.rglob("*.swiftconstvalues"))
+    # Native release whole-module compilation produces one constants file; debug and Xcode use per-file output.
+    _, values = max(builds, key=lambda build: max(p.stat().st_mtime for p in build[1]))
     sources = sorted((root / "Sources/Porpoise").rglob("*.swift"))
     args.output.mkdir(parents=True, exist_ok=True)
     toolchain = Path(run("xcrun", "--find", "swiftc")).parents[2]

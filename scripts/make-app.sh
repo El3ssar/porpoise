@@ -10,6 +10,10 @@ CONFIG=${CONFIG:-release}
 # No paths from the machine that builds it: sources are named relative to the project folder, and the linker's debug
 # map (object file paths, for dsymutil) is stripped from the executables below.
 FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=.")
+# Native SwiftPM also needs compiler constants; Xcode’s engine normally enables this automatically.
+INTENT_PROTOCOLS="$(dirname "$(xcrun --find swiftc)")/../share/swift/SwiftConstantValues/AppIntents.json"
+[ -r "$INTENT_PROTOCOLS" ] || { echo "The selected Xcode toolchain lacks App Intents compiler protocols." >&2; exit 1; }
+FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$INTENT_PROTOCOLS")
 # The debug bridge and the PORPOISE_* test switches (TestEnvironment) are in local and UI-test builds, never in a
 # release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
 [ "${PORPOISE_RELEASE:-}" = 1 ] || FLAGS+=(-Xswiftc -DPORPOISE_TEST_HOOKS)
