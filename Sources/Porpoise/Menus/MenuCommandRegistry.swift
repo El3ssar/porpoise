@@ -37,6 +37,13 @@ extension ShortcutModifiers {
     }
     private var originals: [ObjectIdentifier: Original] = [:]
     private(set) var commands: [Command] = []
+    /// The bindings applied to AppKit, in primary/alias order, before any presentation reads them back.
+    private(set) var dispatchBindings: [String: [KeyboardShortcut]] = [:]
+    private var blockedOverrides: Set<String> = []
+    func shortcut(for id: String) -> KeyboardShortcut { dispatchBindings[id]?.first ?? KeyboardShortcut() }
+    func shortcut(for action: Selector, tag: Int = 0) -> KeyboardShortcut {
+        shortcut(for: NSStringFromSelector(action) + "#\(tag)#")
+    }
     var shortcutActions: [ShortcutAction] {
         shortcutActions(tools: Settings.shared.customTools)
     }
@@ -63,6 +70,7 @@ extension ShortcutModifiers {
 
     func start() {
         refresh(fillDynamic: false)
+        guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 let key = note.object as? String
@@ -74,6 +82,7 @@ extension ShortcutModifiers {
             }
         }
     }
+    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     static func id(_ item: NSMenuItem) -> String {
         NSStringFromSelector(item.action!) + "#" + String(item.tag) + "#" + ((item.representedObject as? String) ?? "")
     }
@@ -97,7 +106,7 @@ extension ShortcutModifiers {
                 if grouped[id] == nil { order.append(id) }
                 grouped[id, default: []].append((item, (path + [item.title]).joined(separator: " › ")))
                 let identity = ObjectIdentifier(item)
-                if originals[identity] == nil { originals[identity] = Original(item) }
+                if originals[identity]?.item !== item { originals[identity] = Original(item) }
             }
         }
         walk(menu, path: [])
@@ -119,24 +128,25 @@ extension ShortcutModifiers {
 
     func apply() {
         let preferences = Settings.shared.keyboardShortcuts
-        // A clash leaves the actions involved as they are; every other binding still applies.
-        let clashing = Set(
+        blockedOverrides = Set(
             preferences.conflicts(actions: shortcutActions(tools: Settings.shared.customToolsIfLoaded)).flatMap { [$0.first, $0.second] })
-        for command in commands where !clashing.contains(command.id) {
+        dispatchBindings = [:]
+        for command in commands {
             let items = [command.item] + command.aliases
-            if let override = preferences.overrides[command.id] {
-                for (index, item) in items.enumerated() {
-                    let value = index == 0 ? override.normalized : KeyboardShortcut()
-                    item.keyEquivalent = value.key; item.keyEquivalentModifierMask = value.modifiers.appKit
-                }
+            let defaults = items.map { originals[ObjectIdentifier($0)]?.shortcut ?? KeyboardShortcut() }
+            let bindings: [KeyboardShortcut]
+            if let override = preferences.overrides[command.id], !blockedOverrides.contains(command.id) {
+                bindings = [override.normalized] + Array(repeating: KeyboardShortcut(), count: command.aliases.count)
             } else {
-                for item in items {
-                    guard let original = originals[ObjectIdentifier(item)] else { continue }
-                    item.keyEquivalent = original.shortcut.key; item.keyEquivalentModifierMask = original.shortcut.modifiers.appKit
-                }
+                bindings = defaults
+            }
+            dispatchBindings[command.id] = bindings
+            for (item, binding) in zip(items, bindings) {
+                item.keyEquivalent = binding.key; item.keyEquivalentModifierMask = binding.modifiers.appKit
             }
         }
     }
+
     /// Dynamic menu items are rebuilt when their menu opens; apply saved keys to those fresh instances too.
     func apply(to menu: NSMenu) {
         let preferences = Settings.shared.keyboardShortcuts
@@ -145,11 +155,19 @@ extension ShortcutModifiers {
                 if let submenu = item.submenu { walk(submenu) }
                 guard item.action != nil, item.action != #selector(MainWindowController.runCustomTool(_:)), !Self.isAppKits(item) else { continue }
                 let identity = ObjectIdentifier(item)
-                if originals[identity] == nil { originals[identity] = Original(item) }
-                if let shortcut = preferences.overrides[Self.id(item)] {
-                    let value = item.isHidden ? KeyboardShortcut() : shortcut.normalized
-                    item.keyEquivalent = value.key; item.keyEquivalentModifierMask = value.modifiers.appKit
+                if originals[identity]?.item !== item { originals[identity] = Original(item) }
+                // A modifier-only popup alternate uses its mask to reveal another item, not as a shortcut.
+                if item.isAlternate && item.keyEquivalent.isEmpty { continue }
+                let id = Self.id(item)
+                let value: KeyboardShortcut
+                if let bindings = dispatchBindings[id] {
+                    value = item.isHidden ? KeyboardShortcut() : (bindings.first ?? KeyboardShortcut())
+                } else if let override = preferences.overrides[id], !blockedOverrides.contains(id) {
+                    value = item.isHidden ? KeyboardShortcut() : override.normalized
+                } else {
+                    value = originals[identity]?.shortcut ?? KeyboardShortcut()
                 }
+                item.keyEquivalent = value.key; item.keyEquivalentModifierMask = value.modifiers.appKit
             }
         }
         walk(menu)
@@ -158,18 +176,13 @@ extension ShortcutModifiers {
     /// Whether a menu bar item has `shortcut` now (the key set's default or the user's binding).
     func isBound(_ shortcut: KeyboardShortcut) -> Bool {
         let wanted = shortcut.normalized
-        return commands.contains { command in
-            ([command.item] + command.aliases).contains {
-                !$0.keyEquivalent.isEmpty
-                    && KeyboardShortcut(key: $0.keyEquivalent, modifiers: ShortcutModifiers($0.keyEquivalentModifierMask)).normalized == wanted
-            }
-        }
+        return dispatchBindings.values.contains { $0.contains { !$0.isEmpty && $0.normalized == wanted } }
     }
 
     /// View-local compatibility shortcuts must stop firing when their menu action is rebound or disabled.
     func fallbackAllowed(_ selector: Selector, tag: Int = 0) -> Bool {
         let prefix = NSStringFromSelector(selector) + "#\(tag)#"
-        return !Settings.shared.keyboardShortcuts.overrides.keys.contains { $0.hasPrefix(prefix) }
+        return !Settings.shared.keyboardShortcuts.overrides.keys.contains { $0.hasPrefix(prefix) && !blockedOverrides.contains($0) }
     }
     static func enabled(_ item: NSMenuItem) -> Bool {
         guard let action = item.action, let target = NSApp.target(forAction: action, to: item.target, from: item) else { return false }

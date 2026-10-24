@@ -90,6 +90,7 @@ extension MainWindowController {
         m.addItem(.separator())
         m.addItem(item("Restore to Defaults", "edit-undo", #selector(restoreViewDefaults(_:))))
         m.addItem(item("Adjust View Display Style…", "configure", #selector(adjustViewStyle(_:))))
+        MenuCommandRegistry.shared.apply(to: m)
         return m
     }
 
@@ -101,6 +102,7 @@ extension MainWindowController {
         m.addItem(item("Split View to Tabs", "tab-new", #selector(splitToTabs(_:))))
         m.addItem(item(tab.activeIsSecondary ? "Pop out Right View" : "Pop out Left View", "window-new", #selector(popOutSplit(_:))))
         for item in m.items where !item.isSeparatorItem { item.target = self }
+        MenuCommandRegistry.shared.apply(to: m)
         return m
     }
 
@@ -164,6 +166,7 @@ extension MainWindowController {
         conf.addItem(item("Settings…", "configure", #selector(AppDelegate.showSettings(_:))))
         m.addItem(sub("Configure", "configure", conf))
         m.addItem(sub("More", "overflow-menu", AppDelegate.shared.mainMenuCopy()))
+        MenuCommandRegistry.shared.apply(to: m)
         return m
     }
 

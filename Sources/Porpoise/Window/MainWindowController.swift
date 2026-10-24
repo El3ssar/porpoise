@@ -248,6 +248,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         layoutToolbar()
         if tabs.indices.contains(current) { tab.frame = tabHost.bounds }
         alignNavigators()
+        toolbar.refreshShortcutTooltips()
     }
 
     /// The toolbar lives inside the (enlarged) title bar, over the main column only; in full screen the title bar

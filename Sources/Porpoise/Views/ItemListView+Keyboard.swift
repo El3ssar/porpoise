@@ -44,10 +44,17 @@ extension ItemListView {
         case Key.pageDown: moveCurrent(.pageDown, extend: shift); return
         case Key.returnKey where mods.isEmpty:
             // Return renames from the menu bar (Mac keys); it opens here only when no menu item has it (Dolphin keys).
-            if !MenuCommandRegistry.shared.isBound(KeyboardShortcut(key: "\r")) { openSelection() }
+            if Settings.shared.shortcutKeySet == .dolphin,
+                MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.openSelected(_:))),
+                !MenuCommandRegistry.shared.isBound(KeyboardShortcut(key: "\r"))
+            {
+                openSelection()
+            }
             return
         case Key.enter:
-            if mods.isEmpty { openSelection(); return }
+            if mods.isEmpty && MenuCommandRegistry.shared.fallbackAllowed(#selector(MainWindowController.openSelected(_:))) {
+                openSelection(); return
+            }
         case Key.f10 where mods == [.shift]:
             // ⇧F10, the context-menu key: the current item's menu (the folder's when there's none).
             showKeyboardMenu(); return

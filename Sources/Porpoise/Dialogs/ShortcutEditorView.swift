@@ -67,7 +67,10 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         shown = all; table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
             // Another key set rebuilds the menu bar: list its new items and defaults.
-            if note.object == nil || note.object as? String == "shortcutKeySet" { self?.reloadCommands() } else { self?.table.reloadData() }
+            let defaultsChanged = note.object == nil || note.object as? String == "shortcutKeySet"
+            DispatchQueue.main.async {
+                if defaultsChanged { self?.reloadCommands() } else { self?.table.reloadData() }
+            }
         }
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -151,7 +154,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let value: String
         switch tableColumn?.identifier.rawValue {
         case "action": value = command.path
-        case "current": value = Settings.shared.keyboardShortcuts.overrides[command.id]?.display ?? command.defaults.first?.display ?? "—"
+        case "current": value = MenuCommandRegistry.shared.shortcut(for: command.id).display
         default: value = command.defaults.map(\.display).joined(separator: " / ")
         }
         let label = NSTextField(labelWithString: value); label.lineBreakMode = .byTruncatingMiddle; label.toolTip = value

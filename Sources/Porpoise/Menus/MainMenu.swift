@@ -56,8 +56,8 @@ extension AppDelegate {
         // File
         let file = NSMenu(title: "File")
         file.addItem(.submenu("Create New", icon: "list-add", W.createNewMenu()))
-        file.addItem(mi("Open", #selector(W.openSelected(_:)), "o", icon: "document-open"))
-        file.addItem(mi("Open", #selector(W.openSelected(_:)), K.down, icon: "document-open").hiddenAlternate())
+        file.addItem(mi("Open", #selector(W.openSelected(_:)), dolphin ? "\r" : "o", dolphin ? [] : .command, icon: "document-open"))
+        if !dolphin { file.addItem(mi("Open", #selector(W.openSelected(_:)), K.down, icon: "document-open").hiddenAlternate()) }
         // The context menu's Open in… items, on the selected folder (no default keys; assignable in Settings).
         file.addItem(mi("Open in New Tab", #selector(W.ctxOpenInNewTab(_:)), icon: "tab-new"))
         file.addItem(mi("Open in New Window", #selector(W.ctxOpenInNewWindow(_:)), icon: "window-new"))

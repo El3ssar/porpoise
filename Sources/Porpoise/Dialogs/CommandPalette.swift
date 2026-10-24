@@ -23,6 +23,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
     private var matches: [CommandMatch] = []
     private let field = NSSearchField()
     private let table = PaletteTable()
+    private var shortcutsObserver: NSObjectProtocol?
     private let status = NSTextField(labelWithString: "↑↓ select · Return runs · Escape closes")
 
     static func show(owner: MainWindowController?) {
@@ -30,7 +31,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         let palette = CommandPalette(owner: owner); current = palette
         palette.showWindow(nil); palette.window?.makeKeyAndOrderFront(nil); palette.window?.makeFirstResponder(palette.field)
     }
-    private init(owner: MainWindowController?) {
+    init(owner: MainWindowController?) {
         self.origin = owner; originalResponder = owner?.window?.firstResponder
         let panel = NSPanel(
             contentRect: CGRect(x: 0, y: 0, width: 740, height: 480), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered,
@@ -54,6 +55,12 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true; add(scroll)
         status.font = .systemFont(ofSize: FontSize.small); status.textColor = Theme.viewTextInactive; add(status)
         collect(); update()
+        shortcutsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
+            guard note.object == nil || ["shortcutKeySet", "keyboardShortcuts", "customTools"].contains(note.object as? String ?? "") else { return }
+            DispatchQueue.main.async {
+                self?.collect(); self?.update()
+            }
+        }
         if let frame = owner?.window?.frame {
             panel.setFrameOrigin(CGPoint(x: frame.midX - panel.frame.width / 2, y: frame.maxY - panel.frame.height - 80))
         } else {
@@ -65,12 +72,14 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         }
     }
     required init?(coder: NSCoder) { fatalError() }
+    deinit { if let shortcutsObserver { NotificationCenter.default.removeObserver(shortcutsObserver) } }
     private func collect() {
+        entries.removeAll()
         let owner = origin
         let registry = MenuCommandRegistry.shared; registry.refresh()
         for command in registry.commands where !command.item.isHidden {
             let item = command.item
-            let shortcut = KeyboardShortcut(key: item.keyEquivalent, modifiers: ShortcutModifiers(item.keyEquivalentModifierMask)).display
+            let shortcut = registry.shortcut(for: command.id).display
             let candidate = CommandCandidate(
                 id: "action:" + command.id, title: item.title, subtitle: command.path, keywords: "command action",
                 enabled: MenuCommandRegistry.enabled(item))
