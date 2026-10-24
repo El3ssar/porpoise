@@ -70,8 +70,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     /// Where a server opened from here goes: `owner` (the window that asked) while it's still open; once it has
     /// closed, the browser window in front then, or a new window. Held weakly, so a closed window is never navigated.
     static func opener(owner: MainWindowController?) -> (URL) -> Void {
-        weak var owner = owner
-        return { url in
+        return { [weak owner] url in
             if let owner, owner.window?.isVisible == true { return owner.view.setURL(url) }
             if let front = frontBrowser() { return front.view.setURL(url) }
             AppDelegate.shared.newWindow(at: url)
@@ -279,6 +278,10 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
     func tableView(_ tableView: NSTableView, isGroupRow row: Int) -> Bool {
         if case .heading = entries[row] { return true }
         return false
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        self.tableView(tableView, isGroupRow: row) ? nil : EntryRowView()
     }
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { !self.tableView(tableView, isGroupRow: row) }
@@ -787,6 +790,26 @@ final class ConnectionInfoView: NSStackView {
     }
 }
 
+/// A row of the list: AppKit's selection in the native theme; in a palette theme the palette's (its selection colour
+/// as a tint with an outline, as in the file lists), under the palette's selection text.
+final class EntryRowView: NSTableRowView {
+    /// The inset table style's own margin either side of a selection.
+    static let selectionInset: CGFloat = 10
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard !Tokens.isNative else { return super.drawSelection(in: dirtyRect) }
+        let path = NSBezierPath(
+            roundedRect: bounds.insetBy(dx: Self.selectionInset, dy: 0.5), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
+        Theme.itemSelectedFill.setFill()
+        path.fill()
+        Theme.itemSelectedOutline.setStroke()
+        path.stroke()
+    }
+
+    // A tint, not a solid fill: the cells keep their normal style and take the palette's selection text themselves.
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { Tokens.isNative ? super.interiorBackgroundStyle : .normal }
+}
+
 /// One account or server in the list: a 26-pt icon slot (so every title starts at the same x), the name and a detail
 /// line. Its text follows the row's selection, as a table cell's does.
 final class EntryCellView: NSTableCellView {
@@ -846,13 +869,26 @@ final class EntryCellView: NSTableCellView {
         didSet { backgroundStyleChanged() }
     }
 
-    /// On the selection, the selection's text colour (the detail at 80 %); otherwise the window's text colours.
+    override func viewWillDraw() {
+        super.viewWillDraw()
+        backgroundStyleChanged()
+    }
+
+    /// On the selection, the selection's text colour (the detail at 80 %); otherwise the window's text colours. In a
+    /// palette theme the row draws a tint and keeps its style normal (EntryRowView), so there a selected row counts
+    /// whatever its style.
     private func backgroundStyleChanged() {
-        let selected = backgroundStyle == .emphasized
+        let rowSelected = (superview as? NSTableRowView)?.isSelected == true
+        let selected = backgroundStyle == .emphasized || (rowSelected && !Tokens.isNative)
+        guard selected != showsSelection else { return }  // called on every draw: only a change recolours
+        showsSelection = selected
         textField?.textColor = selected ? Theme.selectionText : Theme.windowText
         detail.textColor = selected ? Theme.selectionText.withAlphaComponent(0.8) : Theme.windowTextInactive
         warning?.contentTintColor = selected ? Theme.selectionText : .systemYellow
     }
+
+    /// Whether the text shows the selection's colours now (nil until first coloured).
+    private var showsSelection: Bool?
 
     /// The colours the name and detail show now (tests).
     var colors: (title: NSColor?, detail: NSColor?) { (textField?.textColor, detail.textColor) }
