@@ -94,6 +94,25 @@ import Testing
         #expect(!c.list.isRenaming)
     }
 
+    /// CR-13: a key pressed in the list before the copy is listed (here ↓ to the next file) cancels the rename.
+    @Test func aKeyPressedBeforeTheCopyIsListedCancelsItsRename() async throws {
+        let s = try Scratch()
+        let a = try s.file("a.txt", "a")
+        try s.file("b.txt", "b")
+        let wc = try browser([s.url])
+        defer { close(wc) }
+        let w = try #require(wc.window), c = wc.view
+        try #require(await eventually { !c.model.isLoading && c.model.rows.count == 2 })
+        #expect(w.makeFirstResponder(c.list))
+        c.list.select(a)
+        wc.duplicateItem(nil)
+        w.sendEvent(try key(String(UnicodeScalar(NSDownArrowFunctionKey)!), code: 125, in: w))
+        try #require(await eventually { c.model.rows.count == 3 })
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(!c.list.isRenaming)
+        #expect(w.firstResponder === c.list)
+    }
+
     /// CR-15: a link's folder opened in a new tab offers Add to Places there, and the old pane offers nothing later.
     @Test func aLinkFolderInANewTabOffersAddToPlacesThere() async throws {
         let s = try Scratch()

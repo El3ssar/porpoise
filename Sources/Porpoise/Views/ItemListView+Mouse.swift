@@ -86,6 +86,7 @@ extension ItemListView {
     var selecting: ItemSelectionController { ItemSelectionController(model: model) }
 
     override func mouseDown(with event: NSEvent) {
+        userActions += 1
         if SecondaryClick.matches(event) {
             mouseDownURL = nil
             rubberStart = nil
@@ -243,6 +244,7 @@ extension ItemListView {
     }
 
     override func otherMouseDown(with event: NSEvent) {
+        userActions += 1
         switch event.buttonNumber {
         case 2:
             let p = convert(event.locationInWindow, from: nil)

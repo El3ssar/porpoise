@@ -17,6 +17,7 @@ private let typeAheadTimeout: TimeInterval = 1.0
 
 extension ItemListView {
     override func keyDown(with event: NSEvent) {
+        userActions += 1
         let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let chars = event.characters ?? ""
         let shift = mods.contains(.shift)
