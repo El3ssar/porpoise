@@ -210,6 +210,8 @@ extension ItemListView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // Column view: a click in another column gives it the focus now that the mouse is up.
+        defer { if mode == .columns { columnNavigator?.columnMouseUp(self) } }
         guard !SecondaryClick.matches(event) else { mouseDownURL = nil; return }
         if rubberStart != nil {
             rubberStart = nil

@@ -42,6 +42,8 @@ final class InformationPanel: NSView {
     /// The thumbnail, kept over the video until playback starts (no jump from thumbnail to first frame).
     private let poster = NSImageView()
     private var playObservation: NSKeyValueObservation?
+    /// A stream's readiness, until it's ready or failed.
+    private var streamObservation: NSKeyValueObservation?
     private var playerWork: DispatchWorkItem?
     private var thumbnailObserver: NSObjectProtocol?
     private var windowCloseObserver: NSObjectProtocol?
@@ -604,6 +606,7 @@ final class InformationPanel: NSView {
         player.isHidden = true
         controls.isHidden = true
         playObservation = nil
+        streamObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
         VideoPreview.shared.stop(for: self)
@@ -683,13 +686,27 @@ final class InformationPanel: NSView {
             if Settings.shared.infoAutoPlay { p.play() }
             return
         }
-        // A live stream starts at its newest part; previews start at the beginning.
-        Task { @MainActor [weak self] in
-            for _ in 0..<100 where p.currentItem?.status != .readyToPlay { try? await Task.sleep(nanoseconds: 50_000_000) }
-            // The panel may have moved on while the stream was starting.
+        // A live stream starts at its newest part; previews start at the beginning: once it's ready (told, not polled
+        // for), and never for one that failed to start.
+        guard let item = p.currentItem else { return }
+        streamObservation = Self.whenSettled(item) { [weak self] ready in
             guard let self, self.player.player === p else { return }
-            await p.seek(to: .zero)
-            if Settings.shared.infoAutoPlay, self.player.player === p { p.play() }
+            self.streamObservation = nil
+            guard ready else { return }
+            Task { @MainActor [weak self] in
+                await p.seek(to: .zero)
+                // The panel may have moved on while it was seeking.
+                if Settings.shared.infoAutoPlay, self?.player.player === p { p.play() }
+            }
+        }
+    }
+
+    /// Calls `done` on the main thread once `item` is ready (true) or has failed (false); keep the result while waiting.
+    static func whenSettled(_ item: AVPlayerItem, _ done: @escaping (Bool) -> Void) -> NSKeyValueObservation {
+        item.observe(\.status, options: [.initial, .new]) { item, _ in
+            let status = item.status
+            guard status != .unknown else { return }
+            DispatchQueue.main.async { done(status == .readyToPlay) }
         }
     }
 }

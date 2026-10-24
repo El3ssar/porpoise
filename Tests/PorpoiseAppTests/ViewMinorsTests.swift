@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import PorpoiseCore
 import PorpoiseFileSystem
@@ -371,6 +372,39 @@ import Testing
         let first = try #require((grid.accessibilityChildren() as? [NSAccessibilityElement])?.first)
         #expect(
             last.accessibilityFrameInParentSpace() == first.accessibilityFrameInParentSpace() && before != first.accessibilityFrameInParentSpace())
+    }
+
+    /// #18: a stream starts when its item says it's ready (no polling), and never when it failed.
+    @Test func aPlayerItemIsAwaitedNotPolled() async throws {
+        let s = try Scratch("settled")
+        // One second of 8 kHz mono silence.
+        var wav = Data("RIFF".utf8)
+        func le32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        func le16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { wav.append(contentsOf: $0) } }
+        le32(36 + 8000); wav.append(Data("WAVEfmt ".utf8)); le32(16); le16(1); le16(1); le32(8000); le32(8000); le16(1); le16(8)
+        wav.append(Data("data".utf8)); le32(8000); wav.append(Data(repeating: 128, count: 8000))
+        let good = s.path("silence.wav"), bad = s.path("broken.wav")
+        try wav.write(to: good)
+        try Data("not audio".utf8).write(to: bad)
+        var answers: [String: Bool] = [:]
+        var keep: [NSKeyValueObservation] = [], players: [AVPlayer] = []
+        for (name, url) in [("good", good), ("bad", bad)] {
+            let player = AVPlayer(url: url)  // an item is only read once a player has it
+            players.append(player)
+            keep.append(InformationPanel.whenSettled(try #require(player.currentItem)) { answers[name] = $0 })
+        }
+        #expect(await eventually { answers.count == 2 })
+        #expect(answers == ["good": true, "bad": false])
+        withExtendedLifetime((keep, players)) {}
+    }
+
+    /// #18: Settings' tabs show only their own buttons (icon-only toolbar), set when the window appears, not a turn later.
+    @Test func settingsTabsAreIconOnlyWhenShown() throws {
+        let settings = SettingsWindowController(page: "Advanced")
+        let window = try #require(settings.window)
+        defer { window.close() }
+        window.orderFront(nil)
+        #expect(window.toolbar?.displayMode == .iconOnly)
     }
 
     private final class OneFileProvider: RemoteProvider {

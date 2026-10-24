@@ -134,10 +134,10 @@ final class ThemedHeaderCell: NSTableHeaderCell {
 final class ThemedTabViewController: NSTabViewController {
     private var buttons: [NSToolbarItem.Identifier: TabButton] = [:]
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        // The buttons show their own title.
-        DispatchQueue.main.async { [weak self] in self?.view.window?.toolbar?.displayMode = .iconOnly }
+    // The buttons show their own title. Set once the window (and its toolbar) is there: not yet in viewDidLoad.
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        view.window?.toolbar?.displayMode = .iconOnly
     }
 
     override func toolbar(

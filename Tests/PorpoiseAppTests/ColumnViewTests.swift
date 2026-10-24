@@ -76,7 +76,8 @@ import Testing
     private let right: UInt16 = 124, left: UInt16 = 123
 
     /// A click on `url`'s row in `list` (down and up), as the user makes it.
-    private func click(_ url: URL, in list: ItemListView, count: Int = 1, type: NSEvent.EventType = .leftMouseDown) throws {
+    /// `release`: false presses only (the button stays down: a drag may start); `release(_:in:)` lets it go.
+    private func click(_ url: URL, in list: ItemListView, count: Int = 1, type: NSEvent.EventType = .leftMouseDown, release: Bool = true) throws {
         let i = try #require(list.model.index(of: url))
         if list.frames.count != list.model.rows.count { list.computeLayout() }
         let p = list.convert(CGPoint(x: list.frames[i].midX, y: list.frames[i].midY), to: nil)
@@ -90,7 +91,9 @@ import Testing
             _ = list.menu(for: event(.rightMouseDown))
             return
         }
+        if type == .leftMouseUp { return list.mouseUp(with: event(.leftMouseUp)) }
         list.mouseDown(with: event(.leftMouseDown))
+        guard release else { return }
         list.mouseUp(with: event(.leftMouseUp))
     }
 
@@ -170,9 +173,11 @@ import Testing
         defer { ColumnBrowserView.mouseIsDown = { false } }
         let waiting = try #require(b.after)
         try #require(await eventually { waiting.model.index(of: s.path("A/a.txt")) != nil })
-        try click(s.path("A/a.txt"), in: waiting.list)
+        try click(s.path("A/a.txt"), in: waiting.list, release: false)
         #expect(pane.url.path == s.url.path && waiting.model.selection == [s.path("A/a.txt")])
+        // Its mouse-up moves the focus (no polling for the button).
         down = false
+        try click(s.path("A/a.txt"), in: waiting.list, type: .leftMouseUp)
         #expect(await eventually { pane.url.path == s.path("A").path })
         #expect(pane.model.selection == [s.path("A/a.txt")])
         pane.setURL(s.url)
