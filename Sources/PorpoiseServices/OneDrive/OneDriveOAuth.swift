@@ -85,7 +85,7 @@ public enum OneDriveTokens {
     {
         let (data, response) = try await http.postForm(configuration.tokenURL, values)
         // invalid_grant (revoked, expired, password changed) and an unknown client are both "sign in again".
-        guard response.statusCode != 400, response.statusCode != 401 else { throw OneDriveError.reconnect }
+        guard response.statusCode != 400, response.statusCode != 401 else { throw CloudOAuthSession.refreshRejection(data) }
         try OneDriveClient.check(data, response)
         return try JSONDecoder().decode(CloudOAuthToken.self, from: data)
     }

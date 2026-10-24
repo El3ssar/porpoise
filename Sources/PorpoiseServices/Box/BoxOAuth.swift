@@ -93,7 +93,7 @@ public enum BoxTokens {
     static func request(_ values: [String: String], configuration: BoxConfiguration, http: CloudHTTPTransport) async throws -> CloudOAuthToken {
         let (data, response) = try await http.postForm(configuration.tokenURL, values)
         // invalid_grant (revoked, expired, already used) and an unknown client are both "sign in again".
-        guard response.statusCode != 400, response.statusCode != 401 else { throw BoxError.reconnect }
+        guard response.statusCode != 400, response.statusCode != 401 else { throw CloudOAuthSession.refreshRejection(data) }
         try BoxClient.check(data, response)
         return try JSONDecoder().decode(CloudOAuthToken.self, from: data)
     }

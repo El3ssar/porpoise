@@ -7,7 +7,7 @@ public struct CloudOAuthToken: Decodable, Sendable {
     public let token_type: String
     public var scope: String? = nil
 }
-public enum CloudOAuthSessionError: Error { case reconnect }
+public enum CloudOAuthSessionError: Error { case reconnect, revoked }
 
 protocol CloudReconnectFailure: Error { var needsSignIn: Bool { get } }
 extension CloudOAuthSessionError: CloudReconnectFailure { var needsSignIn: Bool { true } }
@@ -38,6 +38,11 @@ public actor CloudOAuthSession {
     ) {
         self.clientID = clientID; self.accountID = accountID; self.credentials = credentials; self.refresh = refresh
     }
+    /// Only an explicit invalid_grant proves that the saved credential itself is unusable.
+    static func refreshRejection(_ data: Data) -> CloudOAuthSessionError {
+        struct Rejection: Decodable { var error: String }
+        return (try? JSONDecoder().decode(Rejection.self, from: data).error) == "invalid_grant" ? .revoked : .reconnect
+    }
     public func accept(_ token: CloudOAuthToken) throws {
         guard token.token_type.lowercased() == "bearer", !token.access_token.isEmpty, token.expires_in > 0 else {
             throw CloudOAuthError.invalidResponse
@@ -66,7 +71,9 @@ public actor CloudOAuthSession {
                 refreshTask = nil; access = nil
                 if (error as? any CloudReconnectFailure)?.needsSignIn == true {
                     requiresSignIn = true
-                    try? credentials.remove(clientID: clientID, accountID: accountID)
+                    if case .revoked? = error as? CloudOAuthSessionError {
+                        try? credentials.remove(clientID: clientID, accountID: accountID)
+                    }
                 }
             }
             throw error
