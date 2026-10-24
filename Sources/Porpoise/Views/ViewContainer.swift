@@ -35,6 +35,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     let filterBar = FilterBar()
     let searchBar = SearchBar()
     let messageBar = MessageBar()
+    /// The folder was listed again (the object is the container): what shows its items can catch up.
+    static let listingReloaded = Notification.Name("PorpoiseListingReloaded")
     /// What the list says when it shows nothing: empty, still loading, or why it failed and what to do.
     let listState = ListStateView()
     /// The search that last finished failed, in its own words ("Nothing found" would be wrong then).
@@ -302,6 +304,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onLoaded = { [weak self] in
             guard let self else { return }
+            NotificationCenter.default.post(name: Self.listingReloaded, object: self)
             self.list.transitions.itemsDelivered(loading: false)
             self.noteRefreshing()
             self.updateStatus()

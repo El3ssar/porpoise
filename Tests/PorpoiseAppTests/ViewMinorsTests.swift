@@ -50,6 +50,48 @@ import Testing
         #expect(!pane.messageBar.text.contains("isn’t connected"))
     }
 
+    private func text(in view: NSView) -> [String] {
+        (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap { text(in: $0) }
+    }
+
+    /// #7: a file that changes while it stays selected (a download growing) shows its new size once it's listed again.
+    @Test func theInformationPanelFollowsAChangedFile() async throws {
+        let s = try Scratch("info-follows")
+        let file = try s.file("grow.bin", String(repeating: "x", count: 10))
+        let pane = ViewContainer(url: s.url)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 1 })
+        let panel = InformationPanel(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
+        pane.list.select(file)
+        panel.show(hovered: nil, container: pane)
+        try #require(await eventually { self.text(in: panel).contains("10 B") })
+        try Data(repeating: 1, count: 4096).write(to: file)
+        pane.reload()
+        #expect(await eventually { self.text(in: panel).contains("4 KB") })
+    }
+
+    /// #10: a URL that isn't shown is looked up once per listing, however many thumbnails ask about it.
+    @Test func missedLookupsAreRemembered() async throws {
+        let s = try Scratch("lookups")
+        try s.file("a.txt", "a")
+        let model = DirectoryModel(location: s.url, prefetchFolders: false)
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 1 })
+        let elsewhere = URL(fileURLWithPath: "/tmp/porpoise-not-here-\(UUID().uuidString).png")
+        #expect(model.index(of: elsewhere) == nil)
+        #expect(model.missedLookups == [elsewhere])
+        #expect(model.index(of: elsewhere) == nil)
+        #expect(model.index(of: s.path("a.txt")) == 0)
+        // A new listing forgets them: the file may be shown now.
+        try s.file("b.txt", "b")
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 2 })
+        #expect(model.missedLookups.isEmpty)
+    }
+
     /// #19: type-ahead ignores case and accents.
     @Test func typeAheadIgnoresAccents() {
         #expect(ItemListView.name("École", startsWith: "e"))
