@@ -234,8 +234,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return out
     }
 
+    /// Tests of the listing mechanics turn it off: a re-list the disk asks for would race theirs.
+    var watchesDisk = true { didSet { watchOpenFolders() } }
+
     func watchOpenFolders() {
-        guard remoteTree == nil else { return watcher.watch([]) }
+        guard remoteTree == nil, watchesDisk else { return watcher.watch([]) }
         watcher.watch(openFolders().map(\.url))
     }
 

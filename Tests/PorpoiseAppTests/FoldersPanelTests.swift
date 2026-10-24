@@ -122,6 +122,8 @@ extension AppearanceLayoutTests {
         try fm.createDirectory(at: files.appendingPathComponent("Tool.app/Contents"), withIntermediateDirectories: true)
         Settings.shared.homeURL = home
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        // The listings here are the test's own: none asked for by the disk (W-243's watcher) races them.
+        panel.watchesDisk = false
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
         func url(_ row: Int) -> URL? { (outline.item(atRow: row) as? FoldersPanel.Node)?.url }
 
