@@ -309,4 +309,81 @@ import Testing
         func itemList(_ view: ItemListView, middleClicked item: FileItem) {}
         func itemListQuickLook(_ view: ItemListView) {}
     }
+
+    /// #16: VoiceOver hears what an item's cloud badge shows, and can download it as the badge's click does.
+    @Test func voiceOverHearsAndUsesTheCloudBadge() async throws {
+        let account = UUID().uuidString.lowercased()
+        let root = try #require(URL(string: "gdrive://\(account)/my-drive/"))
+        let previous = CloudOfflineHub.service
+        let offline = DemoOfflineService()
+        let file = root.appendingPathComponent("report.pdf")
+        offline.states[file] = .cloudOnly
+        CloudOfflineHub.service = offline
+        RemoteFS.use(OneFileProvider(file), for: root)
+        defer { RemoteFS.use(nil, for: root); CloudOfflineHub.service = previous; ItemListView.downloadForTesting = nil }
+        let model = DirectoryModel(location: root, prefetchFolders: false)
+        model.reload()
+        try #require(await eventually { !model.isLoading && model.rows.count == 1 })
+        let list = ItemListView(model: model)
+        let element = ItemAccessibilityElement(list: list, index: 0)
+        let value = try #require(element.accessibilityValue() as? String)
+        #expect(value.contains(try #require(CloudState.cloudOnly.help)), "\(value)")
+        var downloaded: [URL] = []
+        ItemListView.downloadForTesting = { downloaded.append($0.url) }
+        let action = try #require(element.accessibilityCustomActions()?.first)
+        #expect(action.name == "Download" && action.handler?() == true && downloaded == [file])
+    }
+
+    /// #16: a place is the same VoiceOver element across redraws, and VO-Shift-M shows its menu.
+    @Test func placesAreStableForVoiceOverAndHaveTheirMenu() throws {
+        let panel = PlacesPanel(frame: CGRect(x: 0, y: 0, width: 240, height: 500))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 240, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = panel
+        defer { window.close() }
+        let home = PlaceEntry(title: "Home", url: URL(fileURLWithPath: NSHomeDirectory()), icon: "user-home", section: .places)
+        panel.rows = [.init(kind: .entry(home), y: 0, height: 28)]
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0) == PlaceAccessibilityElement(panel: panel, index: 0))
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0).hash == PlaceAccessibilityElement(panel: panel, index: 0).hash)
+        var titles: [String] = []
+        PlaceAccessibilityElement.presentForTesting = { titles = $0.items.map(\.title) }
+        defer { PlaceAccessibilityElement.presentForTesting = nil }
+        #expect(PlaceAccessibilityElement(panel: panel, index: 0).accessibilityPerformShowMenu())
+        #expect(titles.contains("Open in New Tab"))
+    }
+
+    /// #16: an app's VoiceOver frame follows the app, not the row it had, when the library is filtered.
+    @Test func appFramesFollowTheirAppAfterFiltering() throws {
+        let s = try Scratch()
+        let model = DirectoryModel(location: s.url, prefetchFolders: false)
+        let apps = (0..<6).map { i in
+            FileItem(url: URL(fileURLWithPath: "/Applications/Fixture-\(i).app"), name: "Fixture-\(i).app", isDirectory: true, isApplication: true)
+        }
+        model.searchResults = apps
+        let grid = AppsGridView(model: model)
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        scroll.documentView = grid
+        grid.updateLayout(width: 800)
+        let last = try #require((grid.accessibilityChildren() as? [NSAccessibilityElement])?.last)
+        let before = last.accessibilityFrameInParentSpace()
+        model.searchResults = [apps[5]]
+        grid.updateLayout(width: 800)
+        let first = try #require((grid.accessibilityChildren() as? [NSAccessibilityElement])?.first)
+        #expect(
+            last.accessibilityFrameInParentSpace() == first.accessibilityFrameInParentSpace() && before != first.accessibilityFrameInParentSpace())
+    }
+
+    private final class OneFileProvider: RemoteProvider {
+        let file: URL
+        init(_ file: URL) { self.file = file }
+        func list(_ folder: URL) throws -> [FileItem] { [FileItem(url: file, name: file.lastPathComponent, isDirectory: false, size: 10)] }
+        func rootTitle(_ url: URL) -> String { "One" }
+        func download(_ remote: URL, into localFolder: URL) throws -> URL { throw CocoaError(.featureUnsupported) }
+        func upload(_ local: URL, into remoteFolder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func delete(_ remote: [URL]) throws { throw CocoaError(.featureUnsupported) }
+        func makeFolder(_ remote: URL) throws { throw CocoaError(.featureUnsupported) }
+        func rename(_ remote: URL, to newName: String) throws { throw CocoaError(.featureUnsupported) }
+        func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+        func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
+    }
 }

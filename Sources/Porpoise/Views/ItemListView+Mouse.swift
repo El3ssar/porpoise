@@ -163,7 +163,12 @@ extension ItemListView {
             return true
         }
         guard state == .cloudOnly else { return false }
-        KeepDownloadedSheet.download([model.rows[i].item], window: window)
+        return downloadFromCloud(model.rows[i].item)
+    }
+
+    /// Downloads an item that is only in the cloud (its badge's click, or VoiceOver's Download).
+    @discardableResult func downloadFromCloud(_ item: FileItem) -> Bool {
+        Self.downloadForTesting?(item) ?? KeepDownloadedSheet.download([item], window: window)
         model.refreshCloud()
         needsDisplay = true
         return true

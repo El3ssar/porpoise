@@ -356,7 +356,8 @@ final class AppsGridView: NSView, NSDraggingSource {
             let item = model.rows[i].item
             return AccessibleRegion(
                 in: self, role: .button, label: AppLibrary.displayName(item.url),
-                frame: { [weak self] in self?.cellRect(i) ?? .zero },
+                // Found again by the app, not the row it had: after a filter the row may be another app's.
+                frame: { [weak self] in self.flatMap { g in g.model.index(of: item.url).map(g.cellRect) } ?? .zero },
                 selected: { [weak self] in self?.model.selection.contains(item.url) ?? false },
                 press: { [weak self] in if let o = self?.owner { o.host?.appsView(o, open: [item]) } })
         }

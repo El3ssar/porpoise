@@ -57,6 +57,37 @@ final class PlaceAccessibilityElement: NSAccessibilityElement {
         return window.convertToScreen(panel.convert(panel.rect(of: index), to: nil))
     }
 
+    /// VO-Shift-M: the place's context menu (Eject, Remove, Edit…), as a secondary click shows it.
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard let panel, let window = panel.window, panel.rows.indices.contains(index) else { return false }
+        let r = panel.rect(of: index)
+        guard
+            let e = NSEvent.mouseEvent(
+                with: .rightMouseDown, location: panel.convert(CGPoint(x: r.midX, y: r.midY), to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1),
+            let menu = panel.menu(for: e)
+        else { return false }
+        if let present = Self.presentForTesting { present(menu) } else { NSMenu.popUpContextMenu(menu, with: e, for: panel) }
+        return true
+    }
+
+    nonisolated(unsafe) static var presentForTesting: ((NSMenu) -> Void)?
+
+    /// The same row, while it shows the same thing: VoiceOver keeps its place across the panel's redraws.
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? PlaceAccessibilityElement, other.panel === panel else { return false }
+        return other.identity == identity
+    }
+    override var hash: Int { identity.hashValue }
+
+    private var identity: String {
+        switch kind {
+        case .header(let s): return "section:\(s.rawValue)"
+        case .entry(let e): return "place:\(e.url.absoluteString)|\(e.section.rawValue)"
+        case nil: return "gone:\(index)"
+        }
+    }
+
     override func accessibilityPerformPress() -> Bool {
         guard let panel else { return false }
         switch kind {

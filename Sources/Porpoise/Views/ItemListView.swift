@@ -100,6 +100,8 @@ final class ItemListView: NSView {
     /// A click on one of several selected items selects just it after the double-click interval, unless a second
     /// click (a double-click: open them all) comes first.
     var pendingCollapse: DispatchWorkItem?
+    /// Tests: what a cloud download would be asked for, instead of asking.
+    nonisolated(unsafe) static var downloadForTesting: ((FileItem) -> Void)?
     /// The system's double-click interval (tests shorten it).
     nonisolated(unsafe) static var doubleClickInterval: () -> TimeInterval = { NSEvent.doubleClickInterval }
     var cloudRefreshPending = false
