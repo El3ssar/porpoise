@@ -186,6 +186,55 @@ import Testing
         #expect(s.read("places.json") == "{ not json")  // untouched until the user changes something
     }
 
+    @Test func anEarlierUnreadableBackupIsNeverDiscarded() throws {
+        let scratch = try Scratch()
+        let file = try scratch.file("places.json", "new damaged original")
+        try scratch.file("places.unreadable.json", "earlier original")
+        let model = PlacesModel(storeURL: file)
+        #expect(model.persistenceError == nil)
+        #expect(scratch.read("places.unreadable.json") == "earlier original")
+        let backup = try #require(scratch.listing().first { $0.hasPrefix("places.unreadable-") })
+        #expect(scratch.read(backup) == "new damaged original")
+        model.add(scratch.path("new bookmark"), title: "New bookmark")
+        #expect(PlacesModel(storeURL: file).contains(scratch.path("new bookmark")))
+        #expect(scratch.read(backup) == "new damaged original")
+    }
+
+    @Test func aFailedAtomicWriteKeepsTheLastFileAndReportsTheDraft() throws {
+        let scratch = try Scratch(), folder = try scratch.folder("store"), file = folder.appendingPathComponent("places.json")
+        let errors = Locked<[String]>([])
+        let model = PlacesModel(storeURL: file, postPersistenceError: { text in errors.change { $0.append(text) } })
+        model.add(scratch.path("saved"), title: "Saved")
+        let before = try Data(contentsOf: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+        model.add(scratch.path("draft"), title: "Draft")
+        #expect(model.persistenceError != nil && !errors.value.isEmpty)
+        #expect(model.contains(scratch.path("draft")))  // Editable draft, not a false durable-success claim.
+        #expect(try Data(contentsOf: file) == before)
+        #expect(!PlacesModel(storeURL: file).contains(scratch.path("draft")))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        model.isLocked = true  // The next edit retries all pending changes.
+        #expect(model.persistenceError == nil)
+        let restored = PlacesModel(storeURL: file)
+        #expect(restored.isLocked && restored.contains(scratch.path("draft")))
+    }
+
+    @Test func aFailedBackupNeverAllowsAnUnreadableOriginalToBeOverwritten() throws {
+        let scratch = try Scratch(), file = try scratch.file("places.json", "unreadable original")
+        let files = RefusingPlacesBackup()
+        let model = PlacesModel(storeURL: file, fileManager: files, postPersistenceError: { _ in })
+        #expect(model.persistenceError != nil)
+        model.add(scratch.path("draft"))
+        #expect(model.persistenceError != nil && scratch.read("places.json") == "unreadable original")
+        #expect(!scratch.listing().contains { $0.hasPrefix("places.unreadable") })
+        files.refuses = false
+        model.isLocked = true
+        #expect(model.persistenceError == nil)
+        #expect(scratch.read("places.unreadable.json") == "unreadable original")
+        #expect(PlacesModel(storeURL: file).contains(scratch.path("draft")))
+    }
+
     @Test func withoutAFileNothingIsWritten() throws {
         let m = PlacesModel(storeURL: nil)
         m.add(URL(fileURLWithPath: "/tmp"))
@@ -241,5 +290,13 @@ import Testing
         #expect(migrated.userEntries.filter { $0.url == PlacesModel.airDropURL }.count == 1)
         let again = PlacesModel(storeURL: file)
         #expect(again.userEntries == migrated.userEntries)
+    }
+}
+
+private final class RefusingPlacesBackup: FileManager, @unchecked Sendable {
+    var refuses = true
+    override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+        if refuses { throw CocoaError(.fileWriteNoPermission) }
+        try super.copyItem(at: srcURL, to: dstURL)
     }
 }

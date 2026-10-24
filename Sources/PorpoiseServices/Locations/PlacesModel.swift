@@ -187,6 +187,11 @@ public final class PlacesModel {
 
     /// An explicit nil keeps a model in memory; the shared model uses the instance's support folder.
     private let storeURL: URL?
+    private let fileManager: FileManager
+    private let postPersistenceError: (String) -> Void
+    /// A failed write leaves editable session state and the last durable file intact; the next edit retries it.
+    public private(set) var persistenceError: String?
+    private var needsOriginalBackup = false
     static var defaultFile: URL { Settings.supportFolder.appendingPathComponent("places.json") }
 
     private convenience init() {
@@ -203,9 +208,14 @@ public final class PlacesModel {
     }
 
     /// A model kept in `storeURL` (tests use their own file), listing `profiles`' saved connections.
-    init(storeURL: URL?, profiles: ConnectionProfiles = .shared) {
+    init(
+        storeURL: URL?, profiles: ConnectionProfiles = .shared, fileManager: FileManager = .default,
+        postPersistenceError: @escaping (String) -> Void = StatusCenter.error
+    ) {
         self.storeURL = storeURL
         self.profiles = profiles
+        self.fileManager = fileManager
+        self.postPersistenceError = postPersistenceError
         load()
         refreshDevices()
         ready = true
@@ -303,8 +313,16 @@ public final class PlacesModel {
     private static let storeVersion = 2
 
     private func load() {
-        guard let storeURL, var data = try? Data(contentsOf: storeURL) else {
+        guard let storeURL else {
             userEntries = Self.defaultEntries()
+            return
+        }
+        var data: Data
+        do { data = try Data(contentsOf: storeURL) } catch {
+            userEntries = Self.defaultEntries()
+            if let error = error as? CocoaError, error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile { return }
+            needsOriginalBackup = true
+            reportPersistenceError(error)
             return
         }
         // Retired sections must not discard the user's remaining bookmarks and ordering.
@@ -322,11 +340,9 @@ public final class PlacesModel {
         }
         guard let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
             // Unreadable (damaged, or written by a newer version): keep a copy instead of silently overwriting it.
-            let backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable.json")
-            try? FileManager.default.removeItem(at: backup)
-            try? FileManager.default.copyItem(at: storeURL, to: backup)
-            NSLog("Porpoise: places.json could not be read; a copy was kept as \(backup.lastPathComponent)")
             userEntries = Self.defaultEntries()
+            needsOriginalBackup = true
+            do { try preserveOriginal() } catch { reportPersistenceError(error) }
             return
         }
         userEntries = stored.entries.map(Self.migrated)
@@ -362,8 +378,32 @@ public final class PlacesModel {
                 return e
             }, hiddenSections: Array(storedHiddenSections), collapsedSections: Array(collapsedSections),
             sectionOrder: sectionOrder, locked: isLocked, version: Self.storeVersion)
-        if let storeURL { try? JSONEncoder().encode(s).write(to: storeURL) }
+        do {
+            if let storeURL {
+                try preserveOriginal()
+                try fileManager.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(s).write(to: storeURL, options: .atomic)
+            }
+            persistenceError = nil
+        } catch { reportPersistenceError(error) }
         post()
+    }
+
+    /// Never replace an unreadable original unless a separate copy was actually made. Earlier backups stay too.
+    private func preserveOriginal() throws {
+        guard needsOriginalBackup, let storeURL else { return }
+        var backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable.json")
+        if fileManager.fileExists(atPath: backup.path) {
+            backup = storeURL.deletingPathExtension().appendingPathExtension("unreadable-\(UUID().uuidString).json")
+        }
+        try fileManager.copyItem(at: storeURL, to: backup)
+        needsOriginalBackup = false
+    }
+
+    private func reportPersistenceError(_ error: Error) {
+        let message = "Couldn’t save Places: \(error.localizedDescription) Changes are kept for this session; try the change again to save them."
+        persistenceError = message
+        if ready { postPersistenceError(message) }
     }
 
     private func post() { if ready { NotificationCenter.default.post(name: Self.changed, object: nil) } }
