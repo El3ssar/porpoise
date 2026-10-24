@@ -531,7 +531,9 @@ import Testing
                 scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: kind == .shift ? dx / 5 : dy / 5,
                 wheel2: kind == .shift ? 0 : dx / 5,
                 wheel3: 0)
-            if kind == .shift { cg?.flags = .maskShift }
+            // Its own modifiers, always: a new event takes the ones held at that moment, and ⇧ held by anything else
+            // on the Mac would turn the wheel sideways.
+            cg?.flags = kind == .shift ? .maskShift : []
             if let e = cg.flatMap({ NSEvent(cgEvent: $0) }) { content.hitTest(p)?.scrollWheel(with: e) }
         }
     }
@@ -540,6 +542,7 @@ import Testing
     private func gesture(dx: Int32, dy: Int32) -> [NSEvent] {
         func event(_ dx: Int32, _ dy: Int32, phase: Int64 = 0, momentum: Int64 = 0) -> NSEvent? {
             let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
+            cg?.flags = []
             cg?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
             cg?.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
             cg?.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
@@ -566,12 +569,12 @@ import Testing
         let drift = [down[1], sideways[2], sideways[13]]
         #expect(drift.map(NestedScrollView.isSideways) == [false, false, false])
         // A wheel's own clicks each count.
-        let tilt = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: 3, wheel3: 0).flatMap {
-            NSEvent(cgEvent: $0)
+        func wheel(_ dy: Int32, _ dx: Int32) -> NSEvent? {
+            let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0)
+            cg?.flags = []
+            return cg.flatMap { NSEvent(cgEvent: $0) }
         }
-        let roll = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 3, wheel2: 0, wheel3: 0).flatMap {
-            NSEvent(cgEvent: $0)
-        }
+        let tilt = wheel(0, 3), roll = wheel(3, 0)
         #expect(tilt.map(NestedScrollView.isSideways) == true && roll.map(NestedScrollView.isSideways) == false)
     }
 
