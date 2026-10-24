@@ -16,7 +16,7 @@ struct CopyNamePreflightTests {
         try s.file("tree/sub/._ordinary", "user sidecar bytes")
         let job = FileJob(kind: kind, sources: [source], destinationFolder: disk.volume)
         _ = try job.run()
-        #expect(job.errors.contains { $0.contains("reserved for file metadata") && $0.contains("._ordinary") })
+        #expect(job.errors.contains { $0.contains("reserved for file metadata") && $0.contains("tree/sub/._ordinary") })
         #expect(!FileJob.itemExists(at: disk.volume.appendingPathComponent("tree")))
         #expect(s.read("tree/sub/ordinary") == "ordinary bytes" && s.read("tree/sub/._ordinary") == "user sidecar bytes")
     }
@@ -48,6 +48,20 @@ struct CopyNamePreflightTests {
     }
 
     @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
+    func aNonReservedKeepBothNameIsAllowed(_ fileSystem: String) throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPNAMES", megabytes: 64, fileSystem: fileSystem, in: s)
+        let source = try s.file("._ordinary", "user sidecar bytes")
+        try Data("counterpart".utf8).write(to: disk.volume.appendingPathComponent("ordinary"))
+        try Data("existing sidecar".utf8).write(to: disk.volume.appendingPathComponent("._ordinary"))
+        let job = FileJob(kind: .copy, sources: [source], destinationFolder: disk.volume)
+        job.resolveConflict = { _ in .init(.rename("kept-user-data")) }
+        _ = try job.run()
+        #expect(job.errors.isEmpty && job.denied.isEmpty, "\(job.errors)")
+        #expect(try String(contentsOf: disk.volume.appendingPathComponent("kept-user-data"), encoding: .utf8) == "user sidecar bytes")
+        #expect(try String(contentsOf: disk.volume.appendingPathComponent("._ordinary"), encoding: .utf8) == "existing sidecar")
+    }
+
+    @Test(arguments: ["ExFAT", "MS-DOS FAT32"])
     func generatedMetadataIsAllowed(_ fileSystem: String) throws {
         let s = try Scratch()
         let sourceDisk = try DiskImage(name: "PPNAMESRC", megabytes: 64, fileSystem: fileSystem, in: s)
@@ -75,5 +89,26 @@ struct CopyNamePreflightTests {
         _ = try job.run()
         #expect(job.errors.isEmpty && job.denied.isEmpty)
         #expect(s.read("dst/tree/ordinary") == "ordinary bytes" && s.read("dst/tree/._ordinary") == "user sidecar bytes")
+    }
+}
+
+/// Observational metadata-only measurement; fixture creation is outside the clock.
+@Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["PORPOISE_NAME_PREFLIGHT_BENCHMARK"] == "1"))
+struct CopyNamePreflightBenchmarks {
+    @Test func fiftyThousandNames() throws {
+        let s = try Scratch(), disk = try DiskImage(name: "PPNAMBEN", megabytes: 64, fileSystem: "ExFAT", in: s)
+        let source = try s.folder("tree"), root = open(source.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard root >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(root) }
+        for index in 0..<50_000 {
+            let descriptor = openat(root, "f\(index)", O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+            guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            close(descriptor)
+        }
+        for trial in 0..<3 {
+            let start = ProcessInfo.processInfo.systemUptime
+            try CopyNamePreflight.validateCopy(source, to: disk.volume.appendingPathComponent("tree"), siblings: [source])
+            print("W279_PREFLIGHT entries=50000 trial=\(trial) seconds=\(ProcessInfo.processInfo.systemUptime - start)")
+        }
     }
 }
