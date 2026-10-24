@@ -67,4 +67,36 @@ import Testing
         try Data("edited again".utf8).write(to: local)
         await expectEventually { saves.count == 2 }
     }
+
+    @Test func overlappingOpensShareOneCopy() async throws {
+        let scratch = try Scratch()
+        let gate = Gate()
+        let store = CloudEditSessionStore(engine: Engine(directory: scratch.url, gate: gate))
+        let file = File(id: "f1", revision: "r1")
+        async let a = store.openSession(file)
+        async let b = store.openSession(file)
+        await expectEventually { gate.count >= 1 }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        gate.release()
+        let (first, second) = try await (a, b)
+        #expect(first.id == second.id && gate.count == 1)
+        #expect(try records(scratch.url) == 1)
+    }
+
+    @Test func cancelingOneOpenLeavesTheOtherItsCopy() async throws {
+        let scratch = try Scratch()
+        let gate = Gate()
+        let store = CloudEditSessionStore(engine: Engine(directory: scratch.url, gate: gate))
+        let file = File(id: "f1", revision: "r1")
+        let first = Task { try await store.openSession(file) }
+        await expectEventually { gate.count == 1 }
+        let second = Task { try await store.openSession(file) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        first.cancel()
+        await #expect(throws: CancellationError.self) { try await first.value }
+        gate.release()
+        let session = try await second.value
+        #expect(FileManager.default.fileExists(atPath: session.localURL.path) && gate.count == 2)
+        #expect(try records(scratch.url) == 1)
+    }
 }

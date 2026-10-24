@@ -76,6 +76,8 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
     private var sessions: [UUID: Session] = [:]
     private var saving: Set<UUID> = []
     private var openSessions: Set<UUID> = []
+    /// Opens in flight by file identity: an overlapping open of the same file shares the one copy.
+    private var opening: [String: Task<Session, Error>] = [:]
     public init(engine: Engine) {
         self.engine = engine
         for url in (try? FileManager.default.contentsOfDirectory(at: engine.directory, includingPropertiesForKeys: nil)) ?? []
@@ -120,12 +122,33 @@ public actor CloudEditSessionStore<Engine: CloudEditEngine> {
         {
             openSessions.insert(existing.id); return existing
         }
+        let key = engine.identity(file)
+        while let shared = opening[key] {
+            do {
+                let session = try await shared.value
+                openSessions.insert(session.id); return session
+            } catch _ where shared.isCancelled && !Task.isCancelled {
+                // The caller that started it gave up; this one starts again.
+                if opening[key] == shared { opening[key] = nil }
+            }
+        }
+        let task = Task { try await prepareSession(file, context: context) }
+        opening[key] = task
+        defer { if opening[key] == task { opening[key] = nil } }
+        let session = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        openSessions.insert(session.id); return session
+    }
+    private func prepareSession(_ file: Engine.File, context: CloudTransferContext) async throws -> Session {
         let id = UUID()
         let (fresh, url) = try await engine.prepare(file, id: id, directory: engine.directory, context: context)
         let handle = try FileHandle(forWritingTo: url); try handle.synchronize(); try handle.close()
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let session = Session(id: id, localURL: url, file: fresh, sentHash: try engine.hash(url))
-        try update(session); openSessions.insert(id); return session
+        try update(session); return session
     }
     public func saveSession(_ id: UUID, copyPath: String? = nil, context: CloudTransferContext = .init()) async throws -> Session {
         guard var session = sessions[id] else { throw engine.unavailable }
