@@ -295,7 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wc.window?.contentView?.layoutSubtreeIfNeeded()
         wc.window?.contentView?.displayIfNeeded()
         CATransaction.flush()
-        DispatchQueue.main.async { Settings.shared.prepareCustomToolsAfterFirstWindow() }
+        DispatchQueue.main.async {
+            Settings.shared.prepareCustomToolsAfterFirstWindow()
+            SharingPreparation.sweepStaleCopiesAfterLaunch()
+        }
     }
 
     #if PORPOISE_TEST_HOOKS

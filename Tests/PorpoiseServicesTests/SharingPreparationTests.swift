@@ -35,6 +35,19 @@ import Testing
         #expect(await eventually { !FileManager.default.fileExists(atPath: folder.path) })
         #expect(start.duration(to: .now) >= .seconds(1))
     }
+    @Test func successfulGraceRetainsTheLeaseAfterPreparedItemsAreReleased() async throws {
+        let scratch = try Scratch()
+        var lease: SharingStagingLease? = try SharingStaging.create(in: scratch.url)
+        let folder = try #require(lease?.folder)
+        var prepared: PreparedSharingItems? = PreparedSharingItems(urls: [], folder: folder, lease: lease)
+        lease = nil
+        prepared?.cleanup(after: 0.2)
+        prepared = nil
+        #expect(SharingStaging.sweep(root: folder.deletingLastPathComponent(), now: Date().addingTimeInterval(1200)) == 0)
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+        #expect(await eventually { !FileManager.default.fileExists(atPath: folder.path) })
+    }
+
     @Test func localItemsPassThroughWithoutTemporaryCopies() async throws {
         let scratch = try Scratch()
         let urls = [try scratch.file("quote'\" 日本語\n.txt", "local"), try scratch.folder("folder")]
@@ -99,7 +112,7 @@ import Testing
                     urls, control: control, batchID: UUID(), temporaryDirectory: destination, progress: { _ in }, notice: { _ in })
             }
         }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: destination.appendingPathComponent(SharingStaging.rootName).path).isEmpty)
         let cancelled = JobControl(); cancelled.cancel()
         await #expect(throws: (any Error).self) {
             try await offThePool {
@@ -107,7 +120,7 @@ import Testing
                     urls, control: cancelled, batchID: UUID(), temporaryDirectory: destination, progress: { _ in }, notice: { _ in })
             }
         }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: destination.appendingPathComponent(SharingStaging.rootName).path).isEmpty)
         #expect(scratch.read("server/good.txt") == "good")
     }
 
@@ -150,7 +163,7 @@ import Testing
                     temporaryDirectory: staging, progress: { _ in }, notice: { _ in })
             }
         }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: staging.path).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: staging.appendingPathComponent(SharingStaging.rootName).path).isEmpty)
         #expect(scratch.read("outside.txt") == "outside")
     }
 

@@ -59,7 +59,7 @@ import PorpoiseServices
 
 @MainActor final class SharingSession: NSObject, @preconcurrency NSSharingServicePickerDelegate, NSSharingServiceDelegate {
     /// A successful native callback can precede sharingd finishing its file reads. Keep remote staging available.
-    nonisolated static let successfulShareRetentionInterval: TimeInterval = 10 * 60
+    nonisolated static let successfulShareRetentionInterval = SharingPreparation.successfulShareRetentionInterval
     let id = UUID()
     let mode: SharingCoordinator.Mode
     weak var anchor: NSView?
