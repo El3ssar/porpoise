@@ -20,8 +20,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
     }
     var isActive = true { didSet { needsDisplay = true } }
-    /// In a split, the active pane's location: its capsule carries the accent ring.
-    var isCurrent = false { didSet { if isCurrent != oldValue { capsule?.showsCurrent = isCurrent } } }
+    /// In a split, the active pane's location: its capsule carries the accent ring (not while the location is edited,
+    /// which draws a ring of its own).
+    var isCurrent = false { didSet { if isCurrent != oldValue { markCapsule() } } }
+    private func markCapsule() { capsule?.showsCurrent = isCurrent && !isEditing }
     private var capsule: GlassGroup? {
         var v = superview
         while let s = v, !(s is GlassGroup) { v = s.superview }
@@ -33,13 +35,13 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     }
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
-        capsule?.showsCurrent = isCurrent
+        markCapsule()
     }
     var missingTail = false { didSet { needsDisplay = true } }
     var preferredAncestorName: String? { didSet { if preferredAncestorName != oldValue { rebuild() } } }
     var showPlacesButton = false { didSet { rebuild() } }
     var places: [PlaceEntry] = [] { didSet { rebuild() } }
-    private(set) var isEditing = false
+    private(set) var isEditing = false { didSet { if isEditing != oldValue { markCapsule() } } }
 
     private struct Segment {
         enum Kind { case placesButton, rootArrow, crumb(URL, String, Bool), arrow(URL), more([URL]) }

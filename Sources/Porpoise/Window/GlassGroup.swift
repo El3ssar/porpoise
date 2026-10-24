@@ -54,8 +54,8 @@ final class GlassGroup: NSView {
 
     /// Drawn over the glass; clicks go through to what it surrounds.
     private final class Ring: NSView {
-        /// As macOS's focus ring.
-        static let width: CGFloat = 2
+        /// As the location field's own ring while it's edited: a mark, lighter than the keyboard focus ring.
+        static let width: CGFloat = 1.5
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

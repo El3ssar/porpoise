@@ -100,6 +100,12 @@ import Testing
         try press(123, "\u{F702}", [.option, .numericPad, .function], in: window)
         #expect(await eventually(Self.wait) { !wc.tab.activeIsSecondary })
         #expect(marks() == [true, false])
+        // The location being edited draws its own ring: the mark steps aside until editing ends.
+        wc.tab.navigators[0].beginEditing(selectAll: true)
+        #expect(marks() == [false, false])
+        wc.tab.navigators[0].endEditing()
+        #expect(marks() == [true, false])
+        window.makeFirstResponder(wc.view.list)
         // One pane again: nothing to tell apart.
         try press(99, "\u{F706}", .function, in: window)
         try #require(await eventually(Self.wait) { !wc.tab.isSplit })
