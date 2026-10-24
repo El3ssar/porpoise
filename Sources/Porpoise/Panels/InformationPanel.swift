@@ -215,6 +215,8 @@ final class InformationPanel: NSView {
     /// Re-renders after a settings change: what to show may change too (hover on/off), and dates or the preview.
     /// A video or song that is still shown keeps playing.
     func refresh() {
+        // A change of Settings › font size reaches an open panel: the name's font too (the rows are made again).
+        nameLabel.font = Tokens.font(.title3, scaled: true)
         if let c = container, window != nil {
             shownURLs = []
             show(hovered: hoveredURL, container: c)
