@@ -214,7 +214,8 @@ public final class CloudEditCoordinator {
         let launch = launch ?? openFile
         guard let binding = binding(item, checkAccount: false) else { done(false); return }
         let known = entry(for: item.url)
-        // A clean copy of an older revision is replaced; changed or conflicted bytes are always reopened.
+        // A clean copy of an older revision isn't reopened: the newer one opens beside it. The older copy stays listed
+        // and followed, since its editor may still save it; changed or conflicted copies are always reopened.
         if let known, FileManager.default.fileExists(atPath: known.localURL.path),
             known.revision == binding.revision || (known.mark != .editing && known.mark != .saved)
         {
@@ -232,10 +233,6 @@ public final class CloudEditCoordinator {
                 guard let self else { done(true); return }
                 if entry.mark == .saved { entry.mark = .editing }
                 entry.location = item.url
-                // The older copy goes unless the other app saved it meanwhile; then it stays to be sent.
-                if let known, known.id != entry.id, !(await binding.pending()).contains(where: { $0.id == known.id }) {
-                    self.dismiss(known.id)
-                }
                 self.add(entry, binding: binding); launch(entry.localURL); self.watch(entry.id)
                 self.post("Editing “\(entry.name)”: changes you save go to \(binding.provider.title).", false)
                 done(true)

@@ -105,7 +105,11 @@ import Testing
         editing.open(newer)
         await expectEventually { opened.count == 2 }
         #expect(opened[1] != entry.localURL && (try? Data(contentsOf: opened[1])) == Data("colleague's version".utf8))
-        #expect(editing.entries.count == 1 && editing.entry(for: item.url)?.localURL == opened[1])
+        #expect(editing.entry(for: item.url)?.localURL == opened[1])
+
+        // The old copy may still be open in its editor: a later save there is still followed, and conflicts.
+        try Data("a later save to the old copy".utf8).write(to: entry.localURL)
+        await expectEventually { editing.entries.contains { $0.id == entry.id && $0.mark == .conflict } }
     }
 
     @Test func changesToTheOldCopyDuringTheNewerDownloadAreKept() async throws {
