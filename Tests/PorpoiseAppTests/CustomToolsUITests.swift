@@ -9,6 +9,22 @@ import Testing
 
 @MainActor @Suite(.serialized, .isolatedSettings) struct CustomToolsUITests {
     init() { _ = NSApplication.shared }
+    @Test func settingsKeepsSavedToolsWhenStartupMenusAreDeferred() throws {
+        let original = CustomTool(name: "Existing", executable: "/usr/bin/true", arguments: [])
+        Settings.store.set(try CustomToolDocument(tools: [original]).encoded(), forKey: "customTools")
+        #expect(Settings.shared.customToolsIfLoaded.isEmpty)
+        #expect(Settings.shared.customTools == [original])
+        let page = CustomToolsEditorView(frame: .zero)
+        #expect(page.table.numberOfRows == 1)
+        func buttons(_ view: NSView) -> [NSButton] { (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
+        let add = try #require(buttons(page).first { $0.title == "Add Examples" })
+        add.performClick(nil)
+        let saved = Settings.shared.customTools
+        #expect(saved.first == original)
+        // Examples receive fresh identities on each insertion.
+        #expect(saved.map(\.name) == [original.name] + CustomToolDocument.examples.map(\.name))
+        #expect(page.table.numberOfRows == 1 + CustomToolDocument.examples.count)
+    }
     @Test func draftValidationSaveAndCancelAreAtomic() throws {
         var saved: [CustomTool] = []
         let tool = CustomTool(name: "Original", executable: "/usr/bin/printf", arguments: ["%s", "{selection}"])

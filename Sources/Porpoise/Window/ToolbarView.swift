@@ -107,7 +107,7 @@ final class ToolbarView: NSView {
         background.frame = bounds
         hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
         if Settings.shared.toolbarCommands != ToolbarCommand.defaults
-            || Settings.shared.customTools.contains(where: { $0.placements.contains(.toolbar) })
+            || Settings.shared.customToolsIfLoaded.contains(where: { $0.placements.contains(.toolbar) })
         {
             layoutCustom(); return
         }
@@ -187,7 +187,7 @@ final class ToolbarView: NSView {
         viewMode.showsMenuIndicator = false; viewMode.isSplitButton = false
         customGroups.values.forEach { $0.isHidden = true }
         var commands = Settings.shared.toolbarCommands
-        if Settings.shared.customTools.contains(where: { $0.placements.contains(.toolbar) }), !commands.contains(.customTools) {
+        if Settings.shared.customToolsIfLoaded.contains(where: { $0.placements.contains(.toolbar) }), !commands.contains(.customTools) {
             commands.append(.customTools)
         }
         let gh = Self.capsuleHeight, gy = (bounds.height - gh) / 2

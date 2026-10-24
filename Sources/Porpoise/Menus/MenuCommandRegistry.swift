@@ -38,8 +38,11 @@ extension ShortcutModifiers {
     private var originals: [ObjectIdentifier: Original] = [:]
     private(set) var commands: [Command] = []
     var shortcutActions: [ShortcutAction] {
+        shortcutActions(tools: Settings.shared.customTools)
+    }
+    private func shortcutActions(tools: [CustomTool]) -> [ShortcutAction] {
         commands.map(\.definition)
-            + Settings.shared.customTools.map {
+            + tools.map {
                 ShortcutAction(id: "customTool:" + $0.id.uuidString, title: $0.name, defaults: [$0.shortcut])
             }
     }
@@ -117,7 +120,8 @@ extension ShortcutModifiers {
     func apply() {
         let preferences = Settings.shared.keyboardShortcuts
         // A clash leaves the actions involved as they are; every other binding still applies.
-        let clashing = Set(preferences.conflicts(actions: shortcutActions).flatMap { [$0.first, $0.second] })
+        let clashing = Set(
+            preferences.conflicts(actions: shortcutActions(tools: Settings.shared.customToolsIfLoaded)).flatMap { [$0.first, $0.second] })
         for command in commands where !clashing.contains(command.id) {
             let items = [command.item] + command.aliases
             if let override = preferences.overrides[command.id] {
