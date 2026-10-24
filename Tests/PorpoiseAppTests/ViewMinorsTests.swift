@@ -78,6 +78,31 @@ import Testing
         #expect(self.text(in: panel).contains("4 KB"))
     }
 
+    /// W-236 m1 (W-243): a read stuck on one volume (a share whose server went away) doesn't hold the panel's
+    /// details for items on another.
+    @Test func aStuckVolumeDoesntHoldTheInformationPanel() async throws {
+        let shareQueue = InformationPanel.detailQueue(for: URL(fileURLWithPath: "/System/Volumes/Data/stuck/x"))
+        #expect(shareQueue !== InformationPanel.detailQueue(for: URL(fileURLWithPath: "/Users/someone/x")))
+        #expect(
+            InformationPanel.detailQueue(for: URL(fileURLWithPath: "/Users/a")) === InformationPanel.detailQueue(for: URL(fileURLWithPath: "/tmp/b")))
+        let release = DispatchSemaphore(value: 0)
+        shareQueue.async { release.wait() }  // stuck, as a read on a dead share is
+        defer { release.signal() }
+        let s = try Scratch("info-stuck")
+        let file = try s.file("here.txt", "hello")
+        let pane = ViewContainer(url: s.url)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 500), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = pane
+        defer { window.close() }
+        try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == 1 })
+        let panel = InformationPanel(frame: CGRect(x: 0, y: 0, width: 300, height: 600))
+        pane.list.select(file)
+        panel.show(hovered: nil, container: pane)
+        // Its permissions come from the off-main read: they show though the other volume's queue is stuck.
+        #expect(await eventually { self.text(in: panel).contains("Read & Write") })
+    }
+
     /// #10: a URL that isn't shown is looked up once per listing, however many thumbnails ask about it.
     @Test func missedLookupsAreRemembered() async throws {
         let s = try Scratch("lookups")

@@ -312,7 +312,7 @@ final class InformationPanel: NSView {
             }
         }
         detailWork = work
-        Self.detailQueue.async(execute: work)
+        Self.detailQueue(for: u).async(execute: work)
     }
 
     /// Nothing to show.
@@ -342,8 +342,18 @@ final class InformationPanel: NSView {
 
     private var detailWork: DispatchWorkItem?
     private var detailGeneration: UInt64 = 0
-    /// Disk and Spotlight reads for the panel, one at a time; a newer selection cancels those not started.
-    private static let detailQueue = DispatchQueue(label: "porpoise.information", qos: .userInitiated)
+    /// Disk and Spotlight reads for the panel, one at a time per volume; a newer selection cancels those not started.
+    /// One queue per volume: a read stuck on a share whose server went away holds only that share's items, never the
+    /// panel for everything else.
+    private static var detailQueues: [String: DispatchQueue] = [:]
+
+    static func detailQueue(for url: URL) -> DispatchQueue {
+        let volume = MountTable.mountPoint(of: url.standardizedFileURL.path) ?? "/"
+        if let q = detailQueues[volume] { return q }
+        let q = DispatchQueue(label: "porpoise.information \(volume)", qos: .userInitiated)
+        detailQueues[volume] = q
+        return q
+    }
 
     /// What the panel reads from disk about one local item, off the main thread.
     struct Details {

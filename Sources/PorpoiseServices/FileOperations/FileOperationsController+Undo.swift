@@ -117,16 +117,15 @@ extension FileOperationsController {
     /// Whether undoing `r` moves an item to another volume (a copy of its data, then a delete). Tests set it.
     nonisolated(unsafe) static var copiesData: (UndoRecord) -> Bool = { movesBetweenVolumes($0) }
 
+    /// Decided on the main thread from the mount table alone (`MountTable.mountPoint`): a stat per item there
+    /// (a big batch, or a share whose server went away) held the window. A destination folder that's gone (it's
+    /// recreated) is covered by the same mount as its path.
     static func movesBetweenVolumes(_ r: UndoRecord) -> Bool {
-        func volume(_ u: URL) -> NSObject? {
-            (try? u.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier as? NSObject
-        }
-        return moves(of: r).contains { m in
-            // The destination folder may be gone (it's recreated): its nearest existing ancestor tells the volume.
-            var to = m.to.deletingLastPathComponent()
-            while !FileManager.default.fileExists(atPath: to.path), to.pathComponents.count > 1 { to = to.deletingLastPathComponent() }
-            guard let a = volume(m.from), let b = volume(to) else { return false }
-            return !a.isEqual(b)
+        moves(of: r).contains { m in
+            guard m.from.isFileURL, m.to.isFileURL else { return false }
+            let a = MountTable.mountPoint(of: m.from.standardizedFileURL.path)
+            let b = MountTable.mountPoint(of: m.to.deletingLastPathComponent().standardizedFileURL.path)
+            return a != b
         }
     }
 
