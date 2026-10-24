@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diagnostics.launched()
+        AppAutomation.shared.start()
         followLook()
         NSApp.mainMenu = buildMainMenu()
         MenuCommandRegistry.shared.start()

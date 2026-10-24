@@ -245,6 +245,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             if let u = self.pendingSelect, let i = self.model.index(of: self.listedURL(matching: u)) {
                 self.list.select(self.model.rows[i].item.url)
             }
+            if let selection = self.pendingAutomationSelection, selection.folder == self.url {
+                self.model.selection = selection.paths
+                self.pendingAutomationSelection = nil
+            }
             self.pendingSelect = nil
             if self.selectsFirstOnLoad {
                 self.selectsFirstOnLoad = false
@@ -332,6 +336,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     override var isFlipped: Bool { true }
 
     /// Item to select once the folder has loaded (e.g. the folder we came from after "Up").
+    var pendingAutomationSelection: (folder: URL, paths: Set<URL>)?
     var pendingSelect: URL?
 
     /// The listed URL for `u`, even when the paths differ by a symlink (/tmp vs /private/tmp): such an item is
