@@ -415,7 +415,7 @@ final class ColumnBrowserView: NSView {
         let resized = strip.frame.width != bounds.width
         strip.frame = bounds
         layoutColumns()
-        // The pane got wider or narrower (the window, a split sliding open or closed, a panel): the columns keep their
+        // The pane got wider or narrower (the window, a panel): the columns keep their
         // widths and follow, the last one (and the focused one) in view, then settle on a column's edge.
         if resized, !scroller.isRunning { keepEndInView() }
     }
