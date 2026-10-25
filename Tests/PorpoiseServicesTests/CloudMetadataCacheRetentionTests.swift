@@ -177,19 +177,26 @@ struct CloudMetadataCacheRetentionTests {
         #expect(cache.file("new-alias")?.id == "new" && cache.file("new")?.id == "new")
     }
 
-    @Test func aContinuousWriterDoesNotPreventOrdinaryEviction() async throws {
+    @Test(.timeLimit(.minutes(1))) func aContinuousWriterDoesNotPreventOrdinaryEviction() async throws {
         let scratch = try Scratch(), cache = await cache(scratch)
         cache.remember([Item("root")])
         cache.learn((0..<10_000).map { Item("ordinary-\($0)") }, since: cache.generation)
         let stop = Flag(), ended = Flag(), writes = Locked(0)
-        defer { stop.set() }
+        let (progress, signal) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let (completion, finished) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer { stop.set(); signal.finish(); finished.finish() }
         Thread {
-            defer { ended.set() }
+            defer { ended.set(); finished.yield(()); finished.finish() }
+            var reported = false
             while !stop.isSet {
                 let count = writes.change {
                     $0 += 1; return $0
                 }
                 cache.remember([Item("root", name: "update-\(count)")])
+                // Observe progress on the writer itself; a busy cooperative pool cannot miss the event.
+                if !reported, count % 50 == 0, cache.files.count <= 101 {
+                    reported = true; signal.yield(()); signal.finish()
+                }
                 // A stream of writes, not a readiness assumption or a latency assertion.
                 Thread.sleep(forTimeInterval: 0.001)
             }
@@ -197,11 +204,12 @@ struct CloudMetadataCacheRetentionTests {
         var config = configuration(files: 100)
         config.roots = ["root"]
         cache.enableRetention(config)
-        await expectEventually("writer entered") { writes.value > 1 }
-        await expectEventually("ordinary records prune while writer remains active", timeout: 10) { cache.files.count <= 101 }
-        #expect(!stop.isSet && !ended.isSet)
+        var events = progress.makeAsyncIterator()
+        #expect(await events.next() != nil)
+        #expect(writes.value > 1 && cache.files.count <= 101 && !stop.isSet && !ended.isSet)
         stop.set()
-        await expectEventually("writer exited") { ended.isSet }
+        var end = completion.makeAsyncIterator()
+        #expect(await end.next() != nil && ended.isSet)
         await cache.settleRetention()
         #expect(cache.files.count <= 101 && cache.file("root") != nil)
     }
