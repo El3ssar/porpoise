@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Opening a file's preview no longer waits for thumbnail downloads from unrelated server connections.
+
 ## 0.16.0
 
 - **Places and Folders are tabs.** The sidebar shows Places or Folders at its full height, with a switch at the top, instead of splitting its height between them. F9 and F7 switch to a tab, or hide the sidebar if that tab is already showing; windows and workspaces remember the tab. The Folders tree shortens long names in the middle and shows the whole name on hover, no longer runs past the sidebar's edge, keeps its selection and the hidden folders you opened when something changes on disk, and finds the shown folder when Home is reached through a link. Settings explains that "Limit to Home folder" starts the tree at Home only inside Home.
