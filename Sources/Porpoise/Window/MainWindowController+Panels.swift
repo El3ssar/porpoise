@@ -7,13 +7,11 @@ import PorpoiseServices
 extension MainWindowController {
     /// Smallest sidebar width when dragging its divider.
     private static let minPanelDividerPosition: CGFloat = 150
-    /// Share of the sidebar height Places gets when Folders is shown below it.
-    private static let placesShareOfSidebar: CGFloat = 0.55
     /// Share of the sidebar height the Shelf gets below Places or Folders, and its least height.
     private static let shelfShareOfSidebar: CGFloat = 0.4
     private static let minShelfHeight: CGFloat = 200
 
-    private var sidebarVisible: Bool { showPlaces || showFolders || showShelf }
+    private var sidebarVisible: Bool { showNavigator || showShelf }
 
     /// Re-arranges the panel split views according to which panels are visible.
     func rebuildPanels() {
@@ -26,8 +24,10 @@ extension MainWindowController {
                 s.removeArrangedSubview($0); $0.removeFromSuperview()
             }
         }
-        if showPlaces { leftStack.addArrangedSubview(placesScroll) }
-        if showFolders { leftStack.addArrangedSubview(folders) }
+        if showNavigator {
+            navigator.show(sidebarTab, sidebarTab == .folders ? folders : placesScroll)
+            leftStack.addArrangedSubview(navigator)
+        }
         if showShelf { leftStack.addArrangedSubview(shelf) }
         if sidebarVisible {
             outer.addArrangedSubview(sidebar)
@@ -64,21 +64,49 @@ extension MainWindowController {
         if showShelf && leftStack.arrangedSubviews.count > 1 {
             leftStack.setPosition(sidebarHeight - shelfHeight - d, ofDividerAt: leftStack.arrangedSubviews.count - 2)
         }
-        if showPlaces && showFolders { leftStack.setPosition((sidebarHeight - shelfHeight) * Self.placesShareOfSidebar, ofDividerAt: 0) }
-        for t in tabs { t.navigators.forEach { $0.showPlacesButton = !showPlaces } }
+        syncSidebarTab()
         if tabs.indices.contains(current) {
-            if showFolders { folders.currentURL = view.url }
             if showInformation { information.show(hovered: nil, container: view) }
             if showTerminal { terminal.follow(view.url) }
         }
-        Settings.store.set(showPlaces, forKey: "panel.places")
-        Settings.store.set(showFolders, forKey: "panel.folders")
         Settings.store.set(showInformation, forKey: "panel.info")
         Settings.store.set(showTerminal, forKey: "panel.terminal")
         Settings.store.set(showShelf, forKey: "panel.shelf")
         alignNavigators()
         if let responder { window?.makeFirstResponder(responder) }
         AppDelegate.shared.sessionChanged()
+    }
+
+    /// What follows the navigator's tab: the breadcrumb's Places button, the Folders tree's location, and the stored
+    /// panel flags.
+    private func syncSidebarTab() {
+        for t in tabs { t.navigators.forEach { $0.showPlacesButton = !showPlaces } }
+        if showFolders, tabs.indices.contains(current) { folders.currentURL = view.url }
+        Settings.store.set(showPlaces, forKey: "panel.places")
+        Settings.store.set(showFolders, forKey: "panel.folders")
+        Settings.store.set(sidebarTab.rawValue, forKey: "panel.sidebarTab")
+    }
+
+    /// Shows the navigator's other tab in place when nothing else in the sidebar changes (a click on the switch, F9
+    /// or F7 while the other tab shows); false when the sidebar's parts change and it must be rebuilt.
+    private func switchSidebarTabInPlace() -> Bool {
+        let expected: [NSView] = (showNavigator ? [navigator] : []) + (showShelf ? [shelf] : [])
+        guard leftStack.arrangedSubviews.elementsEqual(expected, by: ===), showNavigator else { return false }
+        let responder = window?.firstResponder
+        let hadFocus = Self.focusedView(responder).map { $0.isDescendant(of: navigator) && $0 !== navigator.picker } ?? false
+        navigator.show(sidebarTab, sidebarTab == .folders ? folders : placesScroll)
+        syncSidebarTab()
+        // Focus in the tab that left goes to the one that came (the list it had is no longer in the window).
+        if hadFocus, let content = navigator.content, let target = Self.keyViews(in: content).first { window?.makeFirstResponder(target) }
+        AppDelegate.shared.sessionChanged()
+        return true
+    }
+
+    /// The navigator's switch was clicked.
+    func chooseSidebarTab(_ t: SidebarNavigator.Tab) {
+        finishPanelSlide()
+        sidebarTab = t
+        if !switchSidebarTabInPlace() { rebuildPanels() }
     }
 
     enum PanelSlot { case sidebar, information, terminal }
@@ -104,7 +132,10 @@ extension MainWindowController {
         if slot == .sidebar {
             let sidebarWasVisible = sidebarVisible
             toggle()
-            if sidebarWasVisible == sidebarVisible { rebuildPanels(); return }
+            if sidebarWasVisible == sidebarVisible {
+                if !switchSidebarTabInPlace() { rebuildPanels() }
+                return
+            }
             if sidebarVisible {
                 holdPanes(for: slot); rebuildPanels(); slide(slot, opening: true)
             } else {

@@ -187,6 +187,7 @@ import PorpoiseServices
     static func sidebarAndBars(_ f: FormBuilder) {
         f.section("Folders panel")
         f.check("Limit to Home folder", s.foldersLimitToHome) { s.foldersLimitToHome = $0 }
+        f.note("Inside your Home folder the tree starts there; elsewhere it starts at the top of the disk.")
         f.check("Show hidden folders", s.foldersShowHidden) { s.foldersShowHidden = $0 }
         f.section("Information panel")
         f.check("Show preview", s.infoShowPreview) { s.infoShowPreview = $0 }

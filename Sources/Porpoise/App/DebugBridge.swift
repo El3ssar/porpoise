@@ -249,6 +249,7 @@ import SwiftTerm
             "status": v.statusBar.displayText,
             "panels": [
                 "places": w.showPlaces, "folders": w.showFolders, "info": w.showInformation, "terminal": w.showTerminal, "shelf": w.showShelf,
+                "sidebarTab": w.sidebarTab.rawValue,
             ],
             "terminalCwd": w.showTerminal ? (w.terminal.currentDirectory ?? "") : "",
             "terminalAlpha": w.terminal.terminalView.alphaValue,

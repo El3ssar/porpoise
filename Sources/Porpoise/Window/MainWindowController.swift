@@ -24,13 +24,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     /// and stays there whichever pane is active (the operator's call, W-248).
     let hSplit = ThinSplitView()
     weak var lastSyncedView: ViewContainer?
-    let leftStack = ThinSplitView()  // [places, folders, shelf]
+    let leftStack = ThinSplitView()  // [navigator (Places | Folders), shelf]
     /// Sidebar host: translucent Desert-tinted material behind Places/Folders (Finder-style).
     let sidebar = NSView()
     let sidebarMaterial = TintedMaterialView(material: .sidebar, tint: Theme.sidebarBackground, alpha: 0.70)
     let placesScroll = NSScrollView()
     let places = PlacesPanel()
     lazy var folders = FoldersPanel()
+    let navigator = SidebarNavigator()
     lazy var information = InformationPanel()
     lazy var terminal = TerminalPanel()
     lazy var shelf: ShelfPanel = {
@@ -51,11 +52,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var view: ViewContainer { tab.active }
 
     // Panel visibility (Dolphin defaults: only Places visible).
-    var showPlaces = Settings.store.object(forKey: "panel.places") as? Bool ?? true
-    var showFolders = Settings.store.bool(forKey: "panel.folders")
+    /// Places and Folders are two tabs of the sidebar's navigator: the one chosen last (kept while it's hidden) and
+    /// whether the navigator shows. Settings from before the tabs, with both panels on, start on Places.
+    var sidebarTab =
+        SidebarNavigator.Tab(rawValue: Settings.store.string(forKey: "panel.sidebarTab") ?? "")
+        ?? (Settings.store.bool(forKey: "panel.folders") && Settings.store.object(forKey: "panel.places") as? Bool == false ? .folders : .places)
+    var showNavigator = (Settings.store.object(forKey: "panel.places") as? Bool ?? true) || Settings.store.bool(forKey: "panel.folders")
+    /// Places shows (its tab, in the shown navigator). Turned on, it's the tab shown; turned off, the navigator hides
+    /// if Places was its tab, so toggling the panel that isn't shown switches to it (F9, F7, View › Show Panels).
+    var showPlaces: Bool {
+        get { showNavigator && sidebarTab == .places }
+        set { showTab(.places, newValue) }
+    }
+    var showFolders: Bool {
+        get { showNavigator && sidebarTab == .folders }
+        set { showTab(.folders, newValue) }
+    }
     var showInformation = Settings.store.bool(forKey: "panel.info")
     var showTerminal = Settings.store.bool(forKey: "panel.terminal")
     var showShelf = Settings.store.bool(forKey: "panel.shelf")
+
+    private func showTab(_ t: SidebarNavigator.Tab, _ shown: Bool) {
+        if shown {
+            sidebarTab = t
+            showNavigator = true
+        } else if sidebarTab == t {
+            showNavigator = false
+        }
+    }
 
     // Panel layout state (see MainWindowController+Panels).
     var rebuildingPanels = false
@@ -124,6 +148,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         places.setFrameSize(NSSize(width: 160, height: places.frame.height))  // height: the panel sizes itself to its rows
         places.autoresizingMask = [.width]
         places.delegate = self
+        navigator.onChoose = { [weak self] t in self?.chooseSidebarTab(t) }
         leftStack.isVertical = false
         leftStack.dividerStyle = .thin
         sidebar.addSubview(sidebarMaterial)

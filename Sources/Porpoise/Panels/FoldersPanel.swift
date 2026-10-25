@@ -16,6 +16,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private var followPending = false
     /// A follow stopped at a folder whose listing is running; it resumes when the listing arrives.
     private var followWaiting = false
+    /// Levels from the tree's top to the folder shown (it decides the indentation).
+    private var followDepth = 0
     /// Folders are listed here, never in outline callbacks: a folder of 100,000 files took seconds.
     private let listingQueue = DispatchQueue(label: "porpoise.folders.listing", qos: .userInitiated, attributes: .concurrent)
 
@@ -41,6 +43,9 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         var relistedFor: String?
         /// The folder changed on disk while it was being listed: it's listed once more when that listing is done.
         var changedWhileListing = false
+        /// Hidden children shown anyway because they are on the way to the view's folder (`reveal`): a re-list keeps
+        /// those that are still there, with what's open below them.
+        private(set) var revealed: Set<String> = []
         init(_ url: URL) { self.url = url }
 
         var isLoading: Bool { listing != nil }
@@ -80,6 +85,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             let c = names.map { old[$0] ?? Node(url.appendingPathComponent($0)) }
             children = c
             staleChildren = nil
+            revealed.formIntersection(names)
             return c
         }
 
@@ -107,6 +113,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             var c = children ?? []
             if let n = c.first(where: { $0.url.lastPathComponent == name }) { return n }
             let n = Node(url.appendingPathComponent(name))
+            revealed.insert(name)
             c.append(n)
             c.sort { $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending }
             children = c
@@ -163,8 +170,13 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         outline.addTableColumn(col)
         outline.outlineTableColumn = col
         outline.headerView = nil
+        // The column stays as wide as the panel, however deep the tree: AppKit's default widens it with every level
+        // expanded, so deep names ran past the sidebar's edge without an ellipsis.
+        outline.autoresizesOutlineColumn = false
+        outline.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        col.resizingMask = .autoresizingMask
         outline.rowHeight = 24
-        outline.indentationPerLevel = 14
+        outline.indentationPerLevel = Self.maxIndent
         outline.backgroundColor = .clear
         outline.style = .plain
         outline.selectionHighlightStyle = .regular
@@ -178,6 +190,12 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         addSubview(scroll)
+        // A legacy scroller (always shown, as in Breeze or with a mouse) narrows the clip view: the column follows it.
+        scroll.contentView.postsFrameChangedNotifications = true
+        ancestryObservers.append(
+            NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) {
+                [weak self] _ in self?.fitColumn()
+            })
         // Connected last: changing the outline's style or columns reloads it, and a reload before it sits in its
         // scroll view lists the whole root and makes a cell for every row (in test instances that root was the
         // temporary folder: 20,000+ folders, over a minute of CPU at launch).
@@ -188,7 +206,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             if Self.settingKeys.contains(n.object as? String) { self?.resetRoot() }
             if n.object as? String == "appearancePreferences" || n.object as? String == "appearance" {
                 // Refresh existing cells after the icon cache clears; keep the expanded tree intact.
-                DispatchQueue.main.async { [weak self] in self?.outline.reloadData() }
+                DispatchQueue.main.async { [weak self] in self?.keepingSelection { self?.outline.reloadData() } }
             }
         }
         ancestryObservers.append(
@@ -215,6 +233,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     override func layout() {
         super.layout()
         scroll.frame = bounds
+        fitIndentation(depth: followDepth)
+        fitColumn()
     }
 
     // MARK: Following the disk
@@ -288,9 +308,11 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         return own
     }
 
+    /// Compared by their real paths: a home reached through a symlink (one under /var → /private/var) holds the folders
+    /// under its real path too.
     private static func isInHome(_ url: URL) -> Bool {
-        let home = Self.home.path
-        return url.path == home || url.path.hasPrefix(home + "/")
+        let home = realFolder(Self.home).path, path = realFolder(url).path
+        return path == home || path.hasPrefix(home + "/")
     }
 
     // MARK: Following the view
@@ -333,11 +355,17 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         var u = Self.realFolder(target)
         // Only inside the root: a symlink out of Home (~/code → /Volumes/x/code) resolves to a path that never
         // reaches it, and the chain would invent a node for a folder that isn't there.
-        guard u.path.hasPrefix(root.url.path == "/" ? "/" : root.url.path + "/") || u.path == root.url.path else { return }
+        let realRoot = Self.realFolder(root.url).path
+        guard u.path.hasPrefix(realRoot == "/" ? "/" : realRoot + "/") || u.path == realRoot else { return }
+        // Home's folders are under Home's path as the tree has it (a home reached through a symlink: /var/x, real
+        // /private/var/x, W-266).
+        if realRoot != root.url.path { u = URL(fileURLWithPath: root.url.path + u.path.dropFirst(realRoot.count)) }
         while u.path.count >= root.url.path.count && u.path != root.url.path {
             chain.insert(u, at: 0)
             u = u.deletingLastPathComponent()
         }
+        followDepth = chain.count
+        fitIndentation(depth: followDepth)
         var parent: Node?
         followWaiting = false
         for c in chain {
@@ -353,6 +381,16 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         }
         outline.selectRowIndexes([row], byExtendingSelection: false)
         outline.scrollRowToVisible(row)
+    }
+
+    /// Runs a reload, then selects again the folder that was selected if the reload dropped it (a reload of the item
+    /// or of one above it clears the outline's selection; the folder shown must stay highlighted).
+    private func keepingSelection(_ reload: () -> Void) {
+        let row = outline.selectedRow
+        let item = row >= 0 ? outline.item(atRow: row) : nil
+        reload()
+        guard let item, outline.selectedRow < 0, case let r = outline.row(forItem: item), r >= 0 else { return }
+        outline.selectRowIndexes([r], byExtendingSelection: false)
     }
 
     private func remoteChain(to url: URL) -> [URL] {
@@ -462,12 +500,19 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func startListing(_ node: Node) {
         guard !node.isLoading else { return }
         let token = node.beginListing()
-        let url = node.url, hidden = showHidden, tree = root
+        let url = node.url, hidden = showHidden, tree = root, revealed = node.revealed
         listingQueue.async { [weak self, weak node] in
-            let names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
+            var names = Node.sortedSubfolderNames(of: url, showHidden: hidden)
+            let kept = revealed.subtracting(names).filter { name in
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.appendingPathComponent(name).path, isDirectory: &isDir) && isDir.boolValue
+            }
+            if !kept.isEmpty { names = (names + kept).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
             DispatchQueue.main.async { [weak self, weak node] in
-                guard let self, let node, self.root === tree, self.remoteTree == nil, node.finishListing(token, names) else { return }
-                self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true)
+                guard let self, let node, self.root === tree, self.remoteTree == nil else { return }
+                guard node.finishListing(token, names) else { return }
+                // Listed again (a change on disk) above the shown folder: the reload must not drop its selection.
+                self.keepingSelection { self.outline.reloadItem(node === self.root ? nil : node, reloadChildren: true) }
                 if self.followWaiting { self.followCurrent() }
                 // Changed meanwhile: listed once more, a moment later (a folder that never stops changing is read at
                 // most a few times a second, and what follows the view's folder through it gets its turn first).
@@ -482,7 +527,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.loadingLabelDelay) { [weak self, weak node] in
             guard let self, let node, node.isLoading, node !== self.root, self.outline.row(forItem: node) >= 0 else { return }
-            self.outline.reloadItem(node)
+            self.keepingSelection { self.outline.reloadItem(node) }
         }
     }
 
@@ -521,7 +566,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             DispatchQueue.main.async {
                 guard let self, let node, self.root === tree, self.remoteTree == nil, node.probing else { return }
                 node.finishProbe(e)
-                if !e, self.outline.row(forItem: node) >= 0 { self.outline.reloadItem(node) }
+                if !e, self.outline.row(forItem: node) >= 0 { self.keepingSelection { self.outline.reloadItem(node) } }
             }
         }
     }
@@ -532,13 +577,14 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         v.imageView?.image = Icons.shared.image(IconTheme.folderIconName(url), size: 16)
         if let n = item as? RemoteFolderTree.Node {
             v.textField?.stringValue = n.name + (n.isLoading ? " — Loading…" : "")
-            v.toolTip = n.message
+            v.toolTip = n.message ?? n.name
             v.setAccessibilityLabel(n.name + (n.isLoading ? ", loading" : ""))
         } else {
             let n = item as? Node
             let loading = n?.isLoading == true
             v.textField?.stringValue = (n?.name ?? "") + (loading ? " — Loading…" : "")
-            v.toolTip = nil
+            // The whole name: a narrow sidebar shows long ones shortened in the middle.
+            v.toolTip = n?.name
             v.setAccessibilityLabel(loading ? (n?.name ?? "") + ", loading" : nil)
         }
         return v
@@ -557,21 +603,50 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     private func nodeURL(_ item: Any?) -> URL? { (item as? Node)?.url ?? (item as? RemoteFolderTree.Node)?.url }
 
     private func makeCell() -> NSTableCellView {
-        let v = NSTableCellView()
+        let v = FolderCell(frame: CGRect(x: 0, y: 0, width: 100, height: 24))
         v.identifier = Self.cellID
         let img = NSImageView()
-        img.frame = CGRect(x: 2, y: 4, width: 16, height: 16)
         let t = NSTextField(labelWithString: "")
         t.font = Theme.font
         t.textColor = Theme.windowText
-        t.lineBreakMode = .byTruncatingTail
-        t.frame = CGRect(x: 22, y: 3, width: 400, height: 17)
-        t.autoresizingMask = [.width]
+        // Names that differ at the end (dated, numbered, -Users-…-project folders) stay apart (DESIGN-CONTRACT T5).
+        t.lineBreakMode = .byTruncatingMiddle
+        t.cell?.truncatesLastVisibleLine = true
         v.addSubview(img)
         v.addSubview(t)
         v.imageView = img
         v.textField = t
         return v
+    }
+
+    /// A row: the icon, then the name up to the row's edge. Laid out from the row's width each time (an autoresized
+    /// field squeezed to nothing in a deep row came back wider than its row in a shallow one, and ran past the edge
+    /// with no ellipsis).
+    private final class FolderCell: NSTableCellView {
+        override func layout() {
+            super.layout()
+            imageView?.frame = CGRect(x: 2, y: 4, width: 16, height: 16)
+            textField?.frame = CGRect(x: 22, y: 3, width: max(0, bounds.width - 24), height: 17)
+        }
+    }
+
+    /// Less indentation in a deep tree, so the folder shown (and every folder above it) keeps a readable name: 14 pt a
+    /// level, less when the folder shown is too deep for that in the panel's width, down to 3.
+    private func fitIndentation(depth: Int) {
+        let room = max(0, scroll.contentView.bounds.width - Self.nameRoom)
+        let indent = min(Self.maxIndent, max(Self.minIndent, (room / CGFloat(max(depth, 1))).rounded(.down)))
+        if outline.indentationPerLevel != indent { outline.indentationPerLevel = indent }
+    }
+    private static let maxIndent: CGFloat = 14, minIndent: CGFloat = 3
+    /// What the folder shown keeps besides its indentation: the triangle, the icon and about 80 pt of name.
+    private static let nameRoom: CGFloat = 130
+
+    /// The one column is exactly as wide as what the scroll view shows, with or without a scroller.
+    private func fitColumn() {
+        guard let col = outline.tableColumns.first else { return }
+        let width = max(0, scroll.contentView.bounds.width - outline.intercellSpacing.width)
+        if abs(col.width - width) > 0.5 { col.width = width }
+        fitIndentation(depth: followDepth)
     }
 
     func outlineView(_ o: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? { BreezeRowView() }
