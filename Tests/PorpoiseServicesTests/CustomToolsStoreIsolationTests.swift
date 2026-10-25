@@ -53,4 +53,23 @@ import os
         #expect(Settings.shared.customToolsIfLoaded.isEmpty)
         #expect(Settings.shared.customTools == [newTool])
     }
+
+    @Test func anOldWarmupCannotEvictTheReplacementStoresWarmCache() async throws {
+        let original = Settings.store, replacement = MemoryDefaults()
+        let oldTool = CustomTool(name: "Old store", executable: "/usr/bin/true", arguments: [])
+        let newTool = CustomTool(name: "Existing", executable: "/usr/bin/true", arguments: [])
+        original.set(try CustomToolDocument(tools: [oldTool]).encoded(), forKey: "customTools")
+        replacement.set(try CustomToolDocument(tools: [newTool]).encoded(), forKey: "customTools")
+        defer { Settings.store = original }
+        let queue = DispatchQueue(label: "porpoise.test.old-custom-tools-cache")
+        queue.suspend()
+        var suspended = true, completed = false
+        defer { if suspended { queue.resume() } }
+        Settings.shared.prepareCustomToolsAfterFirstWindow(on: queue) { completed = true }
+        Settings.store = replacement
+        #expect(Settings.shared.customTools == [newTool])
+        queue.resume(); suspended = false
+        try #require(await eventually { completed })
+        #expect(Settings.shared.customToolsIfLoaded == [newTool])
+    }
 }
