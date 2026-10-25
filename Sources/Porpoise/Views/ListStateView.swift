@@ -18,6 +18,8 @@ final class ListStateView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        // Shows nothing until a state is shown (show(nil) on a fresh view changes nothing, so it must start hidden).
+        isHidden = true
         for label in [title, message, details] {
             label.alignment = .center
             label.isSelectable = label !== title

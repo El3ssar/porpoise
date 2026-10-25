@@ -19,6 +19,31 @@ import Testing
         return pane
     }
 
+    /// A fresh view shows nothing until it is given a state (verifier2 #8167): its default title, Show Details and
+    /// action button never appear, and showing nothing on it keeps it hidden.
+    @Test func aFreshStateViewShowsNothing() {
+        let view = ListStateView()
+        #expect(view.isHidden && view.state == nil)
+        view.show(nil)
+        #expect(view.isHidden)
+        view.show(ListState(title: "Folder is empty", symbol: "folder"))
+        #expect(!view.isHidden)
+        view.show(nil)
+        #expect(view.isHidden)
+    }
+
+    /// The disk utility windows that give their list no empty state show nothing over it, before and after a scan.
+    @Test func utilityWindowsWithoutAnEmptyStateShowNone() async throws {
+        let scratch = try Scratch()
+        _ = try scratch.file("a.txt", "a")
+        for w in [ChecksumWindow(roots: [scratch.url]), DuplicateWindow(roots: [scratch.url])] as [DiskUtilityWindow] {
+            defer { w.window?.close() }
+            #expect(w.emptyListState == nil && w.emptyState.isHidden)
+            _ = await eventually { !w.busy }
+            #expect(w.emptyState.isHidden)
+        }
+    }
+
     @Test func emptyFolderSaysSoAndCountsNothing() async throws {
         let scratch = try Scratch()
         let pane = await loaded(scratch.url)

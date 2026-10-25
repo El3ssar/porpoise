@@ -19,7 +19,7 @@ CHECKS = {
     'literal colours outside Theme/': (r'NSColor\((srgbRed|rgb|white|calibrated)', ('Theme/',), 13),
     'literal durations': (r'duration( *= *|: *)[0-9]', ('Theme/Motion.swift',), 3),
     'literal spacings': (
-        r'([sS]pacing *[=:] *|setCustomSpacing\(|NSEdgeInsets\([^)]*\b(top|left|bottom|right): *)([2-9]|[1-9][0-9])', (), 0),
+        r'([sS]pacing\s*[=:]\s*|setCustomSpacing\(\s*|NSEdgeInsets\([^)]*\b(top|left|bottom|right):\s*)([2-9]|[1-9][0-9])', (), 0),
 }
 
 # Lines each pattern must catch, and lines it must leave alone (`--self-test`).
@@ -37,6 +37,17 @@ FIXTURES = {
 
 def self_test():
     failed = False
+    # Through count() itself, over a file: wrapped calls (swift-format's usual shape) count once each.
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        Path(folder, 'Wrapped.swift').write_text(
+            'let a = NSEdgeInsets(\n    top: 0, left: 8, bottom: 0, right: 0)\n'
+            'stack.setCustomSpacing(\n    14, after: a)\n'
+            'let b = NSEdgeInsets(\n    top: 0, left: 0, bottom: 0, right: 0)\n'
+            'stack.spacing = Tokens.Space.s\n', encoding='utf-8')
+        hits = count(CHECKS['literal spacings'][0], (), Path(folder))
+        if hits != ['Wrapped.swift:1', 'Wrapped.swift:3']:
+            print(f'MISS literal spacings over wrapped lines: {hits}'); failed = True
     for name, (caught, ignored) in FIXTURES.items():
         pattern = CHECKS[name][0]
         for line in caught:
@@ -50,15 +61,17 @@ def self_test():
 
 
 
-def count(pattern, exempt):
+def count(pattern, exempt, root=SOURCES):
+    """Every match in the whole file, so a call that swift-format wrapped over several lines counts too; reported at
+    the line where it starts."""
     hits = []
-    for path in sorted(SOURCES.rglob('*.swift')):
-        relative = path.relative_to(SOURCES).as_posix()
+    for path in sorted(root.rglob('*.swift')):
+        relative = path.relative_to(root).as_posix()
         if any(relative.startswith(e) for e in exempt):
             continue
-        for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-            if re.search(pattern, line):
-                hits.append(f'{relative}:{number}')
+        text = path.read_text(encoding='utf-8')
+        for match in re.finditer(pattern, text):
+            hits.append(f'{relative}:{text.count(chr(10), 0, match.start()) + 1}')
     return hits
 
 
