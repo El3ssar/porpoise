@@ -26,7 +26,11 @@ extension Settings {
 
     /// Warm the document on a worker after drawing the first window; menu/toolbar rebuilding then uses the cache.
     public func prepareCustomToolsAfterFirstWindow(completion: @escaping () -> Void = {}) {
-        DispatchQueue.global(qos: .utility).async {
+        prepareCustomToolsAfterFirstWindow(on: .global(qos: .utility), completion: completion)
+    }
+
+    func prepareCustomToolsAfterFirstWindow(on queue: DispatchQueue, completion: @escaping () -> Void = {}) {
+        queue.async {
             let hasTools = !self.loadCustomTools().isEmpty
             DispatchQueue.main.async {
                 completion()
