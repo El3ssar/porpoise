@@ -1,6 +1,12 @@
 import Foundation
 import PorpoiseCore
 
+extension DriveContentSource: CloudMetadataOwningContentSource {
+    func setMetadataOwner(_ name: String, owner: CloudMetadataRetention.Owner?, complete: Bool) {
+        client?.metadataCache.storage.setRetentionOwner(name, owner.map { .init(owner: $0, complete: complete) })
+    }
+}
+
 /// Drive's metadata/change feed and journaled streaming engine behind the neutral content capability.
 public final class DriveContentSource: CloudContentSource, @unchecked Sendable {
     private weak var client: DriveClient?

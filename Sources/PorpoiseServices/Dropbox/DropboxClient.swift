@@ -48,6 +48,7 @@ public final class DropboxClient: @unchecked Sendable {
         metadataCache = CloudMetadataCache(directory: scoped.appendingPathComponent("Metadata"))
         journal = CloudJournal(folder: scoped.appendingPathComponent("Operations"))
         renditions = CloudRenditionCache(directory: scoped.appendingPathComponent("Renditions"))
+        enableMetadataRetention()
     }
     func request(_ route: String, arguments: Any, content: Bool = false, body: Data? = nil, range: Range<Int64>? = nil) throws -> URLRequest {
         var request = URLRequest(url: (content ? configuration.contentURL : configuration.apiURL).appendingPathComponent(route))
@@ -142,7 +143,9 @@ public final class DropboxClient: @unchecked Sendable {
     }
     public func list(_ path: String = "", onPage: @Sendable ([DropboxItem], Bool) async -> Void = { _, _ in }) async throws -> [DropboxItem] {
         do {
-            let since = metadataCache.generation
+            let read = metadataCache.beginRead()
+            defer { withExtendedLifetime(read) {} }
+            let since = read.generation
             var cursor: String?; var files: [String: DropboxItem] = [:]
             // IDs by path: a deleted entry names a path, not an ID.
             var paths: [String?: Set<String>] = [:]

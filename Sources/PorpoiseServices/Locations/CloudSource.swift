@@ -5,6 +5,8 @@ import PorpoiseCore
 final class CloudSource: LocationContentSource {
     let location: URL
     let provider: CloudFileProvider
+    private var retainedFolders: Set<URL> = []
+    private var metadataLeases: [CloudMetadataLease] = []
     init(location: URL, provider: CloudFileProvider) {
         self.location = location
         self.provider = provider
@@ -26,6 +28,13 @@ final class CloudSource: LocationContentSource {
         return p
     }
 
+    /// Acquire replacements first: a reload or expanded-folder change never leaves a pruning gap.
+    func retainMetadata(for folders: Set<URL>) {
+        retainedFolders = folders
+        let replacement = (provider as? CloudMetadataRetainingProvider)?.retainMetadata(for: folders) ?? []
+        metadataLeases = replacement
+    }
+
     func cached(_ folder: URL) -> [FileItem]? { provider.cachedListing(folder) }
 
     /// Delivers each page as it comes, then the end: the whole listing as the service gave it, or the failure.
@@ -34,9 +43,13 @@ final class CloudSource: LocationContentSource {
         let task = Task { @MainActor in
             do {
                 let items = try await provider.refresh(folder) { listed, complete in
-                    await MainActor.run { deliver(LocationListing(part: .page, items: listed, complete: complete)) }
+                    await MainActor.run {
+                        self.retainMetadata(for: self.retainedFolders)
+                        deliver(LocationListing(part: .page, items: listed, complete: complete))
+                    }
                 }
                 try Task.checkCancellation()
+                self.retainMetadata(for: self.retainedFolders)
                 deliver(LocationListing(part: .end, items: items))
             } catch is CancellationError {
                 return

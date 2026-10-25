@@ -52,7 +52,6 @@ public final class DriveClient: @unchecked Sendable {
     let retryWait: @Sendable (TimeInterval) async throws -> Void
     private let report: @Sendable (Error?) -> Void
     let lock = NSLock()
-    var cache: [String: DriveFile] = [:]
     static let fields =
         "id,name,mimeType,driveId,resourceKey,size,parents,headRevisionId,version,md5Checksum,appProperties,modifiedTime,thumbnailLink,hasThumbnail,webViewLink,owners(displayName,emailAddress,photoLink),shared,capabilities(canDownload,canListChildren,canEdit,canRename,canTrash,canUntrash,canAddChildren,canMoveItemWithinDrive,canMoveItemOutOfDrive,canCopy),shortcutDetails,exportLinks,trashed,permissions(id,type,role,displayName,emailAddress,photoLink),sharingUser(displayName,emailAddress,photoLink),lastModifyingUser(displayName,emailAddress,photoLink),sharedWithMeTime"
 
@@ -68,6 +67,7 @@ public final class DriveClient: @unchecked Sendable {
         self.metadataCache = DriveMetadataCache(accountID: accountID, directory: metadataDirectory)
         self.mutationJournal = mutationJournal
         self.accountID = accountID; self.tokens = tokens; self.http = http; self.baseURL = baseURL; self.report = report
+        enableMetadataRetention()
     }
 
     public func accountInfo() async throws -> DriveAccountInfo {
@@ -86,24 +86,21 @@ public final class DriveClient: @unchecked Sendable {
         guard let location = DriveLocation(url: url), location.accountID == accountID,
             case .folder(let id, _) = location.collection
         else { return nil }
-        return lock.withLock { cache[id] } ?? metadataCache.file(id)
+        return metadataCache.file(id)
     }
 
     /// The file with `id` as last read ("root": My Drive's own folder), without asking Drive.
-    func cachedFile(id: String) -> DriveFile? { lock.withLock { cache[id] } ?? metadataCache.file(id) }
+    func cachedFile(id: String) -> DriveFile? { metadataCache.file(id) }
 
     /// What a change made here returned: newer than anything read before it.
     func remember(_ files: [DriveFile]) {
-        lock.withLock { for file in files { cache[file.id] = file } }
         metadataCache.remember(files)
     }
 
     /// What a request started at `since` (the metadata cache's generation) read: a change made here meanwhile is newer,
     /// and is what's kept and returned (a listing that started before a rename landing after it showed the old name).
     func learned(_ files: [DriveFile], since: UInt64) -> [DriveFile] {
-        let files = metadataCache.learn(files, since: since)
-        lock.withLock { for file in files { cache[file.id] = file } }
-        return files
+        metadataCache.learn(files, since: since)
     }
 
     func request(_ path: String, query: [URLQueryItem] = [], resource: (String, String?)? = nil) async throws -> Data {
@@ -171,8 +168,10 @@ public final class DriveClient: @unchecked Sendable {
 
     public func file(_ id: String, resourceKey: String? = nil, includeTrashed: Bool = false) async throws -> DriveFile {
         guard DriveLink.isValidID(id) else { throw DriveError.invalidLocation }
-        let resourceKey = resourceKey ?? lock.withLock { cache[id]?.resourceKey }
-        let since = metadataCache.generation
+        let resourceKey = resourceKey ?? metadataCache.resourceKey(id)
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         let data = try await request(
             "files/\(id)",
             query: [
@@ -183,7 +182,6 @@ public final class DriveClient: @unchecked Sendable {
         guard (file.id == id || id == "root"), DriveLink.isValidID(file.id), includeTrashed || file.trashed != true else { throw DriveError.notFound }
         file = learned([file], since: since)[0]
         if id == "root" {
-            lock.withLock { cache["root"] = file }
             metadataCache.rememberRoot(file)
         }
         return file
@@ -208,7 +206,9 @@ public final class DriveClient: @unchecked Sendable {
 
     public func listPage(_ location: DriveLocation, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
-        let since = metadataCache.generation
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         var query = [URLQueryItem(name: "pageSize", value: "1000")]
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         if case .sharedDrives = location.collection {
@@ -233,7 +233,7 @@ public final class DriveClient: @unchecked Sendable {
         switch location.collection {
         case .sharedWithMe: filter = "sharedWithMe = true and trashed = false"
         case .folder(let id, let drive):
-            let known = lock.withLock { cache[id] }
+            let known = metadataCache.storage.recentFile(id)
             let source: DriveFile
             if let known { source = known } else { source = try await file(id, resourceKey: resourceKey) }
             let target = try await resolve(source)
@@ -271,7 +271,6 @@ public final class DriveClient: @unchecked Sendable {
         let feed = lock.withLock { changeFeed }
         await feed?.stop()
         metadataCache.clear()
-        lock.withLock { cache.removeAll() }
         await mediaCache.clear()
     }
 

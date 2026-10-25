@@ -114,9 +114,28 @@ extension DriveMutationTests {
         }
         let client = DriveClient(
             accountID: UUID(), tokens: tokens, http: http, baseURL: server.base.appendingPathComponent("drive/v3/"),
-            mutationJournal: .init(folder: scratch.url.appendingPathComponent("journal")))
+            mutationJournal: .init(folder: scratch.url.appendingPathComponent("journal")),
+            metadataDirectory: scratch.url.appendingPathComponent("metadata"))
         _ = try await client.file("binary-a", resourceKey: "source-key")
         _ = try await client.file("folder-a", resourceKey: "parent-key")
+        await offThePool { client.metadataCache.storage.flush() }
+        let restored = DriveMetadataCache(accountID: client.accountID, directory: client.metadataCache.directory)
+        restored.storage.enableRetention(.init(limits: .init(files: 0, listings: 0, bytes: 0)))
+        await restored.storage.settleRetention()
+        #expect(restored.file("binary-a") == nil && restored.file("folder-a") == nil)
+        #expect(restored.resourceKey("binary-a") == "source-key" && restored.resourceKey("folder-a") == "parent-key")
+        restored.clear()
+        #expect(restored.resourceKey("binary-a") == nil && restored.resourceKey("folder-a") == nil)
+        client.metadataCache.storage.setRetentionLimits(.init(files: 0, listings: 0, bytes: 0))
+        await client.metadataCache.storage.settleRetention()
+        #expect(client.metadataCache.file("binary-a") == nil && client.metadataCache.file("folder-a") == nil)
+        _ = try await client.file("binary-a")  // opaque-ID-only lookup still sends the capability
+        await client.metadataCache.storage.settleRetention()
+        #expect(client.metadataCache.file("binary-a") == nil)
+        _ = try await client.mutationResponse(
+            client.mutationURL("files/binary-a", query: [.init(name: "addParents", value: "folder-a")]), method: "PATCH",
+            body: Data(#"{"name":"after pruning"}"#.utf8), headers: ["Content-Type": "application/json"])
+        #expect(captured.value.contains("binary-a/source-key,folder-a/parent-key"))
         _ = try await client.copy("binary-a", to: "folder-a")
         #expect(captured.value.contains("binary-a/source-key,folder-a/parent-key"))
         #expect(captured.value.filter { $0 == "binary-a/source-key" }.count >= 2)

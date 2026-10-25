@@ -9,28 +9,22 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
     private let accountName: String
     private let accountEmail: String?
     private struct Listing {
-        let files: [(DriveFile, DriveFile?)]
         let parent: URL
         let items: [FileItem]
     }
     private let cacheLock = NSLock()
-    private var listings: [DriveLocation.Collection: Listing] = [:]
-    private var cacheOrder: [DriveLocation.Collection] = []
     private var generation = 0
 
     /// Synchronous: navigation and disclosure paint without waiting for the network.
     public func cachedListing(_ folder: URL) -> [FileItem]? {
-        guard let location = try? location(folder) else { return nil }
-        return cacheLock.withLock {
-            guard let listing = listings[location.collection] else {
-                return client?.metadataCache.snapshot(location)?.files.map { file in
-                    file.fileItem(
-                        accountID: accountID, shortcutTarget: file.shortcutDetails.flatMap { client?.metadataCache.file($0.targetId) },
-                        parent: location)
-                }
-            }
-            if listing.parent == folder { return listing.items }
-            return listing.files.map { $0.0.fileItem(accountID: accountID, shortcutTarget: $0.1, parent: location) }
+        guard let location = try? location(folder), let client else { return nil }
+        let key = client.metadataCache.key(location)
+        if let listing: Listing = client.metadataCache.storage.snapshotValue(key, name: "drive.rows"), listing.parent == folder {
+            return listing.items
+        }
+        return client.metadataCache.snapshot(location)?.files.map { file in
+            file.fileItem(
+                accountID: accountID, shortcutTarget: file.shortcutDetails.flatMap { client.metadataCache.file($0.targetId) }, parent: location)
         }
     }
 
@@ -39,16 +33,8 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         cacheLock.withLock {
             generation += 1
             if !preserveDisk { client?.metadataCache.invalidate(folder.flatMap(DriveLocation.init(url:))) }
-            if let folder, let location = try? location(folder) {
-                func matches(_ collection: DriveLocation.Collection) -> Bool {
-                    if case .folder(let id, _) = collection, case .folder(let other, _) = location.collection { return id == other }
-                    return collection == location.collection
-                }
-                for key in listings.keys.filter(matches) { listings[key] = nil }
-                cacheOrder.removeAll(where: matches)
-            } else {
-                listings.removeAll(); cacheOrder.removeAll()
-            }
+            let keys = folder.flatMap { try? location($0) }.flatMap { location in client.map { Set([$0.metadataCache.key(location)]) } }
+            client?.metadataCache.storage.invalidateSnapshotValues(keys)
         }
     }
 
@@ -81,7 +67,9 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         let location = try location(folder)
         guard let client else { throw DriveError.reconnect }
         // What a change made here while this lists (a rename) is newer than the listing: it isn't undone.
-        let since = client.metadataCache.generation
+        let read = client.metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         if case .myDrive = location.collection { _ = try? await client.file("root") }
         let epoch = cacheLock.withLock { generation }
         var files: [(DriveFile, DriveFile?)] = []
@@ -107,11 +95,9 @@ public final class DriveProvider: RemoteProvider, @unchecked Sendable {
         let items = files.map { $0.0.fileItem(accountID: accountID, shortcutTarget: $0.1, parent: location) }
         cacheLock.withLock {
             guard generation == epoch else { return }
-            listings[location.collection] = Listing(files: files, parent: folder, items: items)
-            client.metadataCache.store(files.map { $0.0 }, at: location, since: since)
-            cacheOrder.removeAll { $0 == location.collection }
-            cacheOrder.append(location.collection)
-            while cacheOrder.count > 128 { listings[cacheOrder.removeFirst()] = nil }
+            client.metadataCache.storage.store(
+                files.map { $0.0 }, key: client.metadataCache.key(location), since: since, contextFiles: files.compactMap { $0.1 },
+                snapshotValue: ("drive.rows", Listing(parent: folder, items: items)))
         }
         return items
     }

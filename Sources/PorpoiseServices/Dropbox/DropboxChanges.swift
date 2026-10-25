@@ -38,12 +38,15 @@ extension CloudChangeFeed {
     }
 }
 private func dropboxChangePage(_ client: DropboxClient, cursor: String?) async throws -> CloudChangePage {
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let page = try await client.listPage(cursor: cursor, recursive: true)
     guard !page.cursor.isEmpty else { throw DropboxError.invalidResponse }
     return CloudChangePage(
         cursor: page.cursor, hasMore: page.hasMore,
-        apply: {
+        apply: { [read] in
+            defer { withExtendedLifetime(read) {} }
             let (updates, removed) = dropboxPageChanges(page.entries, cached: client.metadataCache.files)
             let changed = client.metadataCache.learn(updates, since: since)
             let paths = Dictionary(client.metadataCache.files.map { ($0.id, $0.pathLower ?? "") }, uniquingKeysWith: { a, _ in a })

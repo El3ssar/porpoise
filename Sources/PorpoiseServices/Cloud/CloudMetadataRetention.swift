@@ -4,17 +4,17 @@ import Foundation
 /// The caller supplies complete retained-payload byte counts (including keys/relationships and listing copies),
 /// applies the returned removals, and runs the planner on its own serialized background queue.
 struct CloudMetadataRetention {
-    struct Limits {
+    struct Limits: Sendable {
         var files: Int
         var listings: Int
         var bytes: Int
     }
-    struct Owner {
+    struct Owner: Equatable, Sendable {
         var items: Set<String> = []
         var subtrees: Set<String> = []
         var listings: Set<String> = []
     }
-    struct Accounting: Equatable {
+    struct Accounting: Equatable, Sendable {
         var files: Int
         var listings: Int
         var bytes: Int
@@ -23,22 +23,25 @@ struct CloudMetadataRetention {
         var protectedBytes: Int
         var owners: Int
         var ownerReferences: Int
+        var aliasConflicts: Int = 0
         var ordinaryFiles: Int { files - protectedFiles }
         var ordinaryListings: Int { listings - protectedListings }
         var ordinaryBytes: Int { bytes - protectedBytes }
     }
-    struct Evictions: Equatable {
+    struct Evictions: Equatable, Sendable {
         var files: Set<String> = []
         var listings: Set<String> = []
     }
     private struct File {
         var aliases: Set<String>
         var parents: Set<String>
+        var dependencies: Set<String>
         var bytes: Int
         var used: UInt64
     }
     private struct Listing {
         var items: Set<String>
+        var context: Set<String>
         var bytes: Int
         var used: UInt64
     }
@@ -47,16 +50,16 @@ struct CloudMetadataRetention {
     private var owners: [String: Owner] = [:]
     private var clock: UInt64 = 0
 
-    mutating func putFile(_ id: String, aliases: Set<String> = [], parents: Set<String> = [], bytes: Int) {
+    mutating func putFile(_ id: String, aliases: Set<String> = [], parents: Set<String> = [], dependencies: Set<String> = [], bytes: Int) {
         precondition(bytes >= 0)
         clock &+= 1
-        files[id] = File(aliases: aliases, parents: parents, bytes: bytes, used: clock)
+        files[id] = File(aliases: aliases, parents: parents, dependencies: dependencies, bytes: bytes, used: clock)
     }
     /// Canonical IDs referenced by a complete snapshot, plus its container or other required context.
     mutating func putListing(_ key: String, items: Set<String>, context: Set<String> = [], bytes: Int) {
         precondition(bytes >= 0)
         clock &+= 1
-        listings[key] = Listing(items: items.union(context), bytes: bytes, used: clock)
+        listings[key] = Listing(items: items.union(context), context: context, bytes: bytes, used: clock)
     }
     mutating func forgetFile(_ id: String) { files[id] = nil }
     mutating func forgetListing(_ key: String) { listings[key] = nil }
@@ -72,24 +75,26 @@ struct CloudMetadataRetention {
     /// metadata learned later receives the same protection. The integration must restore owners before pruning.
     mutating func setOwner(_ name: String, _ owner: Owner?) { owners[name] = owner }
 
-    private func protection() -> (files: Set<String>, listings: Set<String>, parents: [String: Set<String>]) {
-        // Canonical IDs take precedence over aliases. Aliases must name at most one canonical file.
-        var canonical = Dictionary(uniqueKeysWithValues: files.keys.map { ($0, $0) })
+    private func protection() -> (
+        files: Set<String>, listings: Set<String>, parents: [String: Set<String>], canonical: [String: Set<String>], aliasConflicts: Int
+    ) {
+        // Canonical IDs take precedence. Conflicting provider aliases resolve conservatively to every candidate,
+        // so an owner cannot lose a subtree because malformed metadata happened to arrive first.
+        var canonical = Dictionary(uniqueKeysWithValues: files.keys.map { ($0, Set([$0])) })
         for (id, file) in files {
             for alias in file.aliases where files[alias] == nil {
-                precondition(canonical[alias] == nil || canonical[alias] == id)
-                canonical[alias] = id
+                canonical[alias, default: []].insert(id)
             }
         }
-        func resolve(_ id: String) -> String { canonical[id] ?? id }
-        let parents = files.mapValues { Set($0.parents.map(resolve)) }
-        let ownedListings = Set(owners.values.flatMap(\.listings)).intersection(listings.keys)
-        var protected = Set(owners.values.flatMap(\.items).map(resolve))
-        for key in ownedListings { protected.formUnion(listings[key]!.items.map(resolve)) }
-        let subtreeRoots = Set(owners.values.flatMap(\.subtrees).map(resolve))
+        func resolve(_ id: String) -> Set<String> { canonical[id] ?? [id] }
+        let parents = files.mapValues { Set($0.parents.flatMap(resolve)) }
+        var ownedListings = Set(owners.values.flatMap(\.listings)).intersection(listings.keys)
+        var protected = Set(owners.values.flatMap(\.items).flatMap(resolve))
+        for key in ownedListings { protected.formUnion(listings[key]!.items.flatMap(resolve)) }
+        let subtreeRoots = Set(owners.values.flatMap(\.subtrees).flatMap(resolve))
         var children: [String: Set<String>] = [:]
-        for (id, file) in files {
-            for parent in file.parents { children[resolve(parent), default: []].insert(id) }
+        for id in files.keys {
+            for parent in parents[id] ?? [] { children[parent, default: []].insert(id) }
         }
         var visited: Set<String> = [], pending = Array(subtreeRoots)
         while let id = pending.popLast() {
@@ -97,9 +102,16 @@ struct CloudMetadataRetention {
             protected.insert(id)
             pending += children[id] ?? []
         }
+        // Offline folder ownership includes complete listings, so eviction cannot make an owned folder
+        // unbrowsable on the next offline visit even though all its canonical members survived.
+        for (key, listing) in listings where !Set(listing.context.flatMap(resolve)).isDisjoint(with: visited) {
+            ownedListings.insert(key)
+            protected.formUnion(listing.items.flatMap(resolve))
+        }
         // Ancestors survive too, including chains through aliases and cyclic provider metadata.
-        protected = Self.ancestors(of: protected, parents: parents)
-        return (protected.intersection(files.keys), ownedListings, parents)
+        let context = files.mapValues { Set($0.parents.union($0.dependencies).flatMap(resolve)) }
+        protected = Self.ancestors(of: protected, parents: context)
+        return (protected.intersection(files.keys), ownedListings, context, canonical, canonical.values.filter { $0.count > 1 }.count)
     }
 
     private static func ancestors(of items: Set<String>, parents: [String: Set<String>]) -> Set<String> {
@@ -120,7 +132,8 @@ struct CloudMetadataRetention {
             protectedBytes: protected.files.reduce(0) { $0 + files[$1]!.bytes }
                 + protected.listings.reduce(0) { $0 + listings[$1]!.bytes },
             owners: owners.count,
-            ownerReferences: owners.values.reduce(0) { $0 + $1.items.count + $1.subtrees.count + $1.listings.count })
+            ownerReferences: owners.values.reduce(0) { $0 + $1.items.count + $1.subtrees.count + $1.listings.count },
+            aliasConflicts: protected.aliasConflicts)
     }
 
     /// Bounds ordinary metadata; user-owned metadata is additive and separately accounted. A listing is removed
@@ -135,7 +148,9 @@ struct CloudMetadataRetention {
             files.filter { !protected.files.contains($0.key) }.values.reduce(0) { $0 + $1.bytes }
             + listings.filter { !protected.listings.contains($0.key) }.values.reduce(0) { $0 + $1.bytes }
         // A cached snapshot also needs its ancestors when it is revisited, before a new owner can attach.
-        let contexts = listings.mapValues { Self.ancestors(of: $0.items, parents: protected.parents) }
+        let contexts = listings.mapValues {
+            Self.ancestors(of: Set($0.items.flatMap { protected.canonical[$0] ?? [$0] }), parents: protected.parents)
+        }
         var members: [String: Int] = [:]
         for context in contexts.values { for id in context { members[id, default: 0] += 1 } }
         func overBudget() -> Bool { ordinaryFiles > limits.files || ordinaryListings > limits.listings || ordinaryBytes > limits.bytes }

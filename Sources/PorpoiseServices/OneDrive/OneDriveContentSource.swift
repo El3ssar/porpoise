@@ -1,6 +1,12 @@
 import Foundation
 import PorpoiseCore
 
+extension OneDriveContentSource: CloudMetadataOwningContentSource {
+    func setMetadataOwner(_ name: String, owner: CloudMetadataRetention.Owner?, complete: Bool) {
+        client?.metadataCache.setRetentionOwner(name, owner.map { .init(owner: $0, complete: complete) })
+    }
+}
+
 public final class OneDriveContentSource: CloudContentSource, @unchecked Sendable {
     private weak var client: OneDriveClient?
     private let lock = NSLock()

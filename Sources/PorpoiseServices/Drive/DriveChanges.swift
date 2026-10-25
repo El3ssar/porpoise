@@ -19,7 +19,9 @@ extension DriveClient {
     /// Remote search is paged and explicitly scoped; no local content index is implied.
     public func search(_ text: String, in location: DriveLocation, fullText: Bool = false, pageToken: String? = nil) async throws -> DrivePage {
         guard location.accountID == accountID else { throw DriveError.invalidLocation }
-        let since = metadataCache.generation
+        let read = metadataCache.beginRead()
+        defer { withExtendedLifetime(read) {} }
+        let since = read.generation
         let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
         var filter = "trashed = false and \(fullText ? "fullText" : "name") contains '\(escaped)'"
         var driveID: String?
@@ -95,7 +97,9 @@ private func driveChangePage(_ client: DriveClient, scope: String, cursor: Strin
         let nextPageToken: String?
         let newStartPageToken: String?
     }
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let page = try client.decode(
         Page.self,
         await client.request(
@@ -107,17 +111,14 @@ private func driveChangePage(_ client: DriveClient, scope: String, cursor: Strin
     guard let next = page.nextPageToken ?? page.newStartPageToken, !next.isEmpty else { throw DriveError.invalidResponse }
     return CloudChangePage(
         cursor: next, hasMore: page.nextPageToken != nil,
-        apply: {
+        apply: { [read] in
+            defer { withExtendedLifetime(read) {} }
             let changes = page.changes ?? []
             if !changes.isEmpty {
                 let removed = changes.filter { $0.removed == true || $0.file?.trashed == true }.compactMap(\.fileId)
                 // A change made here after this page was asked for is newer than what the page says.
                 let files = client.metadataCache.learn(changes.compactMap(\.file).filter { !removed.contains($0.id) }, since: since)
                 let actualRemoved = client.metadataCache.apply(files, removed: removed, since: since)
-                client.lock.withLock {
-                    for id in actualRemoved { client.cache[id] = nil };
-                    for file in files where !actualRemoved.contains(file.id) { client.cache[file.id] = file }
-                }
                 let source = client.contentSource
                 client.emitContentChanges(.init(changed: files.filter { !removed.contains($0.id) }.map(source.remoteItem), removed: actualRemoved))
                 (RemoteFS.provider(for: DriveLocation(accountID: client.accountID).url) as? DriveProvider)?.invalidate(preserveDisk: true)
@@ -136,7 +137,9 @@ private func driveStartCursor(_ client: DriveClient, scope: String) async throws
 
 /// The token precedes the baseline; replay then includes changes made during enumeration.
 private func driveResetBaseline(_ client: DriveClient, scope: String, token: String) async throws {
-    let since = client.metadataCache.generation
+    let read = client.metadataCache.beginRead()
+    defer { withExtendedLifetime(read) {} }
+    let since = read.generation
     let previous = client.metadataCache.files.filter { scope == "user" ? $0.driveId == nil : $0.driveId == scope }
     var files: [DriveFile] = []
     try await CloudPager.each(repeated: DriveError.invalidResponse) { (pageToken: String?) in
@@ -156,10 +159,6 @@ private func driveResetBaseline(_ client: DriveClient, scope: String, token: Str
     try Task.checkCancellation()
     let ids = Set(files.map(\.id)), learned = client.metadataCache.learn(files, since: since)
     let removed = client.metadataCache.apply(learned, removed: previous.filter { !ids.contains($0.id) }.map(\.id), since: since)
-    client.lock.withLock {
-        for id in removed { client.cache[id] = nil }
-        for file in learned { client.cache[file.id] = file }
-    }
     client.metadataCache.invalidateScope(scope)
     client.emitContentChanges(.init(changed: learned.map(client.contentSource.remoteItem), removed: removed, reset: true))
     client.metadataCache.setCursor(token, scope: scope)

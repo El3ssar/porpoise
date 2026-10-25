@@ -78,7 +78,12 @@ public struct DriveEditEngine: CloudEditEngine, @unchecked Sendable {
     }
 }
 extension CloudEditSessionStore where Engine == DriveEditEngine {
-    public init(client: DriveClient, directory: URL? = nil) { self.init(engine: DriveEditEngine(client: client, directory: directory)) }
+    public init(client: DriveClient, directory: URL? = nil) {
+        let engine = DriveEditEngine(client: client, directory: directory), name = CloudMetadataOwnership.key("edits", directory: engine.directory)
+        self.init(engine: engine) { [weak client] files, complete in
+            client?.metadataCache.storage.setRetentionOwner(name, .init(owner: .init(items: Set(files.map(\.id))), files: files, complete: complete))
+        }
+    }
     public func open(_ file: DriveFile, context: DriveTransferContext = .init()) async throws -> DriveEditSession {
         try await openSession(file, context: context)
     }
