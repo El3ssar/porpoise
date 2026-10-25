@@ -58,9 +58,17 @@ import Testing
 
     // MARK: Virtual locations
 
-    @Test func aTagNobodyUsesListsNothing() async throws {
-        let m = try await DirectoryModel.loaded(FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"), timeout: 60)
-        #expect(m.kind.isVirtual && m.items.isEmpty && m.rows.isEmpty && m.loadError == nil)
+    @Test(.isolatedSpotlight) func aTagNobodyUsesListsNothing() async throws {
+        let m = DirectoryModel(location: FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"))
+        try await awaitCallback { loaded in
+            m.onLoaded = { loaded.resume() }
+            m.reload()
+        }
+        #expect(!m.isLoading)
+        #expect(m.kind.isVirtual)
+        #expect(m.items.isEmpty)
+        #expect(m.rows.isEmpty)
+        #expect(m.loadError == nil)
         #expect(m.props.mode == .icons && m.props.sortRole == .name)
     }
 

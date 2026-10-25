@@ -22,6 +22,7 @@ extension DirectoryModel {
 }
 
 /// Holds the Spotlight queue until the returned function is called (a Spotlight that never answers), at most 300 s.
+/// Use `.isolatedSpotlight` so the stall cannot time out an unrelated test's real query.
 public func stallSpotlight() -> () -> Void {
     let release = DispatchSemaphore(value: 0)
     // The fallback only frees the queue if a test never resumes it; it must outlast any stall of a slow runner.
