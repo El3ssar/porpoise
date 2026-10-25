@@ -36,8 +36,7 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
             backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false; w.title = title
         super.init(window: w); w.delegate = self
-        let margin = Tokens.Space.xl
-        contentStack(stack, insets: NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin), spacing: Tokens.Space.m)
+        contentStack(stack)
         toolbar.orientation = .horizontal; toolbar.spacing = Tokens.Space.s
         stack.addArrangedSubview(toolbar)
         progress.style = .bar; progress.isIndeterminate = true

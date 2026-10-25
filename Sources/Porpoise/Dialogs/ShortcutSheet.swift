@@ -41,7 +41,7 @@ final class ShortcutSheet: SecondaryWindowController, NSTableViewDataSource, NST
         table.style = .plain; table.selectionHighlightStyle = .none; table.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         table.setAccessibilityLabel("Keyboard shortcuts")
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        let stack = contentStack(spacing: 10)
+        let stack = contentStack()
         for view in [search, scroll] as [NSView] {
             stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }

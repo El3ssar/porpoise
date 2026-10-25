@@ -198,5 +198,7 @@ enum Tokens {
     enum Metric {
         /// A form's label column at its narrowest; a page's column is as wide as its longest label.
         static let formLabelColumn: CGFloat = 120
+        /// A window's or a sheet's content margins: 20 pt on every side (S2).
+        static let windowInsets = NSEdgeInsets(top: Space.xl, left: Space.xl, bottom: Space.xl, right: Space.xl)
     }
 }

@@ -39,7 +39,8 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         panel.title = "Command Palette"; panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
         panel.isFloatingPanel = true; panel.hidesOnDeactivate = true; panel.isReleasedWhenClosed = false
         super.init(window: panel); panel.delegate = self
-        let stack = contentStack(insets: NSEdgeInsets(top: 30, left: 16, bottom: 14, right: 16))
+        // A floating palette, not a window: Spotlight's tighter 16-pt sides; the top clears the hidden title bar.
+        let stack = contentStack(insets: NSEdgeInsets(top: Tokens.Space.xxxl, left: Tokens.Space.l, bottom: Tokens.Space.l, right: Tokens.Space.l))
         func add(_ view: NSView) { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         field.placeholderString = "Search commands, places, workspaces, recent folders and tabs…"
         field.font = .systemFont(ofSize: FontSize.title2); field.delegate = self;

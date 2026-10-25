@@ -28,7 +28,7 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
             contentRect: CGRect(x: 0, y: 0, width: 850, height: 650), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Create From Template"; window.isReleasedWhenClosed = false
         super.init(window: window)
-        let stack = contentStack(insets: NSEdgeInsets(top: 18, left: 20, bottom: 18, right: 20))
+        let stack = contentStack()
         let target = NSTextField(wrappingLabelWithString: "Create in: \(folder.path)"); target.maximumNumberOfLines = 2;
         stack.addArrangedSubview(target)
         picker.target = self; picker.action = #selector(changedTemplate); picker.setAccessibilityLabel("Template")
@@ -44,9 +44,9 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
                 "Variables: {date} · {time} · {user} · {name} · {counter} or {counter:03}. The counter chooses the next unused name. In the contents, {name} is the final name without its extension."
         )
         help.font = .systemFont(ofSize: Tokens.FontSize.small); help.textColor = .secondaryLabelColor; stack.addArrangedSubview(help)
-        let editors = NSStackView(); editors.orientation = .horizontal; editors.distribution = .fillEqually; editors.spacing = 12
+        let editors = NSStackView(); editors.orientation = .horizontal; editors.distribution = .fillEqually; editors.spacing = Tokens.Space.m
         for (title, text) in [("Template Contents", source), ("Preview", preview)] {
-            let column = NSStackView(); column.orientation = .vertical; column.alignment = .leading; column.spacing = 6
+            let column = NSStackView(); column.orientation = .vertical; column.alignment = .leading; column.spacing = Tokens.Space.xs
             column.addArrangedSubview(NSTextField(labelWithString: title))
             let scroll = NSScrollView(); scroll.documentView = text; scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
             text.isRichText = false; text.font = .monospacedSystemFont(ofSize: Tokens.FontSize.callout, weight: .regular)
@@ -68,10 +68,15 @@ final class TemplateWindow: SecondaryWindowController, NSTextFieldDelegate, NSTe
             ClosureButton(title: "Import…") { [weak self] _ in self?.importTemplate() },
             ClosureButton(title: "Export…") { [weak self] _ in self?.exportTemplate() },
             ClosureButton(title: "Templates Folder") { [weak self] _ in self?.openFolder() },
-        ]); tools.spacing = 8; stack.addArrangedSubview(tools)
+        ]); tools.spacing = Tokens.Space.s; stack.addArrangedSubview(tools)
         status.font = .systemFont(ofSize: Tokens.FontSize.callout); status.maximumNumberOfLines = 3; stack.addArrangedSubview(status)
-        let buttons = NSStackView(views: [ClosureButton(title: "Cancel") { [weak self] _ in self?.close() }, create]); buttons.spacing = 8
-        stack.addArrangedSubview(buttons); create.keyEquivalent = "\r"; create.handler = { [weak self] _ in self?.createFile() }
+        // The sheet's button row: right-aligned, the default button rightmost, 24 pt under the content (S3, D1).
+        let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let buttons = NSStackView(views: [spacer, ClosureButton(title: "Cancel") { [weak self] _ in self?.close() }, create])
+        buttons.spacing = Tokens.Space.s
+        stack.setCustomSpacing(Tokens.Space.xxl, after: status)
+        stack.addArrangedSubview(buttons); buttons.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        create.keyEquivalent = "\r"; create.handler = { [weak self] _ in self?.createFile() }
         for view in [filename, personalName, resolved, help, status] { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         window.minSize = NSSize(width: 820, height: 620); window.center()
         reload(); choose()

@@ -38,8 +38,8 @@ class SecondaryWindowController: NSWindowController {
     /// with `pinBottom` false it keeps its own height, at the top.
     @discardableResult
     func contentStack(
-        _ stack: NSStackView = NSStackView(), insets: NSEdgeInsets = NSEdgeInsets(top: 16, left: 20, bottom: 16, right: 20),
-        spacing: CGFloat = 10, pinBottom: Bool = true
+        _ stack: NSStackView = NSStackView(), insets: NSEdgeInsets = Tokens.Metric.windowInsets,
+        spacing: CGFloat = Tokens.Space.m, pinBottom: Bool = true
     ) -> NSStackView {
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = spacing
         guard let content = window?.contentView else { return stack }

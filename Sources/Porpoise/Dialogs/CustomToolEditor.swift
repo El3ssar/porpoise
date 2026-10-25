@@ -27,7 +27,7 @@ final class CustomToolEditor: SecondaryWindowController {
             contentRect: CGRect(x: 0, y: 0, width: 730, height: 720), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         panel.title = "Edit Custom Tool"; panel.isReleasedWhenClosed = false
         super.init(window: panel)
-        let stack = contentStack(spacing: 10)
+        let stack = contentStack()
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = false
         let document = FlippedView(); document.addSubview(form.view); scroll.documentView = document
         document.translatesAutoresizingMaskIntoConstraints = false; form.view.translatesAutoresizingMaskIntoConstraints = false

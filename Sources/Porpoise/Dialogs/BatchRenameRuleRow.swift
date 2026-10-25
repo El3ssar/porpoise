@@ -16,10 +16,10 @@ final class BatchRenameRuleRow: NSStackView, NSTextFieldDelegate {
 
     init(rule: BatchRenameRule, remove: @escaping (BatchRenameRuleRow) -> Void, move: @escaping (BatchRenameRuleRow, Int) -> Void) {
         super.init(frame: .zero)
-        orientation = .horizontal; spacing = 6; alignment = .centerY
+        orientation = .horizontal; spacing = Tokens.Space.s; alignment = .centerY
         kind.addItems(withTitles: Kind.allCases.map(\.rawValue)); kind.target = self; kind.action = #selector(kindChanged)
         kind.widthAnchor.constraint(equalToConstant: 145).isActive = true
-        fields.orientation = .horizontal; fields.spacing = 5
+        fields.orientation = .horizontal; fields.spacing = Tokens.Space.xs
         fields.setContentHuggingPriority(.defaultLow, for: .horizontal)
         addArrangedSubview(kind); addArrangedSubview(fields)
         for title in ["↑", "↓", "−"] {
