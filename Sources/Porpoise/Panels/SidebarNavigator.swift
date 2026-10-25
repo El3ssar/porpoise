@@ -57,6 +57,9 @@ final class SidebarNavigator: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        // Out of a window, `object: nil` would hear every window's key changes.
+        guard let window else { return }
         observers = [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification].map {
             NotificationCenter.default.addObserver(forName: $0, object: window, queue: .main) { [weak self] _ in self?.dressPicker() }
         }
