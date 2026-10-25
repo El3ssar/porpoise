@@ -20,6 +20,11 @@ import Testing
         let originalSize = window.contentLayoutRect.size
         defer { window.setContentSize(originalSize) }
         let tabs = try #require(descendants(content, as: NSSegmentedControl.self).first)
+        // UI-5/E1: an empty list says so with the shared empty state, filling the list's pane (it centres itself).
+        content.layoutSubtreeIfNeeded()
+        let empty = controller.emptyState
+        #expect(empty.state == nil || empty.state == ActivityWindowController.emptyListState)
+        #expect(empty.frame.width > 300 && empty.frame.height > 100, "\(empty.frame)")
         let buttons = descendants(tools, as: NSButton.self)
         #expect(buttons.map(\.title) == ["Cancel Tool", "Clear Finished"])
         for width in [480.0, 640.0] {

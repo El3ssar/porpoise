@@ -27,7 +27,7 @@ final class ActivityRowView: NSView {
         title.lineBreakMode = .byTruncatingMiddle
         status.font = .systemFont(ofSize: Tokens.FontSize.small)
         status.lineBreakMode = .byTruncatingTail
-        buttons.spacing = 8
+        buttons.spacing = Tokens.Space.s
         icon.imageScaling = .scaleProportionallyDown
         for v in [icon, title, statusBadge, status, bar, buttons] as [NSView] { addSubview(v) }
         Theme.whenChanged(self) { [weak self] in
@@ -175,7 +175,7 @@ final class EditActivityRowView: NSView {
         detail.maximumNumberOfLines = 2
         detail.lineBreakMode = .byTruncatingTail
         icon.imageScaling = .scaleProportionallyDown
-        buttons.spacing = 8
+        buttons.spacing = Tokens.Space.s
         close.isBordered = false
         close.imagePosition = .imageOnly
         close.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Remove from the list")
