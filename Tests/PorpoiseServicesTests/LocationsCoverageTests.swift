@@ -21,9 +21,9 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
 
 // MARK: Search
 
-/// One at a time: some of these hold Spotlight's queue (a Spotlight that never answers), which would make the others'
-/// real queries give up. Other suites hold it too, now and then: real queries get time enough to wait for that.
-@MainActor @Suite(.serialized) struct SpotlightUsingCoverageTests {
+/// Some tests hold Spotlight's queue (a Spotlight that never answers), which would make real queries give up.
+/// Take turns both within this suite and with other suites using that shared queue.
+@MainActor @Suite(.serialized, .isolatedSpotlight) struct SpotlightUsingCoverageTests {
     @MainActor @Suite struct SearchRunnerCoverageTests {
         /// Runs `runner` until it says it's done; the names it found, sorted.
         private func finish(_ make: (@escaping ([FileItem], Bool) -> Void) -> SearchRunner, timeout: TimeInterval = eventualTimeout) async throws -> (
