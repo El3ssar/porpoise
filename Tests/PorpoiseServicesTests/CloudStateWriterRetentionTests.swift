@@ -5,26 +5,39 @@ import Testing
 @testable import PorpoiseServices
 
 struct CloudStateWriterRetentionTests {
-    @Test func anExplicitFlushForcesADeferredWriteInsteadOfLosingIt() async {
-        let writer = CloudStateWriter(delay: 0), attempts = Locked<[Bool]>([])
+    @Test(.timeLimit(.minutes(1))) func anExplicitFlushForcesADeferredWriteInsteadOfLosingIt() async {
+        // Forced-deadline behavior has its own test. Keep that timer outside this flush test's lifetime.
+        let writer = CloudStateWriter(delay: 0, maximumDeferral: eventualTimeout * 2), attempts = Locked<[Bool]>([])
+        let (deferred, signal) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer { signal.finish() }
         writer.schedule("fixture") { force in
-            attempts.append(force); return force
+            attempts.append(force)
+            if !force { signal.yield(()) }
+            return force
         }
-        await expectEventually("normal write deferred") { attempts.value == [false] }
+        var events = deferred.makeAsyncIterator()
+        #expect(await events.next() != nil)
+        #expect(attempts.value.first == false)
         await offThePool { writer.flush("fixture") }
         #expect(attempts.value == [false, true])
         await offThePool { writer.flushAll() }
         #expect(attempts.value == [false, true])
     }
 
-    @Test func aDeferredWriteCanWakeWithoutWaitingOrAnotherMutation() async {
-        let writer = CloudStateWriter(delay: 0), attempts = Locked<[Bool]>([]), ready = Flag()
+    @Test(.timeLimit(.minutes(1))) func aDeferredWriteCanWakeWithoutWaitingOrAnotherMutation() async {
+        let writer = CloudStateWriter(delay: 0, maximumDeferral: eventualTimeout * 2), attempts = Locked<[Bool]>([]), ready = Flag()
+        let (changes, signal) = AsyncStream<Bool>.makeStream()
+        defer { signal.finish() }
         writer.schedule("fixture") { force in
-            attempts.append(force); return ready.isSet
+            attempts.append(force)
+            let written = ready.isSet
+            signal.yield(written)
+            return written
         }
-        await expectEventually("normal write deferred") { attempts.value == [false] }
+        var events = changes.makeAsyncIterator()
+        #expect(await events.next() == false)
         ready.set(); writer.retry("fixture", after: 0)
-        await expectEventually("retry wrote") { attempts.value == [false, false] }
+        #expect(await events.next() == true)
         await offThePool { writer.flush("fixture") }
         #expect(attempts.value == [false, false])
     }
