@@ -97,12 +97,13 @@ final class ConnectSheet: SecondaryWindowController {
         box.addSubview(content)
         content.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: box.topAnchor, constant: 20),
-            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 22),
-            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -22),
-            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -18),
+            // The sheet's 20-pt margins (S2).
+            content.topAnchor.constraint(equalTo: box.topAnchor, constant: Tokens.Space.xl),
+            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: Tokens.Space.xl),
+            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -Tokens.Space.xl),
+            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -Tokens.Space.xl),
             // Six tiles across, at their full width.
-            box.widthAnchor.constraint(equalToConstant: ConnectTile.rowWidth(ServerKind.allCases.count) + 44),
+            box.widthAnchor.constraint(equalToConstant: ConnectTile.rowWidth(ServerKind.allCases.count) + 2 * Tokens.Space.xl),
         ])
         window?.contentView = box
         if let window { Theme.dress(window) }
@@ -144,12 +145,13 @@ final class ConnectSheet: SecondaryWindowController {
         more.isHidden = later.isEmpty
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.setCustomSpacing(4, after: title)
-        stack.setCustomSpacing(16, after: sub)
-        stack.setCustomSpacing(later.isEmpty ? 14 : 6, after: cloud)
-        stack.setCustomSpacing(14, after: more)
-        stack.setCustomSpacing(18, after: servers)
+        // Title and its line, then groups 16 apart, each caption 8 over its tiles; the button row 24 under (D1).
+        stack.spacing = Tokens.Space.s
+        stack.setCustomSpacing(Tokens.Space.xs, after: title)
+        stack.setCustomSpacing(Tokens.Space.l, after: sub)
+        stack.setCustomSpacing(later.isEmpty ? Tokens.Space.l : Tokens.Space.xs, after: cloud)
+        stack.setCustomSpacing(Tokens.Space.l, after: more)
+        stack.setCustomSpacing(Tokens.Space.xxl, after: servers)
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
@@ -168,17 +170,18 @@ final class ConnectSheet: SecondaryWindowController {
         let text = NSStackView(views: [head, body])
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 3
+        text.spacing = Tokens.Space.xxs
         let info = Self.row([spinner, text])
         info.alignment = .top
-        info.spacing = 12
+        info.spacing = Tokens.Space.m
         let again = Self.linkButton("Browser didn’t open? Open Again", self, #selector(openAgain(_:)))
         let cancel = Self.button("Cancel", self, #selector(cancelWaiting(_:)))
         cancel.keyEquivalent = "\u{1b}"
         let stack = NSStackView(views: [title, info, Self.row([again, NSView(), cancel])])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 16
+        stack.spacing = Tokens.Space.l
+        stack.setCustomSpacing(Tokens.Space.xxl, after: info)
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
@@ -207,10 +210,10 @@ final class ConnectSheet: SecondaryWindowController {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 6
-        stack.setCustomSpacing(14, after: title)
-        stack.setCustomSpacing(16, after: card)
-        if let lastCheck = views.dropLast().last { stack.setCustomSpacing(20, after: lastCheck) }
+        stack.spacing = Tokens.Space.s
+        stack.setCustomSpacing(Tokens.Space.m, after: title)
+        stack.setCustomSpacing(Tokens.Space.l, after: card)
+        if let lastCheck = views.dropLast().last { stack.setCustomSpacing(Tokens.Space.xxl, after: lastCheck) }
         card.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
@@ -227,7 +230,8 @@ final class ConnectSheet: SecondaryWindowController {
         let stack = NSStackView(views: [title, body, Self.row([NSView(), back, retry])])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 12
+        stack.spacing = Tokens.Space.m
+        stack.setCustomSpacing(Tokens.Space.xxl, after: body)
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         return stack
     }
@@ -248,7 +252,8 @@ final class ConnectSheet: SecondaryWindowController {
         let stack = NSStackView(views: [title, f.view, Self.row([back, NSView(), cancel, connect])])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 14
+        stack.spacing = Tokens.Space.l
+        stack.setCustomSpacing(Tokens.Space.xxl, after: f.view)
         stack.views.last?.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         DispatchQueue.main.async { [weak self] in self?.window?.makeFirstResponder(f.server) }
         return stack
@@ -420,7 +425,7 @@ final class ConnectSheet: SecondaryWindowController {
         let r = NSStackView(views: views)
         r.orientation = .horizontal
         r.alignment = .centerY
-        r.spacing = 8
+        r.spacing = Tokens.Space.s
         return r
     }
 
@@ -440,7 +445,7 @@ final class ConnectTile: NSControl {
     private var pressing = false
     /// Wide enough for the longest name ("S3-compatible", "Windows (SMB)") on one line.
     static let size = CGSize(width: 100, height: 78)
-    static let spacing: CGFloat = 8
+    static let spacing = Tokens.Space.s
     static let titleFont = NSFont.systemFont(ofSize: Tokens.FontSize.small, weight: .medium)
     static func rowWidth(_ count: Int) -> CGFloat { CGFloat(count) * size.width + CGFloat(max(count - 1, 0)) * spacing }
 
@@ -544,16 +549,17 @@ final class AccountCard: NSView {
         let text = NSStackView(views: lines)
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 3
+        text.spacing = Tokens.Space.xxs
         let row = NSStackView(views: [pic, text])
         row.alignment = .centerY
-        row.spacing = 12
+        row.spacing = Tokens.Space.m
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
         NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 10), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            row.topAnchor.constraint(equalTo: topAnchor, constant: Tokens.Space.m),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Tokens.Space.m),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Tokens.Space.m),
+            row.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Tokens.Space.m),
         ])
     }
 
@@ -579,7 +585,7 @@ enum QuotaBar {
         let v = NSStackView(views: [bar, label])
         v.orientation = .vertical
         v.alignment = .leading
-        v.spacing = 3
+        v.spacing = Tokens.Space.xs
         return v
     }
 
