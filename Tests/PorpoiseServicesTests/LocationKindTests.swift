@@ -41,21 +41,6 @@ import Testing
         #expect(LocationKind.of(URL(string: "SFTP://fixture.invalid/folder/")!) == .remote)
     }
 
-    @Test func navigationCapabilitiesKeepRootsAndVirtualListsDistinct() {
-        for string in ["file:///", "sftp://fixture.invalid/", "adb://fixture-device/"] {
-            let url = URL(string: string)!
-            #expect(!LocationKind.of(url).canGoUp(from: url))
-        }
-        for string in ["file:///tmp/folder/", "sftp://fixture.invalid/folder/", "gdrive://account/my-drive/", "dropbox://account/id%3Afolder"] {
-            let url = URL(string: string)!
-            #expect(LocationKind.of(url).canGoUp(from: url))
-        }
-        for string in ["network:/", "recent:/files", "tags:/Red", "smart:/tmp/Work.savedSearch", "smb://fixture.invalid/share/"] {
-            let url = URL(string: string)!
-            #expect(!LocationKind.of(url).canGoUp(from: url) && !LocationKind.of(url).acceptsDrops)
-        }
-    }
-
     @Test func namesAndClipboardAddressesAreSharedAndNeverExposePasswords() {
         let local = URL(fileURLWithPath: "/tmp/Some Folder")
         let remote = URL(string: "sftp://alice:fixture-secret@fixture.invalid/folder/")!
@@ -116,4 +101,22 @@ import Testing
         #expect(LocationKind.trash.icon == "user-trash")
     }
 
+}
+
+/// Navigation capabilities depend only on the URL and its kind, without model or provider construction.
+@MainActor @Suite struct LocationNavigationTests {
+    @Test func navigationCapabilitiesKeepRootsAndVirtualListsDistinct() {
+        for string in ["file:///", "sftp://fixture.invalid/", "adb://fixture-device/"] {
+            let url = URL(string: string)!
+            #expect(!LocationKind.of(url).canGoUp(from: url))
+        }
+        for string in ["file:///tmp/folder/", "sftp://fixture.invalid/folder/", "gdrive://account/my-drive/", "dropbox://account/id%3Afolder"] {
+            let url = URL(string: string)!
+            #expect(LocationKind.of(url).canGoUp(from: url))
+        }
+        for string in ["network:/", "recent:/files", "tags:/Red", "smart:/tmp/Work.savedSearch", "smb://fixture.invalid/share/"] {
+            let url = URL(string: string)!
+            #expect(!LocationKind.of(url).canGoUp(from: url) && !LocationKind.of(url).acceptsDrops)
+        }
+    }
 }

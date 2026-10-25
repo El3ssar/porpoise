@@ -17,14 +17,6 @@ import Testing
         return try #require(answer)
     }
 
-    @Test func failuresKeepTheirWords() {
-        #expect(LocationLoadError.permission.message == "You don't have permission to view this folder.")
-        #expect(LocationLoadError.privacy.message.hasPrefix("macOS protects this folder. Give Porpoise Full Disk Access"))
-        #expect(LocationLoadError.unreadable("gone").message == "Could not open “gone”.")
-        #expect(LocationLoadError.provider("Server said no").message == "Server said no")
-        #expect(LocationLoadError.smartFolder.message == "This Smart Folder's search could not be read.")
-    }
-
     @Test func aLocalFolderListsWithItsExpandedFolders() async throws {
         let s = try Scratch()
         try s.file("a.txt"); try s.file("sub/b.txt")
@@ -35,11 +27,6 @@ import Testing
         #expect(found.children?[s.path("sub")]?.map(\.name) == ["b.txt"])
         let gone = try await listing(source, s.path("gone"))
         #expect(gone.error == .unreadable("gone") && gone.vanished == true && gone.items.isEmpty)
-    }
-
-    @Test func aFolderThatIsntAFileIsNeitherWatchedNorCounted() {
-        let traits = LocalSource(location: URL(string: "smb://server/share")!).traits
-        #expect(traits.watch == .none && !traits.dynamicView && !traits.folderCounts && traits.prunesSelection)
     }
 
     @Test func aServerFolderListsThroughItsProviderInItsWords() async throws {
@@ -109,4 +96,20 @@ private final class ListingProvider: RemoteProvider {
     func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func rootTitle(_ url: URL) -> String { "Test server" }
+}
+
+/// Source errors and directly constructed traits use no settings or provider routing.
+@MainActor @Suite struct LocationContentSourceValueTests {
+    @Test func failuresKeepTheirWords() {
+        #expect(LocationLoadError.permission.message == "You don't have permission to view this folder.")
+        #expect(LocationLoadError.privacy.message.hasPrefix("macOS protects this folder. Give Porpoise Full Disk Access"))
+        #expect(LocationLoadError.unreadable("gone").message == "Could not open “gone”.")
+        #expect(LocationLoadError.provider("Server said no").message == "Server said no")
+        #expect(LocationLoadError.smartFolder.message == "This Smart Folder's search could not be read.")
+    }
+
+    @Test func aFolderThatIsntAFileIsNeitherWatchedNorCounted() {
+        let traits = LocalSource(location: URL(string: "smb://server/share")!).traits
+        #expect(traits.watch == .none && !traits.dynamicView && !traits.folderCounts && traits.prunesSelection)
+    }
 }
