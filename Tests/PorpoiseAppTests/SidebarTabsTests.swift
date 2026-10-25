@@ -82,9 +82,6 @@ import Testing
                     keyCode: codes[f]!))
             let item = try #require(MainWindowController.menuItem(for: event), "F\(f) finds no menu item")
             #expect(item.action == #selector(MainWindowController.togglePanel(_:)) && item.tag == (f == 9 ? 0 : 2))
-            let current = MainWindowController.currentKeyEvent
-            MainWindowController.currentKeyEvent = { event }
-            defer { MainWindowController.currentKeyEvent = current }
             // In the active app the menu bar takes the key first. The test runner is never active and has no key window,
             // so NSApp.sendEvent drops it; the window's own dispatch then offers it to the menu (`performMenuKey`).
             window.sendEvent(event)
