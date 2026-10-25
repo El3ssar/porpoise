@@ -87,10 +87,16 @@ import Testing
         let list = try #require(w.table.enclosingScrollView)
         let over = w.emptyState.convert(w.emptyState.bounds, to: nil), under = list.convert(list.bounds, to: nil)
         #expect(abs(over.midX - under.midX) < 1 && abs(over.width - under.width) < 1 && over.height > 100, "\(over) over \(under)")
-        #expect(!w.map.emptyState.isHidden && w.map.emptyState.state?.title == "Nothing here takes up space")
+        // The list says it is empty; the map doesn't say it again.
+        #expect(w.map.emptyState.isHidden)
         #expect(bar.validateToolbarItem(try #require(bar.item("back"))))
         bar.perform("back")
         #expect(!w.rows.isEmpty && w.emptyState.isHidden && w.map.emptyState.isHidden)
+        // A level whose items are all empty: the map says why it draws nothing, the list lists them.
+        let photos = try #require(w.itemID(named: "Photos"))
+        w.map.activate?(photos)
+        w.map.items = w.map.items.map { ($0.0, $0.1, 0) }
+        #expect(!w.map.emptyState.isHidden && w.map.emptyState.state?.title == "Nothing here takes up space")
         // One footer line, secondary.
         #expect(w.status.textColor == Theme.windowTextInactive)
         #expect(!w.stack.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue == DiskUsageWindow.hint })

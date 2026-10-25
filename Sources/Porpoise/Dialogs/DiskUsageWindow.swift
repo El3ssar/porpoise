@@ -74,8 +74,15 @@ final class DiskUsageWindow: DiskUtilityWindow {
     @objc private func metricChanged() { allocated = metric.indexOfSelectedItem == 1; reload() }
     override func workChanged() {
         bar?.validate()
-        // While a scan runs, the map says so; after it, an empty level says why there is nothing to draw.
-        map.placeholder = busy ? ListState(title: "Scanning…", symbol: "") : ListState(title: "Nothing here takes up space", symbol: "square.dashed")
+        updateMapPlaceholder()
+    }
+    /// While a scan runs, the map says so; after it, a level of empty items says why there is nothing to draw. An empty
+    /// folder says nothing here: the list already says it is empty, once is enough.
+    private func updateMapPlaceholder() {
+        map.placeholder =
+            busy
+            ? ListState(title: "Scanning…", symbol: "")
+            : (children.isEmpty ? nil : ListState(title: "Nothing here takes up space", symbol: "square.dashed"))
     }
     func tableViewSelectionDidChange(_ notification: Notification) { bar?.validate() }
     private var canGoBack: Bool { tree.map { $0.nodes.indices.contains(current) && $0.nodes[current].parent != nil } ?? false }
@@ -101,6 +108,7 @@ final class DiskUsageWindow: DiskUtilityWindow {
         }
         table.reloadData()
         updateEmptyState()
+        updateMapPlaceholder()
         bar?.validate()
         map.folders = Set(children.filter { tree.nodes[$0].directory })
         map.items = children.map { id in (id, tree.nodes[id].name, allocated ? tree.nodes[id].allocated : tree.nodes[id].logical) }
