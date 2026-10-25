@@ -115,7 +115,11 @@ import Testing
     }
 }
 
-@Suite(.serialized, .isolatedSettings) @MainActor struct GitServiceTests {
+@Suite(.serialized) @MainActor struct GitServiceTests {
+    // Git's preference lookup must use the process's test folder. This safety flag stays true for the run;
+    // these service tests never swap or read Settings.store. Only the model integration below needs that turn.
+    init() { Settings.isTesting = true }
+
     private final class State { var value: GitFolderStatus?; var deliveries = 0 }
     @Test func cachedStateRefreshesForDeepChangesAndGitEvents() async throws {
         let f = try await Task.detached {
@@ -243,7 +247,7 @@ import Testing
         #expect(child.value?.snapshot.files["file"] == .modified)
     }
 
-    @Test func borrowingColumnListingsKeepsAndRefreshesGitState() async throws {
+    @Test(.isolatedSettings) func borrowingColumnListingsKeepsAndRefreshesGitState() async throws {
         let f = try await Task.detached {
             let f = try LocalGitFixture(); try f.scratch.file("file", "before"); try f.record(); return f
         }.value

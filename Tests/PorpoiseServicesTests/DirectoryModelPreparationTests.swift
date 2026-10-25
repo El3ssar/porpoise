@@ -209,63 +209,6 @@ import Testing
         #expect(!m.isLoading && loaded == 1 && m.selection == [selected] && m.currentURL == selected)
     }
 
-    @Test func snapshotPreservesHiddenBackupsGroupingAndExpandedChildren() throws {
-        let s = try Scratch()
-        let folder = FileItem(url: s.path("folder"), name: "folder", isDirectory: true)
-        let top =
-            [folder]
-            + ["file10.txt", "file2.txt", ".hidden", "backup~"].map {
-                FileItem(url: s.path($0), name: $0, isDirectory: false, isHidden: $0.hasPrefix("."))
-            }
-        var props = ViewProperties()
-        props.mode = .details
-        props.groupRole = .type
-        props.groupSameAsSort = false
-        let child = FileItem(url: s.path("folder/child.txt"), name: "child.txt", isDirectory: false)
-        let input = DirectoryModelPreparation(
-            items: top, incoming: [], children: [folder.url: [child]], expanded: [folder.url], props: props, filter: NameFilter(),
-            choice: .natural, hideBackups: true, sizes: [:], knownTags: [:], ordered: nil)
-        let result = try #require(input.build())
-        #expect(Set(result.rows.map(\.item.name)) == ["folder", "child.txt", "file2.txt", "file10.txt"])
-        #expect(result.rows.first(where: { $0.item.url == folder.url })?.isExpanded == true)
-        #expect(result.rows.first(where: { $0.item.url == child.url })?.depth == 1)
-        #expect(!result.groups.isEmpty && result.rows.allSatisfy { $0.group >= 0 })
-        #expect(result.keys.count == result.rows.count)
-        #expect(input.build(cancelled: { true }) == nil)
-    }
-    @Test func productionQueueCancelsPublicationAndReadsTagsOnItsWorker() async throws {
-        let s = try Scratch()
-        let a = try s.file("a.txt"), b = try s.file("b.txt")
-        try FinderTags.set(["Red"], on: b)
-        var props = ViewProperties()
-        props.sortRole = .tags
-        props.groupRole = .tags
-        props.groupSameAsSort = false
-        let input = DirectoryModelPreparation(
-            items: [try #require(FileItem.load(a)), try #require(FileItem.load(b))], incoming: [], children: [:], expanded: [],
-            props: props, filter: NameFilter(), choice: .natural, hideBackups: false, sizes: [:], knownTags: [:], ordered: nil)
-        var cancelledPublications = 0
-        let cancelled = DirectoryModelPreparation.start(input) { _ in cancelledPublications += 1 }
-        cancelled.cancel()
-        var completed: DirectoryModelPreparation.Result?
-        let live = DirectoryModelPreparation.start(input) { result in
-            #expect(Thread.isMainThread)
-            completed = result
-        }
-        defer { live.cancel() }
-        try #require(await eventually { completed != nil })
-        #expect(cancelledPublications == 0)
-        let result = try #require(completed)
-        #expect(result.rows.first?.item.url == b)
-        #expect(result.tags[b]?.map(\.name) == ["Red"])
-        #expect(result.groups.contains { $0.title == "Red" })
-        var checks = 0
-        #expect(
-            input.build(cancelled: {
-                checks += 1; return checks > 1
-            }) == nil)
-    }
-
     @Test func realLargePreparationPublishesAnOptimisticReplacementWithoutLosingSelection() async throws {
         let s = try Scratch()
         let m = DirectoryModel(location: s.url)
@@ -321,4 +264,65 @@ import Testing
         }
     }
 
+}
+
+/// Explicit snapshots pass every preference as a value; these tests never construct a model or read Settings.
+@MainActor @Suite struct DirectoryPreparationSnapshotTests {
+    @Test func snapshotPreservesHiddenBackupsGroupingAndExpandedChildren() throws {
+        let s = try Scratch()
+        let folder = FileItem(url: s.path("folder"), name: "folder", isDirectory: true)
+        let top =
+            [folder]
+            + ["file10.txt", "file2.txt", ".hidden", "backup~"].map {
+                FileItem(url: s.path($0), name: $0, isDirectory: false, isHidden: $0.hasPrefix("."))
+            }
+        var props = ViewProperties()
+        props.mode = .details
+        props.groupRole = .type
+        props.groupSameAsSort = false
+        let child = FileItem(url: s.path("folder/child.txt"), name: "child.txt", isDirectory: false)
+        let input = DirectoryModelPreparation(
+            items: top, incoming: [], children: [folder.url: [child]], expanded: [folder.url], props: props, filter: NameFilter(),
+            choice: .natural, hideBackups: true, sizes: [:], knownTags: [:], ordered: nil)
+        let result = try #require(input.build())
+        #expect(Set(result.rows.map(\.item.name)) == ["folder", "child.txt", "file2.txt", "file10.txt"])
+        #expect(result.rows.first(where: { $0.item.url == folder.url })?.isExpanded == true)
+        #expect(result.rows.first(where: { $0.item.url == child.url })?.depth == 1)
+        #expect(!result.groups.isEmpty && result.rows.allSatisfy { $0.group >= 0 })
+        #expect(result.keys.count == result.rows.count)
+        #expect(input.build(cancelled: { true }) == nil)
+    }
+
+    @Test func productionQueueCancelsPublicationAndReadsTagsOnItsWorker() async throws {
+        let s = try Scratch()
+        let a = try s.file("a.txt"), b = try s.file("b.txt")
+        try FinderTags.set(["Red"], on: b)
+        var props = ViewProperties()
+        props.sortRole = .tags
+        props.groupRole = .tags
+        props.groupSameAsSort = false
+        let input = DirectoryModelPreparation(
+            items: [try #require(FileItem.load(a)), try #require(FileItem.load(b))], incoming: [], children: [:], expanded: [],
+            props: props, filter: NameFilter(), choice: .natural, hideBackups: false, sizes: [:], knownTags: [:], ordered: nil)
+        var cancelledPublications = 0
+        let cancelled = DirectoryModelPreparation.start(input) { _ in cancelledPublications += 1 }
+        cancelled.cancel()
+        var completed: DirectoryModelPreparation.Result?
+        let live = DirectoryModelPreparation.start(input) { result in
+            #expect(Thread.isMainThread)
+            completed = result
+        }
+        defer { live.cancel() }
+        try #require(await eventually { completed != nil })
+        #expect(cancelledPublications == 0)
+        let result = try #require(completed)
+        #expect(result.rows.first?.item.url == b)
+        #expect(result.tags[b]?.map(\.name) == ["Red"])
+        #expect(result.groups.contains { $0.title == "Red" })
+        var checks = 0
+        #expect(
+            input.build(cancelled: {
+                checks += 1; return checks > 1
+            }) == nil)
+    }
 }

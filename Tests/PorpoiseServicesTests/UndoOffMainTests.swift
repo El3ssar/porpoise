@@ -27,11 +27,13 @@ import Testing
         #expect(!c.canUndo && !c.canRedo)
         let activity = try #require(c.activities.last)
         #expect(activity.kind == .move && !activity.state.isEnded)
-        #expect(await eventually { activity.state == .completed && c.canRedo })
+        await ui.nextJobFinished()
+        #expect(activity.state == .completed && c.canRedo)
         #expect(FileManager.default.fileExists(atPath: original.path) && !FileManager.default.fileExists(atPath: moved.path))
         // Redo the same way, and an undo meanwhile waits its turn behind it.
         c.redo(window: nil)
-        #expect(await eventually { c.canUndo && FileManager.default.fileExists(atPath: moved.path) })
+        await ui.nextJobFinished()
+        #expect(c.canUndo && FileManager.default.fileExists(atPath: moved.path))
     }
 
     @Test func aFailedUndoBetweenVolumesGoesBackOnItsStack() async throws {
