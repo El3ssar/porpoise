@@ -62,6 +62,9 @@ import Testing
         let window = try #require(w.window)
         defer { window.close() }
         let bar = try #require(w.bar)
+        // It opens at its own size; nothing in it asks for more.
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(abs(window.contentRect(forFrameRect: window.frame).height - 740) < 1, "\(window.frame)")
         #expect(window.toolbar === bar.toolbar)
         #expect(bar.toolbar.items.map(\.itemIdentifier.rawValue) == ["back", "NSToolbarFlexibleSpaceItem", "metric", "rescan", "reveal", "trash"])
         #expect(bar.item("back")?.image?.name() == nil && bar.item("back")?.image != nil)
@@ -79,6 +82,11 @@ import Testing
         w.map.activate?(id)
         #expect(w.rows.isEmpty)
         #expect(!w.emptyState.isHidden && w.emptyState.state?.title == "Folder is empty")
+        // Centred over the list, at the list's size.
+        window.contentView?.layoutSubtreeIfNeeded()
+        let list = try #require(w.table.enclosingScrollView)
+        let over = w.emptyState.convert(w.emptyState.bounds, to: nil), under = list.convert(list.bounds, to: nil)
+        #expect(abs(over.midX - under.midX) < 1 && abs(over.width - under.width) < 1 && over.height > 100, "\(over) over \(under)")
         #expect(!w.map.emptyState.isHidden && w.map.emptyState.state?.title == "Nothing here takes up space")
         #expect(bar.validateToolbarItem(try #require(bar.item("back"))))
         bar.perform("back")

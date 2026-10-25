@@ -59,9 +59,15 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true;
         scroll.borderType = .bezelBorder
         stack.addArrangedSubview(scroll)
-        emptyState.frame = scroll.bounds
-        emptyState.autoresizingMask = [.width, .height]
-        scroll.addSubview(emptyState, positioned: .above, relativeTo: nil)
+        // Over the list, not in it: a scroll view lays out only its own parts.
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        stack.addSubview(emptyState, positioned: .above, relativeTo: scroll)
+        NSLayoutConstraint.activate([
+            emptyState.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            emptyState.topAnchor.constraint(equalTo: scroll.topAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+        ])
         emptyState.show(nil)
         NSLayoutConstraint.activate([
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),

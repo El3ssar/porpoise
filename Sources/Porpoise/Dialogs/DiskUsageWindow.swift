@@ -23,7 +23,6 @@ final class DiskUsageWindow: DiskUtilityWindow {
             title: "Disk Usage",
             columns: [("name", "Name", 360), ("logical", "Logical size", 150), ("allocated", "Allocated size", 150), ("files", "Unique files", 100)],
             sortable: true)
-        window?.setContentSize(NSSize(width: 1000, height: 740)); window?.minSize.height = 720; window?.center()
         // A real toolbar (UI-10): Back as a chevron, the actions as symbols, the map's measure as a pop-up.
         metric.target = self; metric.action = #selector(metricChanged)
         metric.addItems(withTitles: ["Logical Size", "Allocated Size"])
@@ -46,6 +45,8 @@ final class DiskUsageWindow: DiskUtilityWindow {
                 ], on: window, name: "DiskUsage")
         }
         toolbar.isHidden = true
+        // Sized once the toolbar is on: adding one later grows the window by its height.
+        window?.setContentSize(NSSize(width: 1000, height: 740)); window?.minSize.height = 720; window?.center()
         stack.insertArrangedSubview(map, at: 1)
         map.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true; map.heightAnchor.constraint(equalToConstant: 200).isActive = true
         map.activate = { [weak self] id in self?.enter(id) }
