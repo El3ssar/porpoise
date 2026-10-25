@@ -33,15 +33,49 @@ import Testing
         let server = GatedPreviewServer()
         RemoteFS.use(server, for: root)
         defer { RemoteFS.use(nil, for: root) }
-        let first = Task { try await PreviewSource.localFile(for: root.appendingPathComponent("a.jpg"), thumbnail: true) }
-        #expect(await poll { server.names == ["a.jpg"] })
+        defer { server.open() }
+        let first = Task { try await Self.copyAndRemove(root.appendingPathComponent("a.jpg")) }
+        try await awaitCallback { server.whenStarted($0) }
         let second = Task { try await PreviewSource.localFile(for: root.appendingPathComponent("b.jpg"), thumbnail: true) }
         second.cancel()
-        server.gate.signal()
-        let local = try await first.value
-        try? FileManager.default.removeItem(at: try #require(local.cleanup))
+        server.open()
+        try await first.value
         await #expect(throws: CancellationError.self) { try await second.value }
         #expect(server.names == ["a.jpg"])
+    }
+
+    /// A blocked connection must not prevent another server's preview from finishing.
+    @Test(.timeLimit(.minutes(2))) func anUnrelatedServerDoesNotWaitForABlockedPreview() async throws {
+        let slowRoot = URL(string: "sftp://preview-slow-\(UUID().uuidString.lowercased()).invalid/")!
+        let fastRoot = URL(string: "sftp://preview-fast-\(UUID().uuidString.lowercased()).invalid/")!
+        let slow = GatedPreviewServer(), fast = MemoryServer(root: fastRoot)
+        fast.add("photo.jpg", size: 4)
+        RemoteFS.use(slow, for: slowRoot)
+        RemoteFS.use(fast, for: fastRoot)
+        defer {
+            slow.open()
+            RemoteFS.use(nil, for: slowRoot)
+            RemoteFS.use(nil, for: fastRoot)
+        }
+        let first = Task { try await Self.copyAndRemove(slowRoot.appendingPathComponent("a.jpg")) }
+        try await awaitCallback { slow.whenStarted($0) }
+        let other = Task { try await Self.copyAndRemove(fastRoot.appendingPathComponent("photo.jpg")) }
+        var failure: Error?
+        do {
+            try await awaitCallback("An unrelated server's preview waited for the blocked connection") { (done: Callback<Void>) in
+                Task { done.resume(with: await other.result) }
+            }
+        } catch { failure = error }
+        // Drain both tasks even on failure; no held transfer or temporary copy survives this test.
+        slow.open()
+        try await first.value
+        _ = await other.result
+        if let failure { throw failure }
+    }
+
+    private static func copyAndRemove(_ remote: URL) async throws {
+        let local = try await PreviewSource.localFile(for: remote, thumbnail: true)
+        try FileManager.default.removeItem(at: try #require(local.cleanup))
     }
 
     @Test func cloudPreviewsAreAskedForAgainSoon() async {
@@ -51,15 +85,39 @@ import Testing
     }
 }
 
-/// Downloads wait for `gate`, the first one at least; `names` are the files asked for.
+/// Downloads wait until `open()`; readiness is a callback, and opening also releases any future mistaken fetch.
 private final class GatedPreviewServer: RemoteProvider, @unchecked Sendable {
-    let gate = DispatchSemaphore(value: 0)
+    private let gate = DispatchGroup()
     private let lock = NSLock()
+    private var isOpen = false
+    private var started: Callback<Void>?
     private var asked: [String] = []
     var names: [String] { lock.withLock { asked } }
 
+    init() { gate.enter() }
+
+    func whenStarted(_ callback: Callback<Void>) {
+        let alreadyStarted = lock.withLock {
+            if !asked.isEmpty { return true }
+            started = callback
+            return false
+        }
+        if alreadyStarted { callback.resume() }
+    }
+
+    func open() {
+        lock.withLock {
+            guard !isOpen else { return }
+            isOpen = true
+            gate.leave()
+        }
+    }
+
     func download(_ remote: URL, into localFolder: URL) throws -> URL {
-        lock.withLock { asked.append(remote.lastPathComponent) }
+        let callback = lock.withLock {
+            asked.append(remote.lastPathComponent); return started
+        }
+        callback?.resume()
         gate.wait()
         try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
         let local = localFolder.appendingPathComponent(remote.lastPathComponent)
