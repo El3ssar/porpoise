@@ -84,7 +84,11 @@ final class ToolbarView: NSView {
         fieldGroups[1].identifier = .init("Porpoise.toolbar.location.secondary")
         setAccessibilityRole(.toolbar)
         shortcutsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
-            guard note.object == nil || ["shortcutKeySet", "keyboardShortcuts"].contains(note.object as? String ?? "") else { return }
+            guard let change = SettingsChange(note) else { return }  // Malformed payloads are ignored here.
+            switch change {
+            case .key("shortcutKeySet"), .key("keyboardShortcuts"), .all: break
+            default: return
+            }
             // The key set also picks the default toolbar's last buttons (☰, or Share and Action ⋯).
             DispatchQueue.main.async {
                 self?.refreshShortcutTooltips(); self?.needsLayout = true

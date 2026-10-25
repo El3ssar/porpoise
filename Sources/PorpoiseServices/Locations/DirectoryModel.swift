@@ -324,7 +324,11 @@ public final class DirectoryModel {
         self.props = ViewStyleStore().style(for: location)
         source.retainMetadata(for: [location])
         gitSettingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
-            guard note.object as? String == "showGitStatus" || note.object == nil else { return }
+            guard let change = SettingsChange(note) else { return }  // Malformed payloads are ignored here.
+            switch change {
+            case .key("showGitStatus"), .all: break
+            default: return
+            }
             guard let self else { return }
             self.observeGit()
             NotificationCenter.default.post(name: Self.gitStatusChanged, object: self)
