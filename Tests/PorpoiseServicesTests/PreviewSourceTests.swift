@@ -7,7 +7,8 @@ import Testing
 
 /// Previews of items not on this Mac come from one place: a server's file as a temporary copy (removed by whoever
 /// made the preview), a cloud service's own preview, and when to ask again after a failure.
-@Suite(.serialized, .isolatedSettings) struct PreviewSourceTests {
+// These use unique, locked provider registrations and temporary copies; none reads or changes Settings.store.
+@Suite(.serialized) struct PreviewSourceTests {
     @Test func aServerFileComesAsATemporaryCopy() async throws {
         let root = URL(string: "sftp://preview-\(UUID().uuidString.prefix(8).lowercased()).invalid/")!
         let server = MemoryServer(root: root)
