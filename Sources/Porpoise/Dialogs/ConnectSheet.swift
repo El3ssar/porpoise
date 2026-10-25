@@ -647,8 +647,8 @@ final class ServerForm {
         // The labels keep their width; the fields take the rest, so the form sits under the title.
         view.column(at: 0).width = 90
         view.rowAlignment = .firstBaseline
-        view.columnSpacing = 8
-        view.rowSpacing = 8
+        view.columnSpacing = Tokens.Space.s
+        view.rowSpacing = Tokens.Space.s
         for f in [server, nameField, port, user, folder] { f.widthAnchor.constraint(equalToConstant: 300).isActive = true }
     }
 

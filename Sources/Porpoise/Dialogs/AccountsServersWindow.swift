@@ -703,8 +703,8 @@ final class ConnectionForm {
         for (label, field) in rows { view.addRow(with: [NSTextField(labelWithString: label), field]) }
         view.column(at: 0).xPlacement = .trailing
         view.rowAlignment = .firstBaseline
-        view.columnSpacing = 8
-        view.rowSpacing = 8
+        view.columnSpacing = Tokens.Space.s
+        view.rowSpacing = Tokens.Space.s
         for (_, field) in rows where field is NSTextField {
             if field.constraints.allSatisfy({ $0.firstAttribute != .width }) { field.widthAnchor.constraint(equalToConstant: 300).isActive = true }
         }

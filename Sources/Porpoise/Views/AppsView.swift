@@ -46,7 +46,9 @@ final class AppsView: NSView, NSTextFieldDelegate {
         scroll.scrollerStyle = .overlay
         scroll.automaticallyAdjustsContentInsets = false
         // The grid scrolls under the glass search field.
-        scroll.contentInsets = NSEdgeInsets(top: Self.searchTop + Self.searchHeight + 22, left: 0, bottom: 24, right: 0)
+        // 22 under the field: the 20-pt gap plus the field's 2-pt glass rim.
+        scroll.contentInsets = NSEdgeInsets(
+            top: Self.searchTop + Self.searchHeight + Tokens.Space.xl + Tokens.Space.xxs, left: 0, bottom: Tokens.Space.xxl, right: 0)
         addSubview(scroll)
         grid.owner = self
 
