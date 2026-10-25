@@ -80,7 +80,7 @@ extension PropertiesWindow {
             }
             for b in [copy, manage] { b.controlSize = .small; b.font = .systemFont(ofSize: Tokens.FontSize.small) }
             let buttons = NSStackView(views: [copy, manage])
-            buttons.spacing = 8
+            buttons.spacing = Tokens.Space.s
             buttons.frame.size = CGSize(width: 282, height: 24)
             row("", buttons, y: &y, in: v)
             if info?.isWebDocument == true {

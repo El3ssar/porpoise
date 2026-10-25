@@ -32,10 +32,10 @@ final class ListStateView: NSView {
         actionButton.action = #selector(runAction)
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 8
+        stack.spacing = Tokens.Space.s
         for v in [icon, title, message, detailsToggle, details, actionButton] { stack.addArrangedSubview(v) }
-        stack.setCustomSpacing(14, after: details)
-        stack.setCustomSpacing(14, after: message)
+        stack.setCustomSpacing(Tokens.Space.l, after: details)
+        stack.setCustomSpacing(Tokens.Space.l, after: message)
         addSubview(stack)
         setAccessibilityElement(false)
     }

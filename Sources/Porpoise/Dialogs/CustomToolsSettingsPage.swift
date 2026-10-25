@@ -30,7 +30,7 @@ final class CustomToolsEditorView: NSView, NSTableViewDataSource, NSTableViewDel
             },
         ])
         let stack = NSStackView(views: [scroll, actions, files, status]); stack.orientation = .vertical; stack.alignment = .leading;
-        stack.spacing = 10
+        stack.spacing = Tokens.Space.s
         addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),

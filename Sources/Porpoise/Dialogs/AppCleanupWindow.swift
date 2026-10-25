@@ -28,7 +28,7 @@ final class AppCleanupWindow: DiskUtilityWindow {
             "Related files start unchecked. Shared containers and files claimed by another installed app are kept. Everything selected goes to Trash and can be undone."
         )
         let buttons = NSStackView(views: [ClosureButton(title: "Cancel") { [weak self] _ in self?.finish(nil) }, trashButton])
-        buttons.spacing = 10; stack.insertArrangedSubview(buttons, at: stack.arrangedSubviews.count - 1)
+        buttons.spacing = Tokens.Space.s; stack.insertArrangedSubview(buttons, at: stack.arrangedSubviews.count - 1)
         trashButton.isEnabled = false; trashButton.handler = { [weak self] _ in self?.accept() }
         cancelButton.handler = { [weak self] _ in self?.finish(nil) }
         cancelButton.title = "Cancel Scan"; cancelButton.isHidden = true

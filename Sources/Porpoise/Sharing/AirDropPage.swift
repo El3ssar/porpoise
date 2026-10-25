@@ -63,12 +63,12 @@ final class AirDropPage: NSView {
             label.frame = CGRect(x: (width - textWidth) / 2, y: y, width: textWidth, height: ceil(size.height))
             y += ceil(size.height) + spacing
         }
-        label(title, spacing: 12); label(prompt, spacing: 6); label(detail, spacing: 18)
+        label(title, spacing: Tokens.Space.m); label(prompt, spacing: Tokens.Space.s); label(detail, spacing: Tokens.Space.xl)
         for button in [chooseButton, selectionButton] {
             button.frame = CGRect(x: (width - min(164, textWidth)) / 2, y: y, width: min(164, textWidth), height: 32)
             y += 40
         }
-        label(hint, spacing: 20)
+        label(hint, spacing: Tokens.Space.xl)
         if y + 24 > height { content.frame.size.height = y + 24 }
         refreshSelection()
         content.needsDisplay = true

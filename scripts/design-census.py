@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Counts the design-token escapes in Sources/Porpoise (DESIGN-CONTRACT.md §12) and fails when one grows.
 
-Literal font sizes, corner radii, colours and animation durations belong in Theme/Tokens.swift, Theme/Theme.swift and
-Theme/Motion.swift. A branch may only lower these counts; lower the baseline here when it does.
+Literal font sizes, corner radii, colours, stack spacings and animation durations belong in Theme/Tokens.swift,
+Theme/Theme.swift and Theme/Motion.swift (spacings: Tokens.Space and Tokens.Metric; 0 and 1 stay literal). A branch may only lower these counts; lower the baseline here when it does.
 """
 import re
 import sys
@@ -17,6 +17,7 @@ CHECKS = {
     'literal corner radii': (r'(cornerRadius *= *|xRadius: *)[0-9]', (), 9),
     'literal colours outside Theme/': (r'NSColor\((srgbRed|rgb|white|calibrated)', ('Theme/',), 13),
     'literal durations': (r'duration( *= *|: *)[0-9]', ('Theme/Motion.swift',), 3),
+    'literal spacings': (r'(spacing *= *|spacing: *|setCustomSpacing\(|NSEdgeInsets\(top: *)([2-9]|[1-9][0-9])', (), 0),
 }
 
 

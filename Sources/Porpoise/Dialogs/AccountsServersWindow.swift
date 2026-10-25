@@ -172,7 +172,7 @@ final class AccountsServersWindow: SecondaryWindowController, NSTableViewDataSou
 
         editor.orientation = .vertical
         editor.alignment = .leading
-        editor.spacing = 12
+        editor.spacing = Tokens.Space.m
         let editorScroll = NSScrollView()
         editorScroll.hasVerticalScroller = true
         editorScroll.autohidesScrollers = true
@@ -750,7 +750,7 @@ final class ConnectionInfoView: NSStackView {
         super.init(frame: .zero)
         orientation = .vertical
         alignment = .leading
-        spacing = 6
+        spacing = Tokens.Space.s
         if p.kind == .sftp, p.problem == nil {
             addArrangedSubview(Self.heading("Server"))
             let route = Self.line("Looking up ~/.ssh/config…")
@@ -877,13 +877,13 @@ final class EntryCellView: NSTableCellView {
             icon.centerXAnchor.constraint(equalTo: slot.centerXAnchor), icon.centerYAnchor.constraint(equalTo: slot.centerYAnchor),
         ])
         let subRow = NSStackView(views: [warning, detail].compactMap { $0 })
-        subRow.spacing = 3
+        subRow.spacing = Tokens.Space.xs
         let text = NSStackView(views: [name, subRow])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 1
         let row = NSStackView(views: [slot, text])
-        row.spacing = 8
+        row.spacing = Tokens.Space.s
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
         NSLayoutConstraint.activate([

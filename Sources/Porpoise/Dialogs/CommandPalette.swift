@@ -202,7 +202,7 @@ final class CommandPalette: SecondaryWindowController, NSWindowDelegate, NSTable
         title.textColor = candidate.enabled ? Theme.viewText : Theme.viewTextInactive; title.lineBreakMode = .byTruncatingTail
         let detail = NSTextField(labelWithString: (candidate.enabled ? "" : "Unavailable · ") + candidate.subtitle)
         detail.font = .systemFont(ofSize: FontSize.small); detail.textColor = Theme.viewTextInactive; detail.lineBreakMode = .byTruncatingMiddle
-        let stack = NSStackView(views: [title, detail]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 2
+        let stack = NSStackView(views: [title, detail]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = Tokens.Space.xxs
         stack.setAccessibilityLabel(candidate.title + ", " + detail.stringValue); return stack
     }
 }
