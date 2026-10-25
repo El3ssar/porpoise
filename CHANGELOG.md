@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1
+
+- **Typing e and f works again.** Since 0.14.4 a plain e opened Emoji & Symbols and a plain f made the window full screen, because Porpoise ran keys without ⌘ or ⌃ through the menus without checking the fn/Globe key that those two system commands need. 🌐E and 🌐F still do their jobs.
+
 ## 0.15.0
 
 - **USB sticks and SD cards work again.** Copying, moving and replacing on exFAT and FAT32 drives failed with an error; Porpoise now checks what each drive supports and uses a safe, crash-recoverable method where the drive can't swap names atomically. Copying a file named `._name` next to `name` onto such a drive is refused with an explanation, because those drives store hidden file data under exactly that name.
