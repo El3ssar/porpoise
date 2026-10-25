@@ -93,7 +93,7 @@ final class ShelfPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NSMe
         count.lineBreakMode = .byTruncatingTail
         let footer = NSStackView(views: [copyHere, moveHere])
         footer.distribution = .fillEqually
-        footer.spacing = 6
+        footer.spacing = Tokens.Space.s
         // A hairline above the panel: Places above it reads as scrolled, not cut off.
         separator.wantsLayer = true
         Theme.whenChanged(separator) { [weak self] in self?.separator.layer?.backgroundColor = Theme.separator.cgColor }

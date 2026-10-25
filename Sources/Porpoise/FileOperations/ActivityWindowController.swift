@@ -26,9 +26,9 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
     private let search = NSSearchField()
     private let clear = NSButton(title: "Clear Finished", target: nil, action: nil)
     private let settings = NSButton()
-    private let empty = NSStackView()
-    private let emptyTitle = NSTextField(labelWithString: "No activity")
-    private let emptyDetail = NSTextField(labelWithString: "Copies and moves show up here.")
+    /// Centred over the list while nothing runs or ran (DESIGN-CONTRACT E1).
+    let emptyState = ListStateView()
+    static let emptyListState = ListState(title: "No activity", message: "Copies and moves show up here.", symbol: "clock")
     private let footer = ActivityFooterView()
     private var header: ActivityHeaderView?
     private var rows: [Activity] = []
@@ -115,18 +115,13 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             activityScroll.leadingAnchor.constraint(equalTo: activityPane.leadingAnchor),
             activityScroll.trailingAnchor.constraint(equalTo: activityPane.trailingAnchor),
         ])
-        empty.orientation = .vertical
-        empty.alignment = .centerX
-        empty.spacing = 6
-        emptyTitle.font = .systemFont(ofSize: FontSize.title3, weight: .semibold)
-        emptyDetail.font = .systemFont(ofSize: FontSize.callout)
-        empty.addArrangedSubview(emptyTitle)
-        empty.addArrangedSubview(emptyDetail)
-        activityPane.addSubview(empty)
-        empty.translatesAutoresizingMaskIntoConstraints = false
+        activityPane.addSubview(emptyState)
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            empty.centerXAnchor.constraint(equalTo: activityPane.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: activityPane.centerYAnchor),
+            emptyState.leadingAnchor.constraint(equalTo: activityPane.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: activityPane.trailingAnchor),
+            emptyState.topAnchor.constraint(equalTo: activityPane.topAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: activityPane.bottomAnchor),
         ])
 
         search.placeholderString = "Search history"
@@ -134,7 +129,9 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         let export = ClosureButton(title: "Export…") { [weak self] _ in self?.exportHistory() }
         let clearHistory = ClosureButton(title: "Clear History") { [weak self] _ in self?.clearHistory() }
         let historyHeader = NSStackView(views: [search, export, clearHistory])
-        historyHeader.spacing = 8
+        historyHeader.spacing = Tokens.Space.s
+        // The search row sits in from the window's edges; the table under it runs edge to edge.
+        historyHeader.edgeInsets = NSEdgeInsets(top: Tokens.Space.s, left: Tokens.Space.m, bottom: 0, right: Tokens.Space.m)
         for (id, title, width) in [
             ("date", "Date", 140.0), ("operation", "Operation", 120.0), ("items", "Items", 220.0), ("outcome", "Result", 150.0),
         ] {
@@ -185,8 +182,10 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             table.backgroundColor = Theme.viewBackground
             table.enclosingScrollView?.backgroundColor = Theme.viewBackground
         }
-        emptyTitle.textColor = Theme.viewText
-        emptyDetail.textColor = Theme.viewTextInactive
+        // Its colours are the palette's when it is shown.
+        let shown = emptyState.state
+        emptyState.show(nil)
+        emptyState.show(shown)
         activityTable.reloadData()
     }
 
@@ -202,7 +201,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         let st = NSStackView(views: views)
         st.orientation = .vertical
         st.alignment = .leading
-        st.spacing = 8
+        st.spacing = Tokens.Space.s
         st.translatesAutoresizingMaskIntoConstraints = false
         pane.addSubview(st)
         NSLayoutConstraint.activate([
@@ -291,7 +290,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
             edits = nextEdits
             activityTable.reloadData()
         }
-        empty.isHidden = !rows.isEmpty || !edits.isEmpty
+        emptyState.show(rows.isEmpty && edits.isEmpty ? Self.emptyListState : nil)
         clear.isEnabled = rows.contains { $0.state.isEnded }
         clear.contentTintColor = clear.isEnabled ? Theme.windowText : Theme.windowTextInactive
         clear.attributedTitle = NSAttributedString(

@@ -78,6 +78,7 @@ import SwiftTerm
         "splitfraction": DebugBridge.splitfractionCommand,
         "frontwindow": DebugBridge.frontwindowCommand,
         "winframe": DebugBridge.winframeCommand,
+        "contentsize": DebugBridge.contentsizeCommand,
         "fka": DebugBridge.fkaCommand,
         "focus": DebugBridge.focusCommand,
         "keymenu": DebugBridge.keymenuCommand,
@@ -209,6 +210,18 @@ import SwiftTerm
     func winframeCommand(_ arg: String) {
         let n = arg.split(separator: " ").compactMap { Double($0) }
         if n.count == 4 { wc?.window?.setFrame(CGRect(x: n[0], y: n[1], width: n[2], height: n[3]), display: true) }
+    }
+
+    /// contentsize <width|min> <height|min> <title prefix>: sizes that window's content (captures at a window's minimum).
+    func contentsizeCommand(_ arg: String) {
+        let parts = arg.split(separator: " ", maxSplits: 2).map(String.init)
+        guard parts.count == 3, let w = NSApp.windows.first(where: { $0.isVisible && $0.title.hasPrefix(parts[2]) }) else { return }
+        let content = w.contentRect(forFrameRect: w.frame).size
+        let least = NSSize(
+            width: max(w.contentMinSize.width, w.contentRect(forFrameRect: CGRect(origin: .zero, size: w.minSize)).width),
+            height: max(w.contentMinSize.height, w.contentRect(forFrameRect: CGRect(origin: .zero, size: w.minSize)).height))
+        func value(_ s: String, _ min: CGFloat, _ now: CGFloat) -> CGFloat { s == "min" ? min : Double(s).map { CGFloat($0) } ?? now }
+        w.setContentSize(NSSize(width: value(parts[0], least.width, content.width), height: value(parts[1], least.height, content.height)))
     }
 
     func writeState(to path: String) {

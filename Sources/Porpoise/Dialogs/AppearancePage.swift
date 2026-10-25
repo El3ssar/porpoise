@@ -8,7 +8,6 @@ enum AppearancePage {
     static func build(_ f: FormBuilder) {
         let s = Settings.shared
         let themes = [AppearanceTheme.systemName, "Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
-        f.grouped = true
         f.section("Theme")
         f.themeCards(
             themes, selected: { s.appearancePreferences.themeName },

@@ -190,6 +190,15 @@ import Testing
         let later = CloudProvider.allCases.filter { !$0.isAvailable }
         let line = texts(in: content).first { $0.hasPrefix("More services coming") }
         #expect(later.allSatisfy { line?.contains($0.title) == true })
-        #expect(content.frame.width >= ConnectTile.rowWidth(ConnectSheet.ServerKind.allCases.count) + 44)
+        #expect(content.frame.width >= ConnectTile.rowWidth(ConnectSheet.ServerKind.allCases.count) + 2 * Tokens.Space.xl)
+        // UI-5: the page sits on the sheet's 20-pt margins.
+        content.layoutSubtreeIfNeeded()
+        let page = try #require(content.subviews.first)
+        let f = page.frame
+        for (edge, value) in [
+            ("left", f.minX), ("right", content.bounds.width - f.maxX), ("top", content.bounds.height - f.maxY), ("bottom", f.minY),
+        ] {
+            #expect(abs(value - Tokens.Space.xl) < 0.5, "\(edge) margin \(value)")
+        }
     }
 }

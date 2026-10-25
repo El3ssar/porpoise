@@ -18,6 +18,8 @@ final class ListStateView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        // Shows nothing until a state is shown (show(nil) on a fresh view changes nothing, so it must start hidden).
+        isHidden = true
         for label in [title, message, details] {
             label.alignment = .center
             label.isSelectable = label !== title
@@ -32,10 +34,10 @@ final class ListStateView: NSView {
         actionButton.action = #selector(runAction)
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 8
+        stack.spacing = Tokens.Space.s
         for v in [icon, title, message, detailsToggle, details, actionButton] { stack.addArrangedSubview(v) }
-        stack.setCustomSpacing(14, after: details)
-        stack.setCustomSpacing(14, after: message)
+        stack.setCustomSpacing(Tokens.Space.l, after: details)
+        stack.setCustomSpacing(Tokens.Space.l, after: message)
         addSubview(stack)
         setAccessibilityElement(false)
     }
@@ -61,6 +63,11 @@ final class ListStateView: NSView {
         for (label, size) in [(message, Tokens.FontSize.body), (details, Tokens.FontSize.small)] {
             label.font = .systemFont(ofSize: size)
             label.textColor = Theme.viewTextInactive
+        }
+        // A quiet state's line stays under its title (E1: a footnote, no stronger than the title above it).
+        if !error {
+            message.font = Tokens.font(.footnote)
+            message.textColor = title.textColor
         }
         // A quiet state's symbol is lighter than a failure's, so an empty folder never reads as a problem.
         icon.image = state.symbol.isEmpty ? nil : NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil)

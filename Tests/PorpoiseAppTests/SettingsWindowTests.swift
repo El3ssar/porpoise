@@ -22,9 +22,7 @@ import Testing
         let doc = try #require((item.viewController?.view as? NSScrollView)?.documentView)
         doc.layoutSubtreeIfNeeded()
         return Self.views(in: doc).compactMap { v -> (String, CGFloat)? in
-            guard let t = v as? NSTextField, !t.isEditable, !t.isHiddenOrHasHiddenAncestor,
-                t.font?.fontDescriptor.symbolicTraits.contains(.bold) == true
-            else { return nil }
+            guard let t = v as? NSTextField, !t.isHiddenOrHasHiddenAncestor, t.identifier == FormBuilder.headingID else { return nil }
             return (t.stringValue, t.convert(t.bounds, to: doc).minY)
         }.sorted { $0.1 < $1.1 }.map(\.0)
     }

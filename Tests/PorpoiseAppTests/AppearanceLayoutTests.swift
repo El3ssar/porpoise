@@ -41,7 +41,6 @@ import Testing
     @Test(arguments: [1, 2, 3, 4, 12]) @MainActor func themeCardsFillThreeColumnsAcrossResizeAndRefresh(count: Int) {
         _ = NSApplication.shared
         let form = FormBuilder()
-        form.grouped = true
         form.section("Theme")
         let names = Array((["Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]).prefix(count))
         var selected = names[0]

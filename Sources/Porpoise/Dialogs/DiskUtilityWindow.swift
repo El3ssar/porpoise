@@ -14,6 +14,11 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
     let status = NSTextField(wrappingLabelWithString: "")
     let progress = NSProgressIndicator()
     let cancelButton = ClosureButton(title: "Cancel") { _ in }
+    /// The progress bar and Cancel: on screen only while work runs (DESIGN-CONTRACT E2).
+    private(set) var progressRow = NSStackView()
+    /// What the table says when it has no rows and nothing runs, centred over it; nil shows nothing.
+    var emptyListState: ListState? { didSet { updateEmptyState() } }
+    let emptyState = ListStateView()
     var cancellation = DiskCancellation()
     var rows: [[String]] = []
     /// Shown only when a scan had errors: a disabled "No Errors" button read as a status that something had gone wrong.
@@ -32,10 +37,11 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
         w.isReleasedWhenClosed = false; w.title = title
         super.init(window: w); w.delegate = self
         contentStack(stack)
-        toolbar.orientation = .horizontal; toolbar.spacing = 8
+        toolbar.orientation = .horizontal; toolbar.spacing = Tokens.Space.s
         stack.addArrangedSubview(toolbar)
         progress.style = .bar; progress.isIndeterminate = true
-        let progressRow = NSStackView(views: [progress, cancelButton]); progressRow.spacing = 10
+        progressRow = NSStackView(views: [progress, cancelButton]); progressRow.spacing = Tokens.Space.s
+        progressRow.isHidden = true
         stack.addArrangedSubview(progressRow)
         progressRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         progress.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -52,13 +58,25 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
         let scroll = NSScrollView(); scroll.documentView = table; scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true;
         scroll.borderType = .bezelBorder
         stack.addArrangedSubview(scroll)
+        // Over the list, not in it: a scroll view lays out only its own parts.
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        stack.addSubview(emptyState, positioned: .above, relativeTo: scroll)
+        NSLayoutConstraint.activate([
+            emptyState.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            emptyState.topAnchor.constraint(equalTo: scroll.topAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
+        ])
+        emptyState.show(nil)
         NSLayoutConstraint.activate([
             scroll.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 150),
         ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
-        status.isSelectable = true; status.maximumNumberOfLines = 4; status.font = .systemFont(ofSize: FontSize.callout)
+        // One footer line, secondary (UI-10).
+        status.isSelectable = true; status.maximumNumberOfLines = 4; status.font = Tokens.font(.callout)
+        status.textColor = Theme.windowTextInactive
         errorsButton.handler = { [weak self] _ in self?.showErrors() }; errorsButton.isHidden = true
-        let footer = NSStackView(views: [status, errorsButton]); footer.alignment = .top; footer.spacing = 10
+        let footer = NSStackView(views: [status, errorsButton]); footer.alignment = .firstBaseline; footer.spacing = Tokens.Space.s
         stack.addArrangedSubview(footer); footer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         status.setContentHuggingPriority(.defaultLow, for: .horizontal)
         w.minSize = NSSize(width: 860, height: 500); w.center()
@@ -77,13 +95,29 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
         label.toolTip = rows[row][index]; label.isSelectable = true
         return label
     }
+    /// Shows `emptyListState` while the table has no rows and nothing runs.
+    func updateEmptyState() { emptyState.show(rows.isEmpty && !busy ? emptyListState : nil) }
+
+    /// Work started or ended: the progress row shows only meanwhile.
+    private func setBusy(_ on: Bool) {
+        busy = on
+        progressRow.isHidden = !on
+        if on { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }
+        cancelButton.isEnabled = on
+        updateEmptyState()
+        workChanged()
+    }
+
+    /// Called when work starts or ends (a toolbar to re-validate).
+    func workChanged() {}
+
     func showErrors() {
         let alert = NSAlert(); alert.messageText = errors.isEmpty ? "No scan errors" : "\(errors.count) scan errors"
         alert.informativeText = errors.prefix(20).joined(separator: "\n"); alert.runSheet(for: window) { _ in }
     }
     func perform<T>(_ work: @escaping (DiskCancellation, @escaping (DiskProgress) -> Void) throws -> T, done: @escaping (T) -> Void) {
         cancellation.cancel(); let token = DiskCancellation(); cancellation = token
-        busy = true; progress.startAnimation(nil); cancelButton.isEnabled = true; status.stringValue = "Working…"
+        setBusy(true); status.stringValue = "Working…"
         let throttle = NSLock(); var last = Date.distantPast
         let report: (DiskProgress) -> Void = { [weak self] update in
             guard
@@ -101,14 +135,14 @@ class DiskUtilityWindow: SecondaryWindowController, NSWindowDelegate, NSTableVie
                 let result = try work(token, report)
                 DispatchQueue.main.async {
                     guard let self, self.cancellation === token else { return }
-                    self.progress.stopAnimation(nil); self.cancelButton.isEnabled = false; self.busy = false
+                    self.setBusy(false)
                     if token.isCancelled { self.status.stringValue = "Cancelled"; return }
                     done(result)
                 }
             } catch {
                 DispatchQueue.main.async {
                     guard let self, self.cancellation === token else { return }
-                    self.progress.stopAnimation(nil); self.cancelButton.isEnabled = false; self.busy = false
+                    self.setBusy(false)
                     self.status.stringValue = error is CancellationError ? "Cancelled" : error.localizedDescription
                 }
             }

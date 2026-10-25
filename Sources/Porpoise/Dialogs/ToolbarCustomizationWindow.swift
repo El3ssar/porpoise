@@ -89,7 +89,7 @@ final class ToolbarCustomizationWindow: SecondaryWindowController, NSToolbarDele
         let buttons = NSStackView(views: [reset, NSView(), customize, done])
         buttons.spacing = Tokens.Space.s
         let stack = contentStack(
-            NSStackView(views: [heading, status, buttons]), insets: NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20),
+            NSStackView(views: [heading, status, buttons]), insets: Tokens.Metric.windowInsets,
             spacing: Tokens.Space.m, pinBottom: false)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         ready = true

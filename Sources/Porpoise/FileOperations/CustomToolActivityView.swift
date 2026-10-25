@@ -22,13 +22,15 @@ final class CustomToolActivityView: NSView, NSTableViewDataSource, NSTableViewDe
         let scroll = NSScrollView(); scroll.documentView = output; scroll.hasVerticalScroller = true
         cancel.target = self; cancel.action = #selector(cancelRun)
         let clear = ClosureButton(title: "Clear Finished") { _ in CustomToolRunner.shared.clearFinished() }
-        let controls = NSStackView(views: [cancel, clear, status]); controls.spacing = 10
-        let stack = NSStackView(views: [list, scroll, controls]); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        let controls = NSStackView(views: [cancel, clear, status]); controls.spacing = Tokens.Space.s
+        let stack = NSStackView(views: [list, scroll, controls]); stack.orientation = .vertical; stack.alignment = .leading;
+        stack.spacing = Tokens.Space.s
         addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 8), stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: Tokens.Space.s),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Tokens.Space.s),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Tokens.Space.m),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Tokens.Space.m),
             list.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)

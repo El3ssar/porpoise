@@ -20,6 +20,19 @@ import Testing
         let originalSize = window.contentLayoutRect.size
         defer { window.setContentSize(originalSize) }
         let tabs = try #require(descendants(content, as: NSSegmentedControl.self).first)
+        // UI-5/E1: an empty list says so with the shared empty state, filling the list's pane (it centres itself).
+        content.layoutSubtreeIfNeeded()
+        let empty = controller.emptyState
+        #expect(empty.state == nil || empty.state == ActivityWindowController.emptyListState)
+        #expect(empty.frame.width > 300 && empty.frame.height > 100, "\(empty.frame)")
+        // Its line is no stronger than its title (finishgate #8160): smaller, and not darker.
+        empty.show(nil)
+        empty.show(ActivityWindowController.emptyListState)
+        let labels = descendants(empty, as: NSTextField.self).filter { !$0.isHidden && !$0.stringValue.isEmpty }
+        let title = try #require(labels.first { $0.stringValue == "No activity" })
+        let line = try #require(labels.first { $0.stringValue == "Copies and moves show up here." })
+        #expect((line.font?.pointSize ?? 99) < (title.font?.pointSize ?? 0))
+        #expect(line.textColor == title.textColor)
         let buttons = descendants(tools, as: NSButton.self)
         #expect(buttons.map(\.title) == ["Cancel Tool", "Clear Finished"])
         for width in [480.0, 640.0] {

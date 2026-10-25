@@ -88,7 +88,7 @@ final class InformationPanel: NSView {
         nameLabel.alignment = .center
         grid.orientation = .vertical
         grid.alignment = .leading
-        grid.spacing = 4
+        grid.spacing = Tokens.Space.xs
         addSubview(material)
         player.controlsStyle = .none
         player.isHidden = true

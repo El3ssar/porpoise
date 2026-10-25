@@ -77,8 +77,7 @@ enum AccountsSettingsPage {
         }
         _ = f.note("Files you download stay on this Mac until you choose Remove Download; they don’t count toward this.")
         let usage = OfflineUsageView()
-        f.stack.addArrangedSubview(usage)
-        usage.widthAnchor.constraint(equalTo: f.stack.widthAnchor, constant: -60).isActive = true
+        f.wide(usage)
         if let root = CloudOfflineHub.service?.root {
             _ = f.note("Downloads are kept in \((root.path as NSString).abbreviatingWithTildeInPath).")
         }
@@ -96,7 +95,7 @@ final class AccountDetailView: NSStackView {
         super.init(frame: .zero)
         orientation = .vertical
         alignment = .leading
-        spacing = 10
+        spacing = Tokens.Space.s
         build()
     }
 
@@ -143,7 +142,7 @@ final class AccountDetailView: NSStackView {
         let checkStack = NSStackView(views: checks)
         checkStack.orientation = .vertical
         checkStack.alignment = .leading
-        checkStack.spacing = 6
+        checkStack.spacing = Tokens.Space.s
         addArrangedSubview(Self.labeled("Show in sidebar:", checkStack))
         if let quota = QuotaBar.make(used: a.quotaUsed, total: a.quotaTotal) { addArrangedSubview(Self.labeled("Storage:", quota)) }
         if let service = CloudOfflineHub.service {
@@ -156,7 +155,7 @@ final class AccountDetailView: NSStackView {
             let column = NSStackView(views: [text, remove])
             column.orientation = .vertical
             column.alignment = .leading
-            column.spacing = 6
+            column.spacing = Tokens.Space.s
             addArrangedSubview(Self.labeled("On this Mac:", column))
         }
     }
@@ -180,7 +179,7 @@ final class AccountDetailView: NSStackView {
         l.widthAnchor.constraint(equalToConstant: 112).isActive = true
         let r = NSStackView(views: [l, v])
         r.alignment = .firstBaseline
-        r.spacing = 8
+        r.spacing = Tokens.Space.s
         return r
     }
 
@@ -257,7 +256,7 @@ final class OfflineUsageView: NSStackView {
         super.init(frame: .zero)
         orientation = .vertical
         alignment = .leading
-        spacing = 6
+        spacing = Tokens.Space.s
         for name in [CloudOfflineHub.changed, CloudAccounts.changed] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.rebuild() })
         }
@@ -281,7 +280,7 @@ final class OfflineUsageView: NSStackView {
             remove.font = .systemFont(ofSize: Tokens.FontSize.small)
             remove.isHidden = u.recent == 0  // nothing to remove: no button (the line says so)
             let row = NSStackView(views: [text, remove])
-            row.spacing = 10
+            row.spacing = Tokens.Space.s
             addArrangedSubview(row)
         }
     }

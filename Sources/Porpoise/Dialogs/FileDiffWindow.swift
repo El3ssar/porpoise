@@ -683,14 +683,15 @@ final class FileDiffWindow: SecondaryWindowController, NSWindowDelegate, NSMenuD
                 "First difference at byte \($0.formatted(.number.locale(Locale(identifier: "en_US")))) (0x\(String($0, radix: 16)))"
             } ?? "Every byte matches.")
         detail.font = .systemFont(ofSize: FontSize.callout); detail.textColor = Theme.viewTextInactive
-        let labels = NSStackView(views: [title, detail]); labels.orientation = .vertical; labels.alignment = .leading; labels.spacing = 2
+        let labels = NSStackView(views: [title, detail]); labels.orientation = .vertical;
+        labels.alignment = .leading; labels.spacing = Tokens.Space.xxs
         let icon = NSImageView();
         icon.image = Icons.shared.image(
             for: FileItem(
                 url: leftURL, name: leftURL.lastPathComponent, isDirectory: false,
                 contentType: UTType(filenameExtension: leftURL.pathExtension)?.identifier), size: 40)
         icon.widthAnchor.constraint(equalToConstant: 40).isActive = true; icon.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let heading = NSStackView(views: [icon, labels]); heading.spacing = 14; heading.alignment = .centerY
+        let heading = NSStackView(views: [icon, labels]); heading.spacing = Tokens.Space.m; heading.alignment = .centerY
         addInfoRow(heading, height: 70)
         let table = NSStackView(); table.orientation = .vertical; table.alignment = .leading; table.spacing = 0
         table.wantsLayer = true; table.layer?.cornerRadius = Tokens.Radius.row; table.layer?.masksToBounds = true; table.layer?.borderWidth = 1;

@@ -2,16 +2,15 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-/// Builds a simple two-column settings form (label | control), like KDE's KCM pages.
+/// Builds a two-column settings form (DESIGN-CONTRACT §6.4): flat groups under a headline, a right-aligned label column
+/// as wide as the page's longest label, and every control (checkboxes, radio buttons and help text included) in the
+/// control column, on its label's first baseline.
 /// Every control re-reads its setting whenever any setting changes (menus, "Don’t ask again" boxes, Restore
 /// Defaults…) or a window becomes key, so the window never shows stale values. Rows that depend on another
 /// setting (`enabled:`) are greyed out while they can't apply.
 final class FormBuilder: NSObject {
     let stack = NSStackView()
     let view: NSView
-    var grouped = false
-    private var group: NSStackView?
-    private var contentStack: NSStackView { group ?? stack }
     /// Notification observers, removed with the builder.
     private var observers: [NSObjectProtocol] = []
     /// Re-read each control's value and enabled state.
@@ -20,10 +19,11 @@ final class FormBuilder: NSObject {
     override init() {
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
+        stack.spacing = Tokens.Space.s
         stack.distribution = .gravityAreas
         stack.setHuggingPriority(.required, for: .vertical)
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 30, bottom: 20, right: 30)
+        let margin = Tokens.Space.xl
+        stack.edgeInsets = NSEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
         let container = NSView()
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -77,34 +77,29 @@ final class FormBuilder: NSObject {
         v.subviews.forEach { setEnabled($0, on) }
     }
 
+    /// The identifier of a section's heading (Settings scrolls a page to one).
+    static let headingID = NSUserInterfaceItemIdentifier("form-heading")
+
     func section(_ title: String) {
-        if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(20, after: last) }
+        if let last = stack.arrangedSubviews.last { stack.setCustomSpacing(Tokens.Space.xl, after: last) }
         guard !title.isEmpty else { return }
         let l = NSTextField(labelWithString: title)
-        l.font = .boldSystemFont(ofSize: Tokens.FontSize.body)
-        if grouped {
-            let heading = NSStackView(views: [l])
-            heading.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
-            stack.addArrangedSubview(heading)
-            let body = FormSectionView()
-            body.orientation = .vertical; body.alignment = .leading; body.spacing = 12
-            body.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
-            body.wantsLayer = true
-            body.layer?.cornerRadius = 10
-            body.layer?.borderWidth = 0.5
-            stack.addArrangedSubview(body)
-            body.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -60).isActive = true
-            group = body
+        l.font = Tokens.font(.headline)
+        l.identifier = Self.headingID
+        l.setAccessibilityRole(.staticText)
+        stack.addArrangedSubview(l)
+    }
 
-        } else {
-            stack.addArrangedSubview(l)
-        }
+    /// A view as wide as the page's content (a list, a grid of cards), from the content edge.
+    func wide(_ v: NSView) {
+        stack.addArrangedSubview(v)
+        v.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * Tokens.Space.xl).isActive = true
     }
 
     /// Equal-width columns make palettes compact without forcing the scroll view wider than its window.
     func colorGrid(_ labels: [String], values: @escaping (Int) -> NSColor, set: @escaping (Int, NSColor) -> Void) {
         let grid = NSGridView()
-        grid.columnSpacing = 24; grid.rowSpacing = 10
+        grid.columnSpacing = Tokens.Space.xxl; grid.rowSpacing = Tokens.Space.s
         for start in stride(from: 0, to: labels.count, by: 2) {
             var cells: [NSView] = []
             for i in start..<min(start + 2, labels.count) {
@@ -115,14 +110,13 @@ final class FormBuilder: NSObject {
                 well.widthAnchor.constraint(equalToConstant: 38).isActive = true
                 well.heightAnchor.constraint(equalToConstant: 24).isActive = true
                 let row = NSStackView(views: [label, NSView(), well])
-                row.spacing = 8
+                row.spacing = Tokens.Space.s
                 cells.append(row)
                 track(well, enabled: nil) { [weak well] in well?.color = values(i) }
             }
             grid.addRow(with: cells)
         }
-        contentStack.addArrangedSubview(grid)
-        grid.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -32).isActive = true
+        wide(grid)
         if grid.numberOfColumns == 2 {
             grid.cell(atColumnIndex: 0, rowIndex: 0).contentView?.widthAnchor.constraint(
                 equalTo: grid.cell(atColumnIndex: 1, rowIndex: 0).contentView!.widthAnchor
@@ -139,11 +133,11 @@ final class FormBuilder: NSObject {
         let grid = NSStackView()
         grid.orientation = .vertical
         grid.alignment = .leading
-        grid.spacing = 8
+        grid.spacing = Tokens.Space.s
         for start in stride(from: 0, to: names.count, by: 3) {
             let row = NSStackView()
             row.distribution = .fillEqually
-            row.spacing = 8
+            row.spacing = Tokens.Space.s
             for i in start..<min(start + 3, names.count) {
                 let b = ThemePreviewButton(title: names[i], theme: { theme(i) }) { set(i) }
                 b.heightAnchor.constraint(equalToConstant: 62).isActive = true
@@ -161,14 +155,13 @@ final class FormBuilder: NSObject {
             grid.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: grid.widthAnchor).isActive = true
         }
-        contentStack.addArrangedSubview(grid)
-        grid.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -32).isActive = true
+        wide(grid)
     }
 
     func check(_ title: String, _ value: @autoclosure @escaping () -> Bool, enabled: (() -> Bool)? = nil, _ set: @escaping (Bool) -> Void) {
         let b = ClosureButton(checkboxWithTitle: title) { set($0.state == .on) }
-        let row = indented(b)
-        contentStack.addArrangedSubview(row)
+        let row = inControlColumn(b)
+        stack.addArrangedSubview(row)
         track(row, enabled: enabled) { [weak b] in b?.state = value() ? .on : .off }
     }
 
@@ -183,7 +176,7 @@ final class FormBuilder: NSObject {
                 set(i)
             }
             group.buttons.append(WeakRef(b))
-            contentStack.addArrangedSubview(indented(b))
+            stack.addArrangedSubview(inControlColumn(b))
         }
         track(stack, enabled: nil) { [group] in
             let sel = selected()
@@ -204,9 +197,8 @@ final class FormBuilder: NSObject {
         _ set: @escaping (Int) -> Void
     ) {
         let p = ClosurePopup { set($0.indexOfSelectedItem) }
-        if grouped { p.widthAnchor.constraint(lessThanOrEqualToConstant: 250).isActive = true }
         let row = labeled(label, p)
-        contentStack.addArrangedSubview(row)
+        stack.addArrangedSubview(row)
         track(row, enabled: enabled) { [weak p] in
             guard let p else { return }
             let titles = items()
@@ -221,8 +213,8 @@ final class FormBuilder: NSObject {
     @discardableResult
     func text(_ label: String, _ value: @autoclosure @escaping () -> String, _ set: @escaping (String) -> Void) -> NSTextField {
         let f = ClosureTextField(string: value()) { set($0.stringValue) }
-        f.widthAnchor.constraint(equalToConstant: grouped ? 260 : 300).isActive = true
-        contentStack.addArrangedSubview(labeled(label, f))
+        f.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        stack.addArrangedSubview(labeled(label, f))
         // Not while the user is typing in it.
         track(f, enabled: nil) { [weak f] in if let f, f.currentEditor() == nil { f.stringValue = value() } }
         return f
@@ -252,9 +244,10 @@ final class FormBuilder: NSObject {
         // Plain digits: `integerValue =` writes the locale's grouping ("10.000"), which reads back as 10.
         st.onChange = { [weak field] in field?.stringValue = String($0) }
         let row = NSStackView(views: [field, st, NSTextField(labelWithString: suffix)])
-        row.spacing = 6
+        row.spacing = Tokens.Space.xs
+        row.alignment = .firstBaseline
         let labeledRow = labeled(label, row)
-        contentStack.addArrangedSubview(labeledRow)
+        stack.addArrangedSubview(labeledRow)
         track(labeledRow, enabled: enabled) { [weak field, weak st] in
             guard let field, let st, field.currentEditor() == nil else { return }
             st.integerValue = value(); field.stringValue = String(value())
@@ -268,12 +261,21 @@ final class FormBuilder: NSObject {
         return Int(String(String.UnicodeScalarView(digits)))
     }
 
+    /// Help text: footnote, secondary. Under a control, it explains that control: 4 pt below it, in the control column.
+    /// Right under a heading, it introduces the section, from the content edge.
     @discardableResult
     func note(_ text: String) -> NSTextField {
         let l = NSTextField(wrappingLabelWithString: text)
+        l.font = Tokens.font(.footnote)
         l.textColor = Theme.windowTextInactive
-        l.preferredMaxLayoutWidth = grouped ? 440 : 520
-        contentStack.addArrangedSubview(indented(l))
+        guard let last = stack.arrangedSubviews.last, last.identifier != Self.headingID else {
+            l.preferredMaxLayoutWidth = 520
+            stack.addArrangedSubview(l)
+            return l
+        }
+        l.preferredMaxLayoutWidth = 400
+        stack.setCustomSpacing(Tokens.Space.xs, after: last)
+        stack.addArrangedSubview(inControlColumn(l))
         return l
     }
 
@@ -288,13 +290,13 @@ final class FormBuilder: NSObject {
             set(psName, size())
         }
         p.addItems(withTitles: families)
-        if grouped { p.widthAnchor.constraint(equalToConstant: 180).isActive = true }
         let sizes = ["10", "11", "12", "13", "14", "15", "16", "18"]
         let sp = ClosurePopup { pop in set(name(), Double(pop.titleOfSelectedItem ?? "13") ?? 13) }
         sp.addItems(withTitles: sizes)
         let row = NSStackView(views: [p, sp])
-        row.spacing = 6
-        contentStack.addArrangedSubview(labeled(label, row))
+        row.spacing = Tokens.Space.s
+        row.alignment = .firstBaseline
+        stack.addArrangedSubview(labeled(label, row))
         track(row, enabled: nil) { [weak p, weak sp] in
             let n = name()
             p?.selectItem(withTitle: n.isEmpty ? "System Font" : (NSFont(name: n, size: 13)?.familyName ?? "System Font"))
@@ -309,7 +311,7 @@ final class FormBuilder: NSObject {
         let update: () -> Void = { [weak t] in t?.stringValue = text() }
         update()
         refreshers.append(update)
-        contentStack.addArrangedSubview(labeled(label, t))
+        stack.addArrangedSubview(labeled(label, t))
     }
 
     /// A status line (✓ / ✕ / ·) with a button; re-checked on every refresh (a window becoming key, a permission check ending).
@@ -335,41 +337,30 @@ final class FormBuilder: NSObject {
         refresh()
         refreshers.append(refresh)
         let row = NSStackView(views: [icon, text, b])
-        row.spacing = 8
+        row.spacing = Tokens.Space.s
         row.alignment = .firstBaseline
-        contentStack.addArrangedSubview(labeled(label, row))
+        stack.addArrangedSubview(labeled(label, row))
     }
 
+    /// A button in the control column, beside the button before it: under the field it acts on (System Settings).
     func button(_ title: String, enabled: (() -> Bool)? = nil, _ action: @escaping () -> Void) {
         let b = ClosureButton(title: title) { _ in action() }
-        if grouped {
-            if let row = contentStack.arrangedSubviews.last as? NSStackView, row.identifier?.rawValue == "actions" {
-                row.addArrangedSubview(b)
-            } else {
-                let row = NSStackView(views: [b])
-                row.spacing = 8; row.identifier = NSUserInterfaceItemIdentifier("actions")
-                contentStack.addArrangedSubview(row)
-            }
-            if enabled != nil { track(b, enabled: enabled) {} }
+        let row: NSStackView
+        if let last = stack.arrangedSubviews.last as? NSStackView, last.identifier?.rawValue == "column-actions" {
+            row = last
         } else {
-            // In the control column, beside the button before it: under the field they act on (System Settings).
-            let row: NSStackView
-            if let last = contentStack.arrangedSubviews.last as? NSStackView, last.identifier?.rawValue == "column-actions" {
-                row = last
-            } else {
-                row = NSStackView(views: [labelColumnSpacer()])
-                row.spacing = 8
-                row.identifier = NSUserInterfaceItemIdentifier("column-actions")
-                contentStack.addArrangedSubview(row)
-            }
-            row.addArrangedSubview(b)
-            if enabled != nil { track(b, enabled: enabled) {} }
+            row = NSStackView(views: [labelColumnSpacer()])
+            row.spacing = Tokens.Space.s
+            row.identifier = NSUserInterfaceItemIdentifier("column-actions")
+            stack.addArrangedSubview(row)
         }
+        row.addArrangedSubview(b)
+        if enabled != nil { track(b, enabled: enabled) {} }
     }
 
     /// Shows the last row added only while `condition` holds (re-checked whenever settings change).
     func visibleWhen(_ condition: @escaping () -> Bool) {
-        guard let row = contentStack.arrangedSubviews.last else { return }
+        guard let row = stack.arrangedSubviews.last else { return }
         let r: () -> Void = { [weak row] in row?.isHidden = !condition() }
         r()
         refreshers.append(r)
@@ -378,7 +369,7 @@ final class FormBuilder: NSObject {
     /// An empty view as wide as the label column (it follows the column as longer labels widen it).
     private func labelColumnSpacer() -> NSView {
         let v = NSView()
-        let width = max(140, labelWidths.first?.constant ?? 0)
+        let width = max(Tokens.Metric.formLabelColumn, labelWidths.first?.constant ?? 0)
         labelWidths.append(v.widthAnchor.constraint(equalToConstant: width))
         labelWidths.forEach {
             $0.constant = width; $0.isActive = true
@@ -386,9 +377,11 @@ final class FormBuilder: NSObject {
         return v
     }
 
-    private func indented(_ v: NSView) -> NSView {
-        let row = NSStackView(views: [v])
-        row.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 0)
+    /// `v` in the control column, under the controls of the labelled rows (contract F4).
+    private func inControlColumn(_ v: NSView) -> NSView {
+        let row = NSStackView(views: [labelColumnSpacer(), v])
+        row.spacing = Tokens.Space.s
+        row.alignment = .firstBaseline
         return row
     }
 
@@ -397,14 +390,15 @@ final class FormBuilder: NSObject {
 
     private func labeled(_ label: String, _ v: NSView) -> NSView {
         let l = NSTextField(labelWithString: label)
-        l.alignment = grouped ? .left : .right
-        let width = grouped ? 158 : max(140, ceil(l.fittingSize.width), labelWidths.first?.constant ?? 0)
+        l.alignment = .right
+        let width = max(Tokens.Metric.formLabelColumn, ceil(l.fittingSize.width), labelWidths.first?.constant ?? 0)
         labelWidths.append(l.widthAnchor.constraint(equalToConstant: width))
         labelWidths.forEach {
             $0.constant = width; $0.isActive = true
         }
         let row = NSStackView(views: [l, v])
-        row.spacing = 8
+        row.spacing = Tokens.Space.s
+        row.alignment = .firstBaseline
         return row
     }
 }
@@ -412,20 +406,4 @@ final class FormBuilder: NSObject {
 private final class WeakRef<T: AnyObject> {
     weak var value: T?
     init(_ v: T) { value = v }
-}
-
-/// Layer colors must resolve in this view's effective appearance, after the window switches light/dark.
-private final class FormSectionView: NSStackView {
-    override var wantsUpdateLayer: Bool { true }
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
-    }
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            // The palette's view color in its frame, as the main window's views.
-            layer?.backgroundColor = Theme.viewBackground.cgColor
-            layer?.borderColor = Theme.frame.cgColor
-        }
-    }
 }

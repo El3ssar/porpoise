@@ -51,7 +51,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
 
     private func build() {
         guard window?.contentView != nil else { return }
-        let stack = contentStack(insets: NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16))
+        let stack = contentStack()
         func add(_ view: NSView, stretch: Bool = true) {
             stack.addArrangedSubview(view)
             if stretch { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
@@ -62,16 +62,16 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         presetName.placeholderString = "Preset name"; presetName.setAccessibilityLabel("Preset name")
         let save = ClosureButton(title: "Save Preset") { [weak self] _ in self?.savePreset() }
         let delete = ClosureButton(title: "Delete Preset") { [weak self] _ in self?.deletePreset() }
-        let presets = NSStackView(views: [presetMenu, presetName, save, delete]); presets.spacing = 8; add(presets)
-        rules.orientation = .vertical; rules.alignment = .leading; rules.spacing = 6
+        let presets = NSStackView(views: [presetMenu, presetName, save, delete]); presets.spacing = Tokens.Space.s; add(presets)
+        rules.orientation = .vertical; rules.alignment = .leading; rules.spacing = Tokens.Space.s
         let document = FlippedView(); document.addSubview(rules); rules.translatesAutoresizingMaskIntoConstraints = false
         let ruleScroll = NSScrollView(); ruleScroll.hasVerticalScroller = true; ruleScroll.autohidesScrollers = true
         ruleScroll.documentView = document; document.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             document.widthAnchor.constraint(equalTo: ruleScroll.contentView.widthAnchor),
             rules.leadingAnchor.constraint(equalTo: document.leadingAnchor), rules.trailingAnchor.constraint(equalTo: document.trailingAnchor),
-            rules.topAnchor.constraint(equalTo: document.topAnchor, constant: 4),
-            rules.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -4),
+            rules.topAnchor.constraint(equalTo: document.topAnchor, constant: Tokens.Space.xs),
+            rules.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -Tokens.Space.xs),
             ruleScroll.heightAnchor.constraint(equalToConstant: 150),
         ])
         add(ruleScroll)
@@ -83,7 +83,7 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         extensionMenu.target = self; extensionMenu.action = #selector(extensionChanged); extensionMenu.setAccessibilityLabel("Extension handling")
         extensionText.placeholderString = "New extension"; extensionText.delegate = self; extensionText.isEnabled = false
         extensionText.setAccessibilityLabel("New extension"); extensionText.widthAnchor.constraint(equalToConstant: 110).isActive = true
-        let controls = NSStackView(views: [addButton, refresh, extensionMenu, extensionText]); controls.spacing = 8; add(controls)
+        let controls = NSStackView(views: [addButton, refresh, extensionMenu, extensionText]); controls.spacing = Tokens.Space.s; add(controls)
         let hint = NSTextField(
             wrappingLabelWithString:
                 "Rules run from top to bottom. Positions start at 0; −1 inserts at the end. Regex replacement uses $1, $2…\nTokens: {name}, {ext}, {created:yyyy-MM-dd}, {modified:yyyy-MM-dd}, {exif:yyyy-MM-dd}, {width}, {height}, {artist}, {album}, {title}. Missing metadata blocks that row."
@@ -102,7 +102,8 @@ final class BatchRenameDialog: SecondaryWindowController, NSTableViewDataSource,
         apply.target = self; apply.action = #selector(applyRename); apply.keyEquivalent = "\r"; apply.isEnabled = false
         cancel.target = self; cancel.action = #selector(cancelRename); cancel.keyEquivalent = "\u{1b}"
         let spacer = NSView(); spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttons = NSStackView(views: [spacer, cancel, apply]); buttons.spacing = 8; add(buttons)
+        let buttons = NSStackView(views: [spacer, cancel, apply]); buttons.spacing = Tokens.Space.s
+        stack.setCustomSpacing(Tokens.Space.xxl, after: status); add(buttons)
     }
 
     private func reloadPresets() {

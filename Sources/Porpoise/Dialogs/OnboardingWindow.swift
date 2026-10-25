@@ -61,6 +61,10 @@ final class OnboardingWindowController: SecondaryWindowController {
     static let size = NSSize(width: 600, height: 440)
     /// Every page's content starts here (from the top), so nothing jumps between steps.
     static let contentTop: CGFloat = 44
+    /// The pager dots: 20 over the 32-pt buttons, which sit 24 over the bottom edge.
+    static let dotsBottom = Tokens.Space.xxl + 32 + Tokens.Space.xl
+    /// The page above the dots (8 tall) and 8 clear of them.
+    static let pagesBottom = dotsBottom + 8 + Tokens.Space.s
     /// The column text and steps are set in, centred.
     static let column: CGFloat = 480
 
@@ -101,7 +105,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         bg.frame = content.bounds
         bg.autoresizingMask = [.width, .height]
         content.addSubview(bg)
-        pages.frame = CGRect(x: 0, y: 92, width: Self.size.width, height: Self.size.height - 92)
+        pages.frame = CGRect(x: 0, y: Self.pagesBottom, width: Self.size.width, height: Self.size.height - Self.pagesBottom)
         content.addSubview(pages)
         primary.bezelStyle = .rounded
         primary.keyEquivalent = "\r"
@@ -119,7 +123,7 @@ final class OnboardingWindowController: SecondaryWindowController {
             content.addSubview(b)
         }
         dots.orientation = .horizontal
-        dots.spacing = 8
+        dots.spacing = Tokens.Space.s
         dots.setAccessibilityElement(true)
         dots.setAccessibilityRole(.staticText)
         content.addSubview(dots)
@@ -133,9 +137,11 @@ final class OnboardingWindowController: SecondaryWindowController {
     private func layoutButtons() {
         for b in [primary, secondary, back] { b.sizeToFit() }
         let pw = max(150, primary.frame.width + 24), sw = secondary.frame.width + 20, bw = back.frame.width + 20
-        primary.frame = CGRect(x: Self.size.width - 32 - pw, y: 24, width: pw, height: 32)
-        secondary.frame = CGRect(x: primary.frame.minX - 12 - sw, y: 24, width: sw, height: 32)
-        back.frame = CGRect(x: 32, y: 24, width: bw, height: 32)
+        // Onboarding's hero margins (32 at the sides, 24 under the buttons); buttons in a row 8 apart (S3).
+        let side = Tokens.Space.xxxl, bottom = Tokens.Space.xxl
+        primary.frame = CGRect(x: Self.size.width - side - pw, y: bottom, width: pw, height: 32)
+        secondary.frame = CGRect(x: primary.frame.minX - Tokens.Space.s - sw, y: bottom, width: sw, height: 32)
+        back.frame = CGRect(x: side, y: bottom, width: bw, height: 32)
         secondary.isHidden = secondary.title.isEmpty
         back.isHidden = step == .welcome
         dots.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -150,7 +156,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         dots.setAccessibilityLabel("Step \(step.rawValue + 1) of \(Step.allCases.count)")
         let dw = CGFloat(Step.allCases.count - 1) * 16 + 16
         // Centred above the buttons, clear of them on every page.
-        dots.frame = CGRect(x: (Self.size.width - dw) / 2, y: 76, width: dw, height: 8)
+        dots.frame = CGRect(x: (Self.size.width - dw) / 2, y: Self.dotsBottom, width: dw, height: 8)
     }
 
     func go(to s: Step) {
@@ -175,7 +181,7 @@ final class OnboardingWindowController: SecondaryWindowController {
     }
 
     /// The page's content, from a fixed top, in one centred column.
-    private func anchored(_ views: [NSView], spacing: CGFloat = 14) {
+    private func anchored(_ views: [NSView], spacing: CGFloat = Tokens.Space.l) {
         let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .centerX
@@ -197,14 +203,14 @@ final class OnboardingWindowController: SecondaryWindowController {
         icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
         anchored([
             icon,
-            label("Welcome to Porpoise", size: 26, weight: .semibold),
+            label("Welcome to Porpoise", size: Tokens.FontSize.largeTitle, weight: .semibold),
             label(
                 "A fast file manager for your Mac: split view, tabs, a terminal that follows your folder, and your servers "
                     + "and cloud drives next to your disks.",
-                size: 13, color: .secondaryLabelColor),
+                size: Tokens.FontSize.body, color: .secondaryLabelColor),
             label(
                 "One permission helps from the start. Anything else, Porpoise asks for the first time you need it.",
-                size: 13, color: .secondaryLabelColor),
+                size: Tokens.FontSize.body, color: .secondaryLabelColor),
             choices(),
         ])
         primary.title = "Continue"
@@ -230,12 +236,12 @@ final class OnboardingWindowController: SecondaryWindowController {
         defaultBrowser.action = #selector(defaultBrowserChanged(_:))
         defaultBrowser.state = Self.isDefaultBrowser() ? .on : .off
         let keys = NSStackView(views: [caption, keySet])
-        keys.spacing = 8
+        keys.spacing = Tokens.Space.s
         let stack = NSStackView(views: [keys, keySetHint, defaultBrowser])
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 6
-        stack.setCustomSpacing(14, after: keySetHint)
+        stack.spacing = Tokens.Space.s
+        stack.setCustomSpacing(Tokens.Space.l, after: keySetHint)
         return stack
     }
 
@@ -263,16 +269,16 @@ final class OnboardingWindowController: SecondaryWindowController {
     private func buildFullDisk() {
         let granted = Self.fullDiskGranted()
         var views: [NSView] = [
-            label("Allow Full Disk Access", size: 22, weight: .semibold),
+            label("Allow Full Disk Access", size: Tokens.FontSize.title, weight: .semibold),
             label(
                 "macOS keeps some folders private (the Trash, Library, other apps' files) until you allow Porpoise once.",
-                size: 13, color: .secondaryLabelColor),
+                size: Tokens.FontSize.body, color: .secondaryLabelColor),
         ]
         if !granted {
             let steps = NSStackView()
             steps.orientation = .vertical
             steps.alignment = .leading
-            steps.spacing = 10
+            steps.spacing = Tokens.Space.m
             let texts = [
                 "Click **Open System Settings**. It opens the Full Disk Access list.",
                 "Switch on **Porpoise**. If it isn't listed, drag this icon into the list:",
@@ -296,14 +302,14 @@ final class OnboardingWindowController: SecondaryWindowController {
         spinner.startAnimation(nil)
         statusText.font = .systemFont(ofSize: Tokens.FontSize.body, weight: .medium)
         let status = NSStackView(views: [spinner, statusIcon, statusText])
-        status.spacing = 6
+        status.spacing = Tokens.Space.s
         views.append(status)
         views.append(
             label(
                 "Administrator actions, App Management and Local Network are asked for when first needed. "
                     + "All of them are in Porpoise › Permissions.",
-                size: 11, color: .secondaryLabelColor))
-        anchored(views, spacing: 18)
+                size: Tokens.FontSize.small, color: .secondaryLabelColor))
+        anchored(views, spacing: Tokens.Space.xl)
         secondary.title = granted ? "" : "Not Now"
         primary.title = granted ? "Start Using Porpoise" : "Open System Settings"
         if !granted { timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkAccess() } }
@@ -326,7 +332,7 @@ final class OnboardingWindowController: SecondaryWindowController {
         text.font = .systemFont(ofSize: Tokens.FontSize.body)
         text.textColor = .labelColor
         let row = NSStackView(views: [badge, text])
-        row.spacing = 10
+        row.spacing = Tokens.Space.s
         row.alignment = .centerY
         return row
     }

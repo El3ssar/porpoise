@@ -33,8 +33,20 @@ import Testing
         #expect(table.style == .inset)
         let add = try #require(views.compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "connections-empty-add" })
         #expect(add.title == "Add Server")
+        // UI-11: nothing to list, so no empty list beside the empty state: it is centred in the window, with the import
+        // pull-down while ~/.ssh/config has hosts.
+        let window = try #require(w.window)
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(table.isHiddenOrHasHiddenAncestor && !w.emptyView.isHidden)
+        let column = try #require(w.emptyView.subviews.first)
+        #expect(abs(column.frame.midX - w.emptyView.bounds.midX) < 1 && abs(column.frame.midY - w.emptyView.bounds.midY) < 1, "\(column.frame)")
+        #expect(abs(w.emptyView.frame.minX - Tokens.Space.xl) < 0.5, "on the 20-pt margin: \(w.emptyView.frame)")
+        let importer = try #require(all(w.emptyView).compactMap { $0 as? NSPopUpButton }.first)
+        #expect(!importer.isHidden && importer.numberOfItems == 3)
         add.performClick(nil)
         #expect(w.form != nil)
+        // A server to fill in: the list is back, the empty state gone.
+        #expect(!table.isHiddenOrHasHiddenAncestor && w.emptyView.isHidden)
     }
 
     @Test @MainActor func addsAnFTPConnectionWithItsPasswordInTheKeychain() throws {

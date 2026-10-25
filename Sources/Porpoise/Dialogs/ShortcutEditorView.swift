@@ -40,7 +40,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         MenuCommandRegistry.shared.refresh();
         // In menu-bar order (File, Edit, View…), as the menus show them; a search ranks by match instead.
         all = MenuCommandRegistry.shared.commands
-        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
+        let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = Tokens.Space.s
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -64,7 +64,7 @@ final class ShortcutEditorView: NSView, NSTableViewDataSource, NSTableViewDelega
         let exportButton = ClosureButton(title: "Export…") { [weak self] _ in self?.exportFile() }
         importButton.toolTip = "Import keyboard shortcuts from a file"; exportButton.toolTip = "Export your keyboard shortcuts to a file"
         // One row under the list: editing on the left, the file buttons on the right.
-        let row = NSStackView(views: [recorder, clear, reset, resetAll, NSView(), importButton, exportButton]); row.spacing = 8; add(row)
+        let row = NSStackView(views: [recorder, clear, reset, resetAll, NSView(), importButton, exportButton]); row.spacing = Tokens.Space.s; add(row)
         status.font = .systemFont(ofSize: Tokens.FontSize.callout); add(status)
         shown = all; table.reloadData(); if !shown.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
         observer = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
@@ -187,8 +187,7 @@ enum ShortcutSettingsPage {
             "Rebind menu actions, including their hidden alternate shortcuts. Conflicting bindings are blocked. Text editing and view navigation keep their normal keys. Help › Keyboard Shortcuts (⌘?) lists them all."
         )
         let editor = ShortcutEditorView()
-        form.stack.addArrangedSubview(editor)
-        editor.widthAnchor.constraint(equalTo: form.stack.widthAnchor, constant: -60).isActive = true
+        form.wide(editor)
         form.section("Toolbar")
         form.button("Customize Toolbar…") { ToolbarCustomizationWindow.show() }
         form.button("Restore Default Toolbar") { Settings.shared.toolbarCommands = Settings.shared.defaultToolbarCommands }
