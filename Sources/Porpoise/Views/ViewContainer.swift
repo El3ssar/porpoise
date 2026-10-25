@@ -365,7 +365,8 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             center.addObserver(forName: DirectoryModel.gitStatusChanged, object: model, queue: .main) { [weak self] _ in self?.updateStatus() })
         observers.append(
             center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
-                self?.settingsChanged(key: n.object as? String)
+                // This observer has always treated malformed payloads as a full refresh.
+                self?.settingsChanged(SettingsChange(n) ?? .all)
             })
         observers.append(
             center.addObserver(forName: StatusCenter.message, object: nil, queue: .main) { [weak self] n in
@@ -731,31 +732,31 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     /// Keep unrelated preferences out of the listing/re-layout path, including panes in hidden tabs.
-    private func settingsChanged(key: String?) {
-        switch key {
-        case nil:
+    private func settingsChanged(_ change: SettingsChange) {
+        switch change {
+        case .all:
             statusBar.mode = Settings.shared.statusBarMode
             apps?.grid.savedSizeChanged()
             model.reloadProps()
             model.rebuild()
             needsLayout = true
-        case "perFolder", "dynamicView", "appearanceIconSizes": model.reloadProps()
-        case "columnsShowPreview": columnBrowser?.syncAfter()
-        case "appLibraryIconSize": apps?.grid.savedSizeChanged()
-        case "appLibraryView":
+        case .key("perFolder"), .key("dynamicView"), .key("appearanceIconSizes"): model.reloadProps()
+        case .key("columnsShowPreview"): columnBrowser?.syncAfter()
+        case .key("appLibraryIconSize"): apps?.grid.savedSizeChanged()
+        case .key("appLibraryView"):
             guard url.standardizedFileURL == AppLibrary.location else { return }
             model.filter = Settings.shared.appLibraryView ? NameFilter(text: apps?.field.stringValue ?? "") : filterBar.filter
             model.reloadProps()
             model.reload()
-        case "sorting", "hideBackup": model.rebuild()
-        case "folderDepth", "folderSize":
+        case .key("sorting"), .key("hideBackup"): model.rebuild()
+        case .key("folderDepth"), .key("folderSize"):
             model.resetFolderSizes()
             model.rebuild()
-        case "expandable":
+        case .key("expandable"):
             if !Settings.shared.detailsExpandableFolders { model.collapseAll() }
-        case "binaryUnits":
+        case .key("binaryUnits"):
             updateStatus()
-        case "statusBar2", "zoomSlider2":
+        case .key("statusBar2"), .key("zoomSlider2"):
             statusBar.mode = Settings.shared.statusBarMode
             updateStatus()
         default: break
