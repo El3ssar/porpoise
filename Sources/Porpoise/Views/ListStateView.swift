@@ -62,6 +62,11 @@ final class ListStateView: NSView {
             label.font = .systemFont(ofSize: size)
             label.textColor = Theme.viewTextInactive
         }
+        // A quiet state's line stays under its title (E1: a footnote, no stronger than the title above it).
+        if !error {
+            message.font = Tokens.font(.footnote)
+            message.textColor = title.textColor
+        }
         // A quiet state's symbol is lighter than a failure's, so an empty folder never reads as a problem.
         icon.image = state.symbol.isEmpty ? nil : NSImage(systemSymbolName: state.symbol, accessibilityDescription: nil)
         icon.isHidden = icon.image == nil

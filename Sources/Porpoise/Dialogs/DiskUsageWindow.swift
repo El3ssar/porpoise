@@ -79,6 +79,8 @@ final class DiskUsageWindow: DiskUtilityWindow {
     /// While a scan runs, the map says so; after it, a level of empty items says why there is nothing to draw. An empty
     /// folder says nothing here: the list already says it is empty, once is enough.
     private func updateMapPlaceholder() {
+        // An empty folder has nothing to map: the list, taller, says it is empty.
+        map.isHidden = !busy && tree != nil && children.isEmpty
         map.placeholder =
             busy
             ? ListState(title: "Scanning…", symbol: "")
