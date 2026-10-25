@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0
+
+- **Places and Folders are tabs.** The sidebar shows Places or Folders at its full height, with a switch at the top, instead of splitting its height between them. F9 and F7 switch to a tab, or hide the sidebar if that tab is already showing; windows and workspaces remember the tab. The Folders tree shortens long names in the middle and shows the whole name on hover, no longer runs past the sidebar's edge, keeps its selection and the hidden folders you opened when something changes on disk, and finds the shown folder when Home is reached through a link. Settings explains that "Limit to Home folder" starts the tree at Home only inside Home.
+- **Cloud folders use far less memory.** Google Drive, Dropbox, OneDrive and Box accounts keep only the file details that open windows, offline copies and edits still need, and drop the rest in the background; browsing a large Drive peaked at about 220 MB instead of 430 MB here.
+- **Settings and secondary windows, finished.** Every Settings page follows one form layout on the same spacing grid, and Settings is never narrower than its widest page. Accounts & Servers, the Connect sheet, Onboarding, Activity and other dialogs use the same margins. Disk Usage looks finished and opens at its own size, and an empty folder shows one clear empty state.
+- Custom tools started from one window's settings no longer finish their work against another's.
+- **Under the hood.** Column view tests are grouped by behaviour, and the cloud and custom tools tests wait for events instead of timing.
+
 ## 0.15.1
 
 - **Typing e and f works again.** Since 0.14.4 a plain e opened Emoji & Symbols and a plain f made the window full screen, because Porpoise ran keys without ⌘ or ⌃ through the menus without checking the fn/Globe key that those two system commands need. 🌐E and 🌐F still do their jobs.
