@@ -305,8 +305,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wc.window?.contentView?.layoutSubtreeIfNeeded()
         wc.window?.contentView?.displayIfNeeded()
         CATransaction.flush()
+        let store = Settings.store
         DispatchQueue.main.async {
-            Settings.shared.prepareCustomToolsAfterFirstWindow()
+            if Settings.store === store { Settings.shared.prepareCustomToolsAfterFirstWindow() }
             SharingPreparation.sweepStaleCopiesAfterLaunch()
             RemoteOpener.sweepStaleCopiesAfterLaunch()
         }
