@@ -442,7 +442,11 @@ extension DebugBridge {
             if wc.validateMenuItem(item) { NSApp.sendAction(action, to: wc.responds(to: action) ? wc : nil, from: item) }
             return
         }
-        let target = NSApp.keyWindow?.attachedSheet ?? NSApp.keyWindow ?? w
+        // An inactive app (a CI runner) has no key window: the press still goes to the sheet in front, and a sheet's
+        // buttons (Esc → Cancel, Return → default) answer it as a key equivalent, as AppKit does for a real press.
+        let front = NSApp.keyWindow ?? w
+        let target = front.attachedSheet ?? front
+        if target.isSheet, target.performKeyEquivalent(with: e) { return }
         if !flags.intersection([.command, .control]).isEmpty || k.hasPrefix("f") {
             if target.performKeyEquivalent(with: e) { return }
             if NSApp.mainMenu?.performKeyEquivalent(with: e) == true { return }
