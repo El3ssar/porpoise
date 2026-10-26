@@ -443,7 +443,7 @@ extension DebugBridge {
             return
         }
         // An inactive app (a CI runner) has no key window: the press still goes to the sheet in front, and a sheet's
-        // buttons (Esc → Cancel, Return → default) answer it as a key equivalent, as AppKit does for a real press.
+        // Cancel button answers Esc as a key equivalent, as AppKit does for a real press.
         let front = NSApp.keyWindow ?? w
         let target = front.attachedSheet ?? front
         if target.isSheet, target.performKeyEquivalent(with: e) { return }
