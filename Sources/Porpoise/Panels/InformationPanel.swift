@@ -462,11 +462,11 @@ final class InformationPanel: NSView {
             }
             return
         }
+        // The cache can return a small image. Register for updates before you request the thumbnail.
+        observeThumbnail(item)
         if let t = Thumbnails.shared.thumbnail(for: item, size: big) {
             preview.image = t
             preview.isPicture = true
-        } else {
-            observeThumbnail(item)
         }
     }
 
