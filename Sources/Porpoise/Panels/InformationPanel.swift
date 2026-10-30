@@ -17,6 +17,10 @@ final class InformationPanel: NSView {
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
+    private let detailsScroll = NSScrollView()
+    private let detailsContent = FlippedView()
+    /// Text previews use the full column width.
+    var onPreviewLayoutChange: (() -> Void)?
     /// Inspector look: same tinted material as the sidebar.
     private let material = TintedMaterialView(material: .sidebar, tint: Theme.panelBackground, alpha: 0.72)
     /// Off where the panel sits inside the file view (Column view's preview column): the view's own background shows.
@@ -87,8 +91,16 @@ final class InformationPanel: NSView {
         nameLabel.textColor = Theme.windowText
         nameLabel.alignment = .center
         grid.orientation = .vertical
+        grid.translatesAutoresizingMaskIntoConstraints = false
         grid.alignment = .leading
         grid.spacing = Tokens.Space.xs
+        detailsScroll.drawsBackground = false
+        detailsScroll.contentView.drawsBackground = false
+        detailsScroll.hasVerticalScroller = true
+        detailsScroll.autohidesScrollers = true
+        detailsScroll.documentView = detailsContent
+        detailsContent.addSubview(nameLabel)
+        detailsContent.addSubview(grid)
         addSubview(material)
         player.controlsStyle = .none
         player.isHidden = true
@@ -99,7 +111,7 @@ final class InformationPanel: NSView {
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
         controls.isHidden = true
         codePreview.isHidden = true
-        [preview, codePreview, player, controls, nameLabel, grid].forEach(addSubview)
+        [preview, codePreview, player, controls, detailsScroll].forEach(addSubview)
         addSubview(previewSpinner)
         previewStatus.font = Tokens.font(.caption, weight: .regular)
         previewStatus.textColor = Theme.windowTextInactive
@@ -125,9 +137,30 @@ final class InformationPanel: NSView {
         super.layout()
         material.frame = bounds
         let w = bounds.width
-        let side = min(w - 40, Self.maxPreviewSide)
-        preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
-        codePreview.frame = CGRect(x: 12, y: preview.frame.minY, width: max(0, w - 24), height: preview.frame.height)
+        let contentWidth = max(0, w - 24)
+        let metadataWidth = min(contentWidth, 420)
+        // Measure each row at its maximum text width. Align the center of the table with the center of the panel.
+        for case let row as NSStackView in grid.arrangedSubviews {
+            if let value = row.arrangedSubviews.last as? NSTextField { value.preferredMaxLayoutWidth = valueWidth }
+        }
+        let tableSize = grid.arrangedSubviews.isEmpty ? .zero : grid.fittingSize
+        let nameHeight = nameLabel.stringValue.isEmpty ? 0 : nameLabel.sizeThatFits(CGSize(width: metadataWidth, height: 200)).height
+        let tableY = nameHeight + (tableSize.height > 0 && nameHeight > 0 ? 12 : 0)
+        let detailsHeight = tableY + tableSize.height
+        let availableHeight = max(0, bounds.height - 32)
+        let footerHeight = min(detailsHeight, Settings.shared.infoShowPreview ? availableHeight * 0.45 : availableHeight)
+        detailsScroll.frame = CGRect(x: 12, y: max(16, bounds.height - 16 - footerHeight), width: contentWidth, height: footerHeight)
+        detailsContent.frame = CGRect(x: 0, y: 0, width: contentWidth, height: detailsHeight)
+        nameLabel.frame = CGRect(x: (contentWidth - metadataWidth) / 2, y: 0, width: metadataWidth, height: nameHeight)
+        let tableWidth = min(metadataWidth, tableSize.width)
+        grid.frame = CGRect(x: floor((contentWidth - tableWidth) / 2), y: tableY, width: tableWidth, height: tableSize.height)
+
+        let previewHeight = Settings.shared.infoShowPreview ? max(0, detailsScroll.frame.minY - 28) : 0
+        codePreview.frame = CGRect(x: 12, y: 16, width: contentWidth, height: previewHeight)
+        let audioHeight: CGFloat = playerIsAudio && Settings.shared.infoShowPreview ? 38 : 0
+        let side = max(0, min(w - 40, Self.maxPreviewSide, previewHeight - audioHeight))
+        let previewY = 16 + max(0, (previewHeight - side - audioHeight) / 2)
+        preview.frame = CGRect(x: (w - side) / 2, y: previewY, width: side, height: side)
         // Decided from the file type (never by loading the media on the main thread).
         previewSpinner.frame = CGRect(x: preview.frame.midX - 8, y: preview.frame.midY - 8, width: 16, height: 16)
         previewStatus.frame = CGRect(x: preview.frame.minX, y: preview.frame.maxY - 26, width: preview.frame.width, height: 24)
@@ -141,17 +174,9 @@ final class InformationPanel: NSView {
                 width: player.frame.width - 16, height: 30)
         updateTrackingAreas()
         updateControls()
-        let ny = (controls.isHidden || !playerIsAudio ? preview.frame.maxY : controls.frame.maxY) + 10
-        let nh = nameLabel.sizeThatFits(CGSize(width: w - 24, height: 200)).height
-        nameLabel.frame = CGRect(x: 12, y: ny, width: w - 24, height: nh)
-        grid.frame = CGRect(x: 12, y: nameLabel.frame.maxY + 12, width: w - 24, height: max(0, bounds.height - nameLabel.frame.maxY - 20))
-        // Values wrap to the panel's current width (it can be resized after they were added).
-        for case let row as NSStackView in grid.arrangedSubviews {
-            if let v = row.arrangedSubviews.last as? NSTextField { v.preferredMaxLayoutWidth = valueWidth }
-        }
     }
 
-    private var valueWidth: CGFloat { max(80, bounds.width - 140) }
+    private var valueWidth: CGFloat { max(1, min(bounds.width - 24, 420) - 104) }
 
     // MARK: Player controls
 
@@ -277,6 +302,7 @@ final class InformationPanel: NSView {
     }
 
     private func update(_ urls: [URL]) {
+        detailsScroll.contentView.scroll(to: .zero)
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
         observeThumbnail(nil)
         clearCodePreview()
@@ -475,6 +501,8 @@ final class InformationPanel: NSView {
         codePreview.onCompletion = nil
         codePreview.isHidden = true
         preview.isHidden = false
+        needsLayout = true
+        onPreviewLayoutChange?()
         if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
         codeCleanup = nil
     }
@@ -487,6 +515,8 @@ final class InformationPanel: NSView {
         }
         codePreview.isHidden = false
         preview.isHidden = true
+        needsLayout = true
+        onPreviewLayoutChange?()
         if item.url.isFileURL { codePreview.load(item.url, filename: item.name); return }
         drivePreview = Task { @MainActor [weak self] in
             do {
