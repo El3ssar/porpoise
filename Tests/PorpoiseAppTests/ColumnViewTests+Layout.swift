@@ -275,23 +275,24 @@ extension ColumnViewTests {
 
     // MARK: W-241
 
-    @Test func thePreviewKeepsItsPictureAndDetailsTogetherInAWideColumn() async throws {
+    @Test func theTextPreviewUsesTheWholeWideColumn() async throws {
         let s = try tree()
         let (pane, window, _) = try await pane(s.url, width: 1800)
         defer { window.close() }
         let b = try browser(pane)
         pane.list.select(s.path("f.txt"))
+        try #require(await eventually { b.preview.information.codePreview.document != nil })
         b.layoutSubtreeIfNeeded()
         b.preview.layoutSubtreeIfNeeded()
         let info = b.preview.information.frame
-        #expect(b.preview.frame.width > 1000 && info.width == ColumnPreviewView.contentWidth)
+        #expect(b.preview.frame.width > 1000 && info.width == b.preview.bounds.width)
         #expect(abs(info.midX - b.preview.bounds.midX) <= 1, "\(info) in \(b.preview.bounds)")
-        // Narrower than that, it takes the whole column.
+        // After the size changes, text previews must use the full column width.
         b.resize(column: b.shownColumns.count - 1, to: ColumnBrowserView.previewMinimum, all: false)
         window.setContentSize(NSSize(width: 800, height: 600))
         pane.layoutSubtreeIfNeeded()
         b.preview.layoutSubtreeIfNeeded()
-        #expect(b.preview.information.frame.width == min(b.preview.bounds.width, ColumnPreviewView.contentWidth))
+        #expect(b.preview.information.frame.width == b.preview.bounds.width)
     }
 
     @Test func theHandleMenuRightSizesColumns() async throws {
