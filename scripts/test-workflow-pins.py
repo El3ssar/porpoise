@@ -50,6 +50,15 @@ class WorkflowTests(unittest.TestCase):
                 path.write_text('- {uses: owner/action@' + 'a' * 40 + '} # v1\n')
                 self.assertEqual(pins.check(root), [])
 
+    def test_hash_inside_a_ref_is_not_a_yaml_comment_or_an_immutable_sha(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            path = root / '.github/workflows/pin.yml'
+            path.parent.mkdir(parents=True)
+            for ref in ['owner/action@' + 'a' * 40 + '#v1', '"owner/action@' + 'a' * 40 + '#v1"']:
+                path.write_text('uses: ' + ref + ' # v1\n')
+                self.assertTrue(pins.check(root), ref)
+
     def test_legacy_digest_alone_cannot_authorize_reuse(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)

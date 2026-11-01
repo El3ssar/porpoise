@@ -52,7 +52,8 @@ fi
 if [ "$CONFIG" = release ]; then
   mkdir -p build/symbols
   rm -rf build/symbols/Porpoise.dSYM
-  xcrun dsymutil --num-threads 2 --object-prefix-map ".=$PWD" "$BIN/Porpoise" -o build/symbols/Porpoise.dSYM
+  # Cache references are already absolute. An inverse "." map corrupts their .build path components.
+  xcrun dsymutil --num-threads 2 "$BIN/Porpoise" -o build/symbols/Porpoise.dSYM
   python3 scripts/check-symbols.py verify "$BIN/Porpoise" build/symbols/Porpoise.dSYM
 fi
 strip -S "$APP/Contents/MacOS/Porpoise"
@@ -209,6 +210,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 codesign -dvvv "$HELPER_APP" 2>&1 | sed -n 's/^CDHash=//p' > build/helper-cdhash.txt
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
+codesign --verify --deep --strict "$APP"
 if [ "$CONFIG" = release ]; then
   python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/Porpoise" build/symbols/Porpoise.dSYM
 fi

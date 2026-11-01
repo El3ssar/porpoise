@@ -20,9 +20,9 @@ import Testing
         private var callback: (([String], UInt64, Bool) -> Void)?
         func install(_ callback: @escaping ([String], UInt64, Bool) -> Void) { lock.withLock { self.callback = callback } }
         func emit(_ paths: [String], event: UInt64) throws {
-            let installed: (([String], UInt64, Bool) -> Void)? = lock.withLock { callback }
-            let callback = try #require(installed)
-            callback(paths, event, false)
+            let installed: (([String], UInt64, Bool) -> Void)? = lock.withLock { self.callback }
+            let handler = try #require(installed)
+            handler(paths, event, false)
         }
     }
 

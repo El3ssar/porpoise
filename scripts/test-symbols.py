@@ -45,7 +45,7 @@ class PackagingSymbolTests(unittest.TestCase):
     def test_module_cache_maps_preserve_symbols_and_clean_package_mutations(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
-            cache = root / 'ModuleCache'
+            cache = root / '.build/arm64-apple-macosx/release/ModuleCache'
             (root / 'main.swift').write_text(
                 'import Foundation\n'
                 '@inline(never) func packagingValue() -> Int { NSNumber(value: 42).intValue }\n'
@@ -56,7 +56,7 @@ class PackagingSymbolTests(unittest.TestCase):
                         '-Xcc', f'-ffile-prefix-map={cache}={cache}', '-Xcc', f'-ffile-prefix-map={root}=.']
             self.run_tool(compiler + ['-c', 'main.swift', '-o', 'main.o'], root)
             self.run_tool(['xcrun', 'swiftc', 'main.o', '-o', 'original'], root)
-            # Plain dsymutil models SwiftPM's automatic invocation, which cannot receive our inverse map.
+            # Plain dsymutil handles both automatic and explicit capture. An inverse "." map corrupts this .build path.
             self.run_tool(['xcrun', 'dsymutil', 'original', '-o', 'original.dSYM'], root)
             original, dsym, packaged = root / 'original', root / 'original.dSYM', root / 'packaged'
             original_bytes = original.read_bytes()
@@ -69,18 +69,6 @@ class PackagingSymbolTests(unittest.TestCase):
             self.assertTrue(symbols.verify(packaged, dsym))
             self.assertEqual(original.read_bytes(), original_bytes, 'Packaging must mutate copies only')
             self.assertNotIn(str(root).encode(), packaged.read_bytes())
-
-    def test_inverse_object_map_reads_legacy_relative_module_cache_references(self):
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder).resolve()
-            (root / 'main.swift').write_text('import Foundation\nprint(NSNumber(value: 42).intValue)\n')
-            compiler = ['xcrun', 'swiftc', '-g', '-O', '-module-cache-path', str(root / 'ModuleCache'),
-                        '-file-prefix-map', f'{root}=.', '-Xcc', f'-ffile-prefix-map={root}=.']
-            self.run_tool(compiler + ['-c', 'main.swift', '-o', 'main.o'], root)
-            self.run_tool(['xcrun', 'swiftc', 'main.o', '-o', 'legacy'], root)
-            self.run_tool(['xcrun', 'dsymutil', '--object-prefix-map', f'.={root}',
-                           'legacy', '-o', 'legacy.dSYM'], root)
-            self.assertTrue(symbols.verify(root / 'legacy', root / 'legacy.dSYM'))
 
 
 class SymbolTests(unittest.TestCase):

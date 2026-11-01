@@ -6,7 +6,8 @@ def references(text):
     result = []
     key = r'(?:uses|[\'"]uses[\'"])\s*:'
     for line in text.splitlines():
-        source, _, comment = line.partition('#')
+        parts = re.split(r'(?<!\S)#', line, maxsplit=1)
+        source, comment = parts[0], parts[1] if len(parts) == 2 else ''
         if (re.search(r'\\(?:x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})', source)
                 or re.search(r'(?:^\s*(?:-\s*)?|[{,]\s*)(?:[!&][^\s]+\s+)*\?\s', source)):
             raise ValueError('Escaped/explicit YAML mapping keys are unsupported for action pin review')
