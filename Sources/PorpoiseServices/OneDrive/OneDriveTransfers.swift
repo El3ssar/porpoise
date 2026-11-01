@@ -154,7 +154,7 @@ extension OneDriveClient {
             record.revision == replacing?.revision, record.fingerprint == nil || record.fingerprint == fingerprint,
             record.hash == nil || record.hash == hash
         else { throw OneDriveError.sourceChanged }
-        if record.phase == "done", let result = record.result { return result }
+        if record.phase == "done", let result = record.result { context.nonTransferred(record.total); return result }
         if record.phase == "conflict" { throw OneDriveError.conflict }
         guard record.phase != "committing", record.phase != "uncertain" else { throw OneDriveError.uncertain }
         record.localURL = local; record.fingerprint = fingerprint; record.total = fingerprint.size; record.hash = hash
@@ -221,6 +221,7 @@ extension OneDriveClient {
                 record.offset = start; record.phase = "prepared"; record.proposedOffset = nil; try journal.save(record)
             }
             let input = try FileHandle(forReadingFrom: local); defer { try? input.close() }
+            context.nonTransferred(record.offset)
             while true {
                 try await context.checkpoint()
                 guard JobJournal.Fingerprint(local) == fingerprint else { throw OneDriveError.sourceChanged }

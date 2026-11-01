@@ -75,10 +75,16 @@ struct FileJobResumeTests {
         let second = job(src, to: dst)
         second.resumePoints = [src: point]
         var startedAt: Int64?
-        second.onProgress = { p in if startedAt == nil, p.doneBytes > 0 { startedAt = p.doneBytes } }
+        var lastProgress: JobProgress?
+        second.onProgress = { p in
+            if startedAt == nil, p.doneBytes > 0 { startedAt = p.doneBytes }
+            lastProgress = p
+        }
         _ = try second.run()
         #expect(second.errors.isEmpty)
         #expect(startedAt == point.offset)
+        #expect(lastProgress?.nonTransferredBytes == point.offset)
+        #expect(lastProgress?.transferredBytes == (40 << 20) - point.offset)
         let copy = dst.appendingPathComponent("big.bin")
         #expect(try Data(contentsOf: copy) == Data(contentsOf: src))
         #expect(!FileManager.default.fileExists(atPath: point.staging.path))

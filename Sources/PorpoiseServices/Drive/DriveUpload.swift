@@ -26,7 +26,7 @@ extension DriveClient {
             record.localSource == nil || record.localSource == local,
             record.fingerprint == nil || record.fingerprint == fingerprint
         else { throw DriveMutationError.sourceChanged }
-        if let result = record.result { return result }
+        if let result = record.result { context.nonTransferred(fingerprint.size); return result }
         if let replacingID {
             let existing = try await file(replacingID)
             guard !existing.isGoogleDocument, !existing.isFolder, existing.operations.canWrite else { throw DriveError.permissionDenied }
@@ -113,6 +113,7 @@ extension DriveClient {
             record.hasSession = true; record.phase = .transferring; record.offset = 0; try mutationJournal.save(record)
         }
         guard let session else { throw DriveMutationError.invalidSession }
+        context.nonTransferred(record.offset)
         context.progress(record.offset, total)
         repeat {
             try await context.checkpoint()

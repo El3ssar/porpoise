@@ -74,35 +74,41 @@ extension MainWindowController {
         if PlacesModel.isCloud(view.url) { if kind == .folder { createCloudFolder() }; return }
         guard writable else { return }
         if RemoteFS.isRemote(view.url) { createRemote(kind); return }
-        NewItemDialog.run(kind: kind, in: view.url, window: window) { [weak self] url in
-            guard let self else { return }
+        let container = view, destination = view.url
+        NewItemDialog.run(kind: kind, in: destination, window: window, existingNames: Set(container.model.items.map(\.name))) {
+            [weak container] url in
             FileOperationsController.shared.pushUndo(.created([url]))
-            self.view.pendingSelect = url
-            self.view.reload()
+            FileOperationsController.notifyChanged([url])
+            if let container, container.url == destination { container.pendingSelect = url; container.reload() }
         }
     }
 
-    /// New folder or empty file on a server or device: a name nothing in the folder has, and Undo removes it again
-    /// while it is still empty. Links can't be made there: they are empty files.
+    /// Creates the advertised artifact through an exclusive backend primitive. Unsupported actions explain why.
     private func createRemote(_ kind: NewItemKind) {
         let c = view
+        guard kind != .link && kind != .urlLink else {
+            reportError("This connection cannot create links. Create the link on this Mac instead.", in: c)
+            return
+        }
+        let destination = c.url
         let folder = kind == .folder
-        let place = c.url.host.map { "\($0)\(c.url.path)" } ?? c.url.path
-        let shown: NewItemKind = kind == .link || kind == .urlLink ? .emptyFile : kind
+        let contents = kind == .htmlFile ? NewItemKind.htmlTemplate : Data()
+        let place = destination.host.map { "\($0)\(destination.path)" } ?? destination.path
         NewItemDialog.runNamed(
-            shown, in: c.url, title: place.removingPercentEncoding ?? place, names: Set(c.model.items.map(\.name)), window: window
+            kind, in: destination, title: place.removingPercentEncoding ?? place, names: Set(c.model.items.map(\.name)), window: window
         ) { [weak self] name in
-            let target = c.url.appendingPathComponent(name)
+            let target = destination.appendingPathComponent(name)
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = Result {
-                    let operations = LocationOperations(for: c.url)
-                    return folder ? try operations.makeFolder(target) : try operations.makeEmptyFile(target)
+                    let operations = LocationOperations(for: destination)
+                    return folder ? try operations.makeFolder(target) : try operations.makeFile(target, contents: contents)
                 }
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let undo):
                         FileOperationsController.shared.pushUndo(undo)
-                        c.pendingSelect = target; c.reload()
+                        FileOperationsController.notifyChanged([target])
+                        if c.url == destination { c.pendingSelect = target; c.reload() }
                     case .failure(let error): self?.reportError(error.localizedDescription, in: c)
                     }
                 }

@@ -30,6 +30,28 @@ public final class SearchRunner: NSObject {
     private let loadQueue = DispatchQueue(label: "app.porpoise.search-results", qos: .userInitiated, autoreleaseFrequency: .workItem)
     /// The newest batch of Spotlight results; older ones still loading are dropped (main queue).
     private var generation = 0
+    private var stopped = false
+    private var invalidatedSpotlightPaths: Set<String> = []
+    private var clearSpotlightCache = false
+    private var spotlightLoad: DiskCancellation?
+    private var snippetWork: DiskCancellation?
+    private var snippetOperation: Operation?
+    /// Across tabs, content snippets never consume an unbounded number of reader threads.
+    private static let sharedSnippetQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "app.porpoise.search-snippets"
+        queue.maxConcurrentOperationCount = 2
+        queue.qualityOfService = .utility
+        return queue
+    }()
+    /// Tests can own their scheduling boundary; production readers share the same process-wide two lanes.
+    var snippetQueue = SearchRunner.sharedSnippetQueue
+    // Snapshotted before dispatch; tests can pause one metadata read without real network volumes.
+    var loadSpotlightItem: (URL) -> FileItem? = { FileItem.load($0) }
+    var readSpotlightText: (String, Int, () -> Bool) -> String? = { path, limit, cancelled in
+        IndexFileText.read(path, limit: limit, cancelled: cancelled)
+    }
+    var onSnippetBatchFinished: (() -> Void)?
     /// Spotlight's latest results as last shown, shown again when their lines come in (main queue).
     private var shown: (items: [FileItem], done: Bool)?
     /// Files already read for their matching lines, so each is read once (main queue).
@@ -75,6 +97,7 @@ public final class SearchRunner: NSObject {
     }
 
     public func start() {
+        stopped = false
         guard spec != nil else { update([], true); return }
         if usesIndex && indexObserver == nil {
             indexObserver = NotificationCenter.default.addObserver(forName: SearchIndex.changed, object: index, queue: .main) { [weak self] _ in
@@ -161,6 +184,7 @@ public final class SearchRunner: NSObject {
     }
 
     private func handle(_ event: SpotlightQuery.Event) {
+        guard spotlight != nil, !stopped else { return }
         switch event {
         case .progress(let paths): publish(paths, done: false)
         // Spotlight doesn't index hidden or excluded folders; Dolphin's simple search finds them. Without Spotlight
@@ -175,25 +199,51 @@ public final class SearchRunner: NSObject {
     }
 
     /// Reads Spotlight's paths into items off the main thread, then shows them (unless newer ones came meanwhile).
-    private func publish(_ paths: [String], done: Bool, changed: Set<String> = []) {
+    func publish(_ paths: [String], done: Bool, changed: Set<String> = []) {
+        guard !stopped else { return }
         generation += 1
         let g = generation
+        spotlightLoad?.cancel()
+        snippetWork?.cancel()
+        snippetOperation?.cancel()
+        invalidatedSpotlightPaths.formUnion(changed)
+        if invalidatedSpotlightPaths.count > Self.maxSpotlightResults {
+            clearSpotlightCache = true
+            invalidatedSpotlightPaths = []
+        }
+        let invalidations = invalidatedSpotlightPaths, clearCache = clearSpotlightCache
+        for path in changed {
+            let url = URL(fileURLWithPath: path)
+            snippets[url] = nil
+            asked.remove(url)
+        }
+        let cancellation = DiskCancellation()
+        spotlightLoad = cancellation
+        let load = loadSpotlightItem
         loadQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self, !cancellation.isCancelled else { return }
             // Changed files are read again; each other path only once (Spotlight reports the whole list every time).
-            for p in changed { self.loaded[p] = nil }
+            if clearCache { self.loaded = [:] }
+            for p in invalidations { self.loaded[p] = nil }
             var items: [FileItem] = []
             var seen: [String: FileItem] = [:]
             for p in paths {
-                guard let it = self.loaded[p] ?? FileItem.load(URL(fileURLWithPath: p)), !(self.contents && it.isBrowsableFolder) else {
+                guard !cancellation.isCancelled else { return }
+                guard let it = self.loaded[p] ?? load(URL(fileURLWithPath: p)), !(self.contents && it.isBrowsableFolder) else {
                     continue
                 }
                 seen[p] = it
                 items.append(it)
             }
+            guard !cancellation.isCancelled else { return }
             self.loaded = seen
             DispatchQueue.main.async {
-                guard g == self.generation else { return }
+                guard !cancellation.isCancelled, g == self.generation else { return }
+                self.invalidatedSpotlightPaths.subtract(invalidations)
+                self.clearSpotlightCache = false
+                let alive = Set(items.map(\.url))
+                self.asked.formIntersection(alive)
+                self.snippets = self.snippets.filter { alive.contains($0.key) }
                 self.shown = (items, done)
                 self.update(items, done)
                 self.fetchLines(for: items)
@@ -207,27 +257,37 @@ public final class SearchRunner: NSObject {
         guard contents else { return }
         guard let spec else { return }
         let new = items.filter {
-            !asked.contains($0.url) && !$0.isDirectory && !spec.nameMatches($0.name)
+            !asked.contains($0.url) && snippets[$0.url] == nil && !$0.isDirectory && !spec.nameMatches($0.name)
         }
         guard !new.isEmpty else { return }
-        asked.formUnion(new.map(\.url))
         let g = generation
-        Thread { [weak self] in
-            let found = FolderSearch.lines(in: new.map(\.url.path), spec: spec)
+        let read = readSpotlightText
+        let cancellation = DiskCancellation()
+        snippetWork = cancellation
+        let operation = BlockOperation { [weak self] in
+            guard !cancellation.isCancelled else { return }
+            let found = FolderSearch.lines(in: new.map(\.url.path), spec: spec, cancelled: { cancellation.isCancelled }, read: read)
             DispatchQueue.main.async {
                 // Stopped (or the folders searched instead) meanwhile: nothing to show. Newer results: these lines
                 // still belong to their files.
-                guard let self, self.spotlight != nil, self.folderSearch == nil, self.fallbackWork == nil, !found.isEmpty, g <= self.generation,
-                    let shown = self.shown
+                guard let self, !cancellation.isCancelled, !self.stopped,
+                    self.folderSearch == nil, self.fallbackWork == nil, g == self.generation, let shown = self.shown
                 else { return }
+                // Completed negative reads are cached too. Only cancelled/in-flight attempts may be retried.
+                self.asked.formUnion(new.map(\.url))
+                self.onSnippetBatchFinished?()
+                guard !found.isEmpty else { return }
                 for it in new { if let l = found[it.url.path] { self.snippets[it.url] = l } }
                 self.update(shown.items, shown.done)
             }
-        }.start()
+        }
+        snippetOperation = operation
+        snippetQueue.addOperation(operation)
     }
 
     /// The folder itself searched: with the bundled tools, else walked.
     private func searchFolders() {
+        stopFallback()
         guard let spec else { update([], true); return }
         guard let tools = folderTools else { return simpleSearch() }
         let s = FolderSearch(spec: spec, scope: scope, limit: Self.maxFolderResults, tools: tools) {
@@ -269,7 +329,7 @@ public final class SearchRunner: NSObject {
                     else { return }
                     if spec.nameMatches(item.name) {
                         out.append(item)
-                    } else if contents, let value = IndexFileText.read(u.path, limit: Self.maxContentSearchSize),
+                    } else if contents, let value = IndexFileText.read(u.path, limit: Self.maxContentSearchSize, cancelled: { work.isCancelled }),
                         let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
                     {
                         out.append(item); lines[u] = FolderSearch.snippet(String(line), around: spec.text)
@@ -284,6 +344,9 @@ public final class SearchRunner: NSObject {
     deinit {
         if let indexObserver { NotificationCenter.default.removeObserver(indexObserver) }
         indexWork?.cancel()
+        spotlightLoad?.cancel()
+        snippetWork?.cancel()
+        snippetOperation?.cancel()
         // A closed tab's search: fd would otherwise run on to the end of a big tree (their readers hold them).
         spotlight?.stop()
         folderSearch?.stop()
@@ -291,6 +354,7 @@ public final class SearchRunner: NSObject {
     }
 
     public func stop() {
+        stopped = true
         if let indexObserver { NotificationCenter.default.removeObserver(indexObserver); self.indexObserver = nil }
         indexWork?.cancel()
         indexWork = nil
@@ -301,6 +365,12 @@ public final class SearchRunner: NSObject {
     }
 
     private func stopFallback() {
+        spotlightLoad?.cancel(); spotlightLoad = nil
+        snippetWork?.cancel(); snippetWork = nil
+        snippetOperation?.cancel(); snippetOperation = nil
+        asked = []
+        invalidatedSpotlightPaths = []
+        clearSpotlightCache = false
         spotlight?.stop()
         spotlight = nil
         folderSearch?.stop()

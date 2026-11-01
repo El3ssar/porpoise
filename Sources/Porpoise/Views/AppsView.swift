@@ -24,6 +24,8 @@ final class AppsView: NSView, NSTextFieldDelegate {
     let field = NSTextField()
     private let magnifier = NSImageView()
     private let clearButton = NSButton()
+    var onShowFiles: (() -> Void)?
+    private let filesButton = NSButton(title: "Show as Files", target: nil, action: nil)
     private let noResults = NSTextField(labelWithString: "No Results")
 
     /// The search changed the filter: the reload that follows (from the model) animates.
@@ -43,7 +45,6 @@ final class AppsView: NSView, NSTextFieldDelegate {
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
         scroll.automaticallyAdjustsContentInsets = false
         // The grid scrolls under the glass search field.
         // 22 under the field: the 20-pt gap plus the field's 2-pt glass rim.
@@ -76,6 +77,11 @@ final class AppsView: NSView, NSTextFieldDelegate {
         clearButton.isHidden = true
         for v in [magnifier, field, clearButton] as [NSView] { searchGlass.content.addSubview(v) }
         addSubview(searchGlass)
+        filesButton.bezelStyle = .inline
+        filesButton.controlSize = .small
+        filesButton.target = self; filesButton.action = #selector(showFiles)
+        filesButton.toolTip = "Browse the Applications folder with file views"
+        addSubview(filesButton)
 
         noResults.font = .systemFont(ofSize: Tokens.FontSize.title, weight: .medium)
         noResults.textColor = Theme.viewTextInactive
@@ -91,17 +97,21 @@ final class AppsView: NSView, NSTextFieldDelegate {
         super.layout()
         backdrop.frame = bounds
         scroll.frame = bounds
-        let w = min(460, bounds.width - 64)
+        let w = max(80, min(460, bounds.width - 40))
         searchGlass.frame = CGRect(x: (bounds.width - w) / 2, y: Self.searchTop, width: w, height: Self.searchHeight)
         let h = Self.searchHeight
         magnifier.frame = CGRect(x: 14, y: (h - 18) / 2, width: 18, height: 18)
         clearButton.frame = CGRect(x: w - 32, y: (h - 18) / 2, width: 18, height: 18)
         let fh = ceil(field.intrinsicContentSize.height)
         field.frame = CGRect(x: 40, y: (h - fh) / 2, width: w - 40 - 38, height: fh)
+        filesButton.sizeToFit()
+        filesButton.frame.origin = CGPoint(x: max(8, bounds.width - filesButton.frame.width - 12), y: 4)
         grid.resize(width: scroll.contentSize.width)
         noResults.sizeToFit()
         noResults.frame.origin = CGPoint(x: (bounds.width - noResults.frame.width) / 2, y: bounds.height * 0.42)
     }
+
+    @objc private func showFiles() { onShowFiles?() }
 
     /// The apps changed (loaded, filtered, one installed or removed). `animated`: the grid moves to the result.
     func reload(animated: Bool = false) {

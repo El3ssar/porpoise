@@ -6,12 +6,13 @@ import PorpoiseServices
 /// (its background menu, drops onto the folder).
 final class ListStateView: NSView {
     private let icon = NSImageView()
-    private let title = NSTextField(labelWithString: "")
+    private let title = NSTextField(wrappingLabelWithString: "")
     private let message = NSTextField(wrappingLabelWithString: "")
     private let details = NSTextField(wrappingLabelWithString: "")
     private let detailsToggle = NSButton(title: "Show Details", target: nil, action: nil)
     private let actionButton = NSButton(title: "", target: nil, action: nil)
     private let stack = NSStackView()
+    private var buttonWidths: [NSLayoutConstraint] = []
     /// Runs the shown state's action.
     var onAction: ((ListState.Action) -> Void)?
     private(set) var state: ListState?
@@ -36,6 +37,12 @@ final class ListStateView: NSView {
         stack.alignment = .centerX
         stack.spacing = Tokens.Space.s
         for v in [icon, title, message, detailsToggle, details, actionButton] { stack.addArrangedSubview(v) }
+        for button in [detailsToggle, actionButton] {
+            button.cell?.lineBreakMode = .byTruncatingTail
+            let width = button.widthAnchor.constraint(equalToConstant: 1)
+            width.isActive = true
+            buttonWidths.append(width)
+        }
         stack.setCustomSpacing(Tokens.Space.l, after: details)
         stack.setCustomSpacing(Tokens.Space.l, after: message)
         addSubview(stack)
@@ -76,6 +83,7 @@ final class ListStateView: NSView {
         icon.contentTintColor = error ? Theme.viewTextInactive : Theme.viewTextInactive.withAlphaComponent(0.45)
         actionButton.isHidden = state.action == nil
         actionButton.title = state.action?.title ?? ""
+        actionButton.toolTip = actionButton.title
         // Announced like an alert: someone on VoiceOver hears why the folder shows nothing.
         if error { NSAccessibility.post(element: title, notification: .layoutChanged) }
         needsLayout = true
@@ -83,8 +91,12 @@ final class ListStateView: NSView {
 
     override func layout() {
         super.layout()
-        let width = min(bounds.width - 40, 440)
-        for label in [message, details] { label.preferredMaxLayoutWidth = width }
+        let width = max(1, min(bounds.width - 40, 440))
+        for label in [title, message, details] { label.preferredMaxLayoutWidth = width }
+        for (button, constraint) in zip([detailsToggle, actionButton], buttonWidths) {
+            constraint.constant = min(width, button.intrinsicContentSize.width)
+            button.toolTip = button.title
+        }
         let size = stack.fittingSize
         stack.frame = CGRect(
             x: (bounds.width - width) / 2, y: max(0, (bounds.height - size.height) / 2 + 20), width: width, height: size.height)

@@ -103,10 +103,16 @@ jobs:
     with:
       base_ref: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || format('{0}^', github.sha) }}
 
+  # UI state/byte acceptance runs for normal CI, including ordinary UI source changes.
+  # Captures remain review artifacts; absent screen access is never mislabeled a visual pass.
+  ui-acceptance:
+    if: ${{ !inputs.release_benchmark }}
+    uses: ./.github/workflows/ui-acceptance.yml
+
   # Preserve the existing required-check name: it must cover every required job.
   build-and-test:
     if: always() && !inputs.release_benchmark
-    needs: [tests, shipping-build, performance-budgets]
+    needs: [tests, shipping-build, performance-budgets, ui-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -115,7 +121,8 @@ jobs:
           TESTS: ${{ needs.tests.result }}
           SHIPPING: ${{ needs.shipping-build.result }}
           PERFORMANCE: ${{ needs.performance-budgets.result }}
-        run: test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success
+          UI: ${{ needs.ui-acceptance.result }}
+        run: test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success && test "$UI" = success
 
   # Explicitly requested timing probe: production build flags and DMG scans, without publishing or credentials.
   release-benchmark:

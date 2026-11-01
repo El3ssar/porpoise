@@ -20,7 +20,7 @@ public enum AppLibrary {
     }
 
     /// Apps in the roots and one folder level below them (Utilities, a vendor's folder…).
-    static func listAll() -> [FileItem] {
+    static func listAll(cancelled: () -> Bool = { false }) -> [FileItem] {
         let fm = FileManager.default
         var seen = Set<String>()
         var out: [FileItem] = []
@@ -29,11 +29,13 @@ public enum AppLibrary {
             out.append(it)
         }
         for root in roots {
+            guard !cancelled() else { return [] }
             let entries =
                 (try? fm.contentsOfDirectory(
                     at: root, includingPropertiesForKeys: [.isDirectoryKey],
                     options: [.skipsHiddenFiles])) ?? []
             for e in entries {
+                guard !cancelled() else { return [] }
                 if e.pathExtension == "app" { add(e); continue }
                 guard (try? e.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
                 let inner = (try? fm.contentsOfDirectory(at: e, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []

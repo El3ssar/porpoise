@@ -34,6 +34,7 @@ public enum CloudRangeDownload {
         }
         let state = try CloudRangeWriter(
             partial: partial, total: total, record: record, save: save, maximumConnections: maximumConnections)
+        context.nonTransferred(record.offset)
         context.progress(record.offset, total)
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in

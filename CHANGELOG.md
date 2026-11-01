@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0
+
+- **A compact transfer window.** Copies, moves and other file operations show their current filename, completed/total files and folders, progress, speed and remaining time in a small window. Details expands a speed-history graph instead of a file queue. Pause, Stop, Retry and failure details stay close to the operation. The toolbar progress icon and its popover are gone. Automatic progress never activates Porpoise or takes keyboard focus, and respects a window you closed.
+- **Better everyday browsing.** Narrow search/filter controls remain usable, long empty-state headings wrap, overflowing tabs keep their controls reachable, and the inspector scrolls with persistent keyboard-accessible media controls. Applications honors file-view choices and clears hidden searches when switching presentation. Settings has clearer hierarchy and stronger section headings.
+- **A rebuilt command-line tool.** Help, version and completions work offline; status, pwd and paged list inspect the loaded pane; JSON/NUL output preserves literal filenames. Transfers have offline previews, bounded waits and explicit native approval.
+- **Safer file operations.** Interrupted moves validate source identity before removal, new-item creation cannot claim an existing item as its own, remote creation uses exclusive primitives or explains the limitation, and remote Undo retains files when revision-safe removal is unavailable. Linked folder creation records Undo, and Android rename preserves dangling destination links.
+- **Less wasted background work.** Superseded search and preview work cancels, row identities are prepared away from drawing, failed capacity reads back off, and generated-path index checks use a compiled component matcher. A transient Git-discovery failure no longer disables Git for the session.
+
 ## 0.16.0
 
 - **Places and Folders are tabs.** The sidebar shows Places or Folders at its full height, with a switch at the top, instead of splitting its height between them. F9 and F7 switch to a tab, or hide the sidebar if that tab is already showing; windows and workspaces remember the tab. The Folders tree shortens long names in the middle and shows the whole name on hover, no longer runs past the sidebar's edge, keeps its selection and the hidden folders you opened when something changes on disk, and finds the shown folder when Home is reached through a link. Settings explains that "Limit to Home folder" starts the tree at Home only inside Home.

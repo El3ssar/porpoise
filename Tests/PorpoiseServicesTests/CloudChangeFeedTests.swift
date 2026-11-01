@@ -7,21 +7,28 @@ import Testing
 struct CloudChangeFeedTests {
     @Test func transientPollingBacksOffAndRevocationStopsUntilRestart() async throws {
         let cursors = Locked(["user": "start"]), requests = Counter(), delays = Locked<[TimeInterval]>([])
+        let calls = AsyncStream.makeStream(of: Int.self)
+        var events = calls.stream.makeAsyncIterator()
+        defer { calls.continuation.finish() }
         var adapter = source(cursors: cursors) { _, _ in .init(cursor: "next", hasMore: false, apply: {}) }
         adapter.wait = {
             requests.add()
+            calls.continuation.yield(requests.value)
             if requests.value <= 9 { throw Fault.transport }
             throw BoxError.reconnect
         }
         let feed = CloudChangeFeed(source: adapter, wait: { delays.append($0) })
         await feed.start()
-        await expectEventually { requests.value == 10 }
+        // Observe the scripted requests themselves: a busy executor may not schedule the loop within a polling deadline.
+        for expected in 1...10 { #expect(await events.next() == expected) }
         #expect(delays.value == [5, 10, 20, 40, 80, 160, 300, 300, 300])
         await feed.stop()
+        #expect(requests.value == 10)
         await feed.start()  // Explicit sign-in/start may try again; no timer retries a terminal grant by itself.
-        await expectEventually { requests.value == 11 }
+        #expect(await events.next() == 11)
         #expect(delays.value.count == 9)
         await feed.stop()
+        #expect(requests.value == 11)
     }
     private enum Fault: Error, Equatable { case transport, reset, invalid }
     private func source(

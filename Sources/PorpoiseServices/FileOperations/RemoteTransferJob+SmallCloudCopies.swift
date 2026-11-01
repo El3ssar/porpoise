@@ -22,6 +22,7 @@ extension RemoteTransferJob {
             progress.phase = .transferring
             progress.totalBytes = items.reduce(0) { $0 + $1.size }
             progress.totalFiles = items.count
+            progress.countsAreComplete = true
         }
         onIncoming(nil)
         publish(force: true)
@@ -43,6 +44,8 @@ extension RemoteTransferJob {
                 self.progressLock.withLock {
                     snapshots[item.url] = snapshot
                     self.progress.doneBytes = snapshots.values.reduce(0) { $0 + $1.doneBytes }
+                    self.progress.nonTransferredBytes = snapshots.values.reduce(0) { $0 + $1.nonTransferredBytes }
+                    self.progress.sessionTransferredBytes = snapshots.values.reduce(0) { $0 + $1.transferredBytes }
                     self.progress.doneFiles = snapshots.values.reduce(0) { $0 + $1.doneFiles }
                     self.progress.currentName = snapshot.currentName
                 }

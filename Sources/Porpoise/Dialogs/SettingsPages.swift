@@ -297,9 +297,9 @@ import PorpoiseServices
     }
 
     static func advanced(_ f: FormBuilder) {
-        TerminalSettingsPage.build(f)
         IndexSettingsPage.build(f)
         CLIAutomationSettings.build(f)
+        TerminalSettingsPage.build(f)
         HelperSettings.build(f)
         androidPhones(f)
         permissions(f)

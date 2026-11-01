@@ -358,6 +358,24 @@ final class FormBuilder: NSObject {
         if enabled != nil { track(b, enabled: enabled) {} }
     }
 
+    /// Progressive disclosure keeps advanced controls reachable without giving them equal weight on first visit.
+    func disclosure(_ title: String, build: () -> Void) {
+        let button = ClosureButton(title: "Show " + title) { _ in }
+        let row = NSStackView(views: [labelColumnSpacer(), button])
+        row.spacing = Tokens.Space.s
+        stack.addArrangedSubview(row)
+        let start = stack.arrangedSubviews.count
+        build()
+        let children = Array(stack.arrangedSubviews.dropFirst(start))
+        children.forEach { $0.isHidden = true }
+        button.handler = { [weak button] _ in
+            let expanded = children.first?.isHidden == true
+            children.forEach { $0.isHidden = !expanded }
+            button?.title = (expanded ? "Hide " : "Show ") + title
+            button?.setAccessibilityValue(expanded ? 1 : 0)
+        }
+    }
+
     /// Shows the last row added only while `condition` holds (re-checked whenever settings change).
     func visibleWhen(_ condition: @escaping () -> Bool) {
         guard let row = stack.arrangedSubviews.last else { return }

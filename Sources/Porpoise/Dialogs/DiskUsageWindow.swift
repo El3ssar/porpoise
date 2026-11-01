@@ -13,6 +13,8 @@ final class DiskUsageWindow: DiskUtilityWindow {
     let map = DiskTreemapView()
     let metric = NSPopUpButton(frame: .zero, pullsDown: false)
     private(set) var bar: UtilityToolbar?
+    /// Delivered after a successful scan has updated the tree and its presentation.
+    var onScanCompleted: (() -> Void)?
     /// How to look inside an item, and the fine print about the sizes (the map's help tag).
     static let hint = "Click a tile, or double-click a folder in the list, to look inside it."
     static let finePrint =
@@ -67,6 +69,7 @@ final class DiskUsageWindow: DiskUtilityWindow {
                 guard let self else { return }
                 self.tree = tree; self.errors = errors; self.current = tree.nodes[0].children.count == 1 ? tree.nodes[0].children[0] : 0
                 self.reload()
+                self.onScanCompleted?()
             })
     }
     /// The id of the item shown at this level with this name (tests, the bridge).

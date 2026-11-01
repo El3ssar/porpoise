@@ -107,6 +107,11 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
         try shell("rm -rf " + remote.map(q).joined(separator: " "))
     }
 
+    func createFolder(_ remote: URL) throws {
+        try RemoteFS.checkName(remote.lastPathComponent)
+        try shell("mkdir -p \(q(remote.deletingLastPathComponent())) && mkdir \(q(remote))")
+    }
+
     func makeFolder(_ remote: URL) throws { try shell("mkdir -p \(q(remote))") }
 
     func removeEmptyFolder(_ remote: URL) throws { try shell("rmdir \(q(remote))") }
@@ -114,7 +119,7 @@ final class ADBProvider: RemoteProvider, RemoteTransferTargetChecking {
     func rename(_ remote: URL, to newName: String) throws {
         try RemoteFS.checkName(newName)
         let dst = q(remote.deletingLastPathComponent().appendingPathComponent(newName))
-        let out = try shell("if [ -e \(dst) ]; then echo \(Self.existsMarker); else mv \(q(remote)) \(dst); fi")
+        let out = try shell("if [ -e \(dst) ] || [ -L \(dst) ]; then echo \(Self.existsMarker); else mv \(q(remote)) \(dst); fi")
         if out.contains(Self.existsMarker) { throw RemoteError.exists(newName) }
     }
 

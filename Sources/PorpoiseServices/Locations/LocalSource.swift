@@ -33,6 +33,10 @@ final class LocalSource: LocationContentSource {
             }
             if cancelled() { return }
             listing.children = kids
+            let urls = listing.items.map(\.url) + kids.values.flatMap { $0.map(\.url) }
+            let keys = FilePath.keys(urls, cancelled: cancelled)
+            guard !cancelled() else { return }
+            listing.entryKeys = Dictionary(zip(urls, keys), uniquingKeysWith: { first, _ in first })
             DispatchQueue.main.async { deliver(listing) }
         }
         return LocationLoad { cancellation.cancel() }

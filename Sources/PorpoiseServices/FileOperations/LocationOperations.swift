@@ -13,7 +13,7 @@ public enum LocationOperationError: LocalizedError, Equatable {
         switch self {
         case .exists(let name): return "An item named “\(name)” is already in this folder."
         case .invalidName(let name): return "“\(name)” is not a valid name."
-        case .notEmpty(let name): return "“\(name)” is no longer empty, so it was left in place."
+        case .notEmpty(let name): return "“\(name)” has changed since it was created, so it was left in place."
         }
     }
 }
@@ -60,9 +60,10 @@ public struct LocationOperations {
         }
     }
 
-    /// "base.ext", else "base 2.ext", "base 3.ext"…: the first name nothing in `folder` has.
+    /// Advisory suggested name. Mutation callers must still perform authoritative/exclusive creation.
+    /// An unavailable listing does not prove that the returned name is unused.
     public func uniqueName(_ base: String, ext: String = "", in folder: URL) -> String {
-        let taken = takenNames(in: folder)
+        let taken = (try? takenNames(in: folder)) ?? { _ in false }
         let named = { (n: Int) in (n == 1 ? base : "\(base) \(n)") + (ext.isEmpty ? "" : "." + ext) }
         var n = 1
         while taken(named(n)) { n += 1 }
@@ -88,28 +89,31 @@ public struct LocationOperations {
     @discardableResult public func makeFolder(_ url: URL) throws -> UndoRecord {
         switch backend {
         case .local:
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            _ = try FileActions.makeFolder(named: url.lastPathComponent, in: url.deletingLastPathComponent())
             return .created([url])
         case .remote(let provider):
             try check(url.lastPathComponent, in: url.deletingLastPathComponent())
-            try provider.makeFolder(url)
+            try provider.createFolder(url)
             return .remote(RemoteChange(.created(url, folder: true), label: "New Folder"))
         }
     }
 
-    /// Makes an empty file at `url`, refusing a name already there (an upload would replace the item).
-    @discardableResult public func makeEmptyFile(_ url: URL) throws -> UndoRecord {
+    /// Creates a file without replacing anything that appeared under its name meanwhile.
+    @discardableResult public func makeFile(_ url: URL, contents: Data = Data()) throws -> UndoRecord {
         switch backend {
         case .local:
-            return .created([try FileActions.makeFile(named: url.lastPathComponent, in: url.deletingLastPathComponent())])
+            return .created([try FileActions.makeFile(named: url.lastPathComponent, in: url.deletingLastPathComponent(), contents: contents)])
         case .remote(let provider):
             try check(url.lastPathComponent, in: url.deletingLastPathComponent())
-            try Self.uploadEmptyFile(named: url.lastPathComponent, into: url.deletingLastPathComponent(), with: provider)
-            return .remote(RemoteChange(.created(url, folder: false), label: "New File"))
+            try provider.createFile(url, contents: contents)
+            return .remote(RemoteChange(.created(url, folder: false), label: "New File", initialContents: contents.isEmpty ? nil : contents))
         }
     }
 
-    /// Undoes (or redoes) a change made on a server: a rename goes back, a new item goes only while still empty.
+    @discardableResult public func makeEmptyFile(_ url: URL) throws -> UndoRecord { try makeFile(url) }
+
+    /// Undoes (or redoes) a server change. Every created file requires a conditional removal receipt;
+    /// a server without that guarantee keeps the file and explains why Undo cannot safely remove it.
     public static func revert(_ change: RemoteChange) throws {
         guard let provider = change.urls.first.flatMap(RemoteFS.provider(for:)) else { throw CocoaError(.featureUnsupported) }
         let operations = LocationOperations(provider: provider)
@@ -125,11 +129,25 @@ public struct LocationOperations {
             } else {
                 let item = try provider.list(url.deletingLastPathComponent()).first { $0.name == url.lastPathComponent }
                 guard let item else { return }  // already gone
-                guard item.size == 0 else { throw LocationOperationError.notEmpty(url.lastPathComponent) }
-                try provider.delete([url])
+                guard let conditional = provider as? RemoteTransferConditionalRemoval else {
+                    throw RemoteError.unsupported(
+                        "Undo cannot safely remove this file on this connection because the server cannot conditionally remove the version checked. The file has been kept."
+                    )
+                }
+                // The receipt precedes the read: a writer changing even an empty file during verification
+                // invalidates removal. Never fall back to an ordinary delete after checking its size.
+                let receipt = try conditional.captureTransferRemoval(url)
+                let expected = change.initialContents ?? Data()
+                guard item.size == Int64(expected.count) else { throw LocationOperationError.notEmpty(url.lastPathComponent) }
+                let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("porpoise-new-item-" + UUID().uuidString)
+                try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: false)
+                defer { try? FileManager.default.removeItem(at: scratch) }
+                let local = try provider.download(url, into: scratch)
+                guard try Data(contentsOf: local) == expected else { throw LocationOperationError.notEmpty(url.lastPathComponent) }
+                try receipt.removeSource()
             }
         case .removed(let url, let folder):
-            if folder { try operations.makeFolder(url) } else { try operations.makeEmptyFile(url) }
+            if folder { try operations.makeFolder(url) } else { try operations.makeFile(url, contents: change.initialContents ?? Data()) }
         }
     }
 
@@ -137,28 +155,20 @@ public struct LocationOperations {
     /// do); `renaming` is the item's own name, which a change of case may reuse.
     private func check(_ name: String, in folder: URL, renaming own: String? = nil) throws {
         guard FileActions.isValidName(name) else { throw LocationOperationError.invalidName(name) }
-        let taken = takenNames(in: folder)
+        let taken = try takenNames(in: folder)
         if taken(name), own?.compare(name, options: .caseInsensitive) != .orderedSame { throw LocationOperationError.exists(name) }
     }
 
     /// Whether a name is taken in `folder`: on this Mac what the file system says (a case-insensitive volume refuses
     /// "A" beside "a"), on a server what its listing has, ignoring case.
-    private func takenNames(in folder: URL) -> (String) -> Bool {
+    private func takenNames(in folder: URL) throws -> (String) -> Bool {
         switch backend {
         case .local:
             return { FileJob.itemExists(at: folder.appendingPathComponent($0)) }
         case .remote(let provider):
-            let names = Set(((try? provider.list(folder)) ?? []).map { $0.name.lowercased() })
+            let names = Set(try provider.list(folder).map { $0.name.lowercased() })
             return { names.contains($0.lowercased()) }
         }
     }
 
-    private static func uploadEmptyFile(named name: String, into folder: URL, with provider: RemoteProvider) throws {
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let file = tmp.appendingPathComponent(name)
-        FileManager.default.createFile(atPath: file.path, contents: Data())
-        try provider.upload(file, into: folder)
-    }
 }

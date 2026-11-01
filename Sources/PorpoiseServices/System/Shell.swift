@@ -9,6 +9,8 @@ public enum Shell {
         public var isInterrupted: () -> Bool
         /// Bytes traversing a file-backed stdin/stdout of the tool (archive overhead may be included).
         public var onBytes: (Int64) -> Void
+        /// Logical bytes reused from an earlier session or server-side work; telemetry only.
+        public var onNonTransferredBytes: (Int64) -> Void = { _ in }
         public var onStatus: (String?) -> Void
         public var pace: (Int64) throws -> Void = { _ in }
         public var paceAsync: @Sendable (Int64) async throws -> Void = { _ in }

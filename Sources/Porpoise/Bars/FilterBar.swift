@@ -15,6 +15,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
     private let modeButton = FlatButton(icon: nil, title: FilterMode.plainText.title)
     private let caseButton = FlatButton(icon: "format-text-case", tooltip: "Match Case")  // falls back to text
     private let closeButton = FlatButton(icon: "dialog-close", tooltip: "Hide Filter Bar")
+    private let optionsButton = FlatButton(icon: "view-filter", tooltip: "Filter Options")
     private let invalidLabel = NSTextField(labelWithString: "Invalid expression")
     var isLocked = false { didSet { lockButton.iconName = isLocked ? "object-locked" : "object-unlocked"; lockButton.isToggled = isLocked } }
     private(set) var filter = NameFilter()
@@ -31,7 +32,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         field.focusRingType = .exterior
         lockButton.onClick = { [weak self] in self?.isLocked.toggle() }
         modeButton.showsMenuIndicator = true
-        modeButton.isSplitButton = true
+        modeButton.isSplitButton = false
         modeButton.menuProvider = { [weak self] in self?.modeMenu() }
         if !IconTheme.shared.has("format-text-case") { caseButton.iconName = nil; caseButton.title = "Aa" }
         caseButton.onClick = { [weak self] in
@@ -41,27 +42,40 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
             self.notify()
         }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.filterBarClosed($0) } }
+        optionsButton.showsMenuIndicator = true
+        optionsButton.menuProvider = { [weak self] in self?.optionsMenu() }
         invalidLabel.textColor = Theme.negativeText
         invalidLabel.font = Theme.font
         invalidLabel.isHidden = true
-        for v in [lockButton, field, invalidLabel, modeButton, caseButton, closeButton] as [NSView] { addSubview(v) }
+        for v in [lockButton, field, invalidLabel, modeButton, caseButton, closeButton, optionsButton] as [NSView] { addSubview(v) }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
 
+    var preferredHeight: CGFloat { filter.matcher() == nil ? 62 : 38 }
+
     override func layout() {
         super.layout()
-        let h = bounds.height
-        lockButton.frame = CGRect(x: 6, y: (h - 28) / 2, width: 28, height: 28)
-        closeButton.frame = CGRect(x: bounds.width - 34, y: (h - 28) / 2, width: 28, height: 28)
-        caseButton.frame = CGRect(x: closeButton.frame.minX - 34, y: (h - 28) / 2, width: 30, height: 28)
-        let mw = modeButton.intrinsicContentSize.width
-        modeButton.frame = CGRect(x: caseButton.frame.minX - mw - 6, y: (h - 28) / 2, width: mw, height: 28)
-        let iw: CGFloat = invalidLabel.isHidden ? 0 : 130
-        invalidLabel.frame = CGRect(x: modeButton.frame.minX - iw - 4, y: (h - 18) / 2, width: iw, height: 18)
-        field.frame = CGRect(x: 40, y: (h - 24) / 2, width: modeButton.frame.minX - 46 - iw, height: 24)
+        let compact = bounds.width < max(440, modeButton.intrinsicContentSize.width + 248)
+        lockButton.isHidden = compact; modeButton.isHidden = compact; caseButton.isHidden = compact
+        optionsButton.isHidden = !compact
+        closeButton.frame = CGRect(x: max(0, bounds.width - 34), y: 5, width: 28, height: 28)
+        let end: CGFloat
+        if compact {
+            optionsButton.frame = CGRect(x: max(0, closeButton.frame.minX - 36), y: 5, width: 32, height: 28)
+            end = optionsButton.frame.minX - 8
+        } else {
+            lockButton.frame = CGRect(x: 6, y: 5, width: 28, height: 28)
+            caseButton.frame = CGRect(x: closeButton.frame.minX - 34, y: 5, width: 30, height: 28)
+            let mw = modeButton.intrinsicContentSize.width
+            modeButton.frame = CGRect(x: caseButton.frame.minX - mw - 6, y: 5, width: mw, height: 28)
+            end = modeButton.frame.minX - 8
+        }
+        let start: CGFloat = compact ? 8 : 40
+        field.frame = CGRect(x: start, y: 7, width: max(24, end - start), height: 24)
+        invalidLabel.frame = CGRect(x: 8, y: 38, width: max(0, bounds.width - 16), height: 20)
     }
 
     override func draw(_ dirty: NSRect) {
@@ -69,6 +83,19 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         let l = NSBezierPath(); l.move(to: CGPoint(x: 0, y: 0.5)); l.line(to: CGPoint(x: bounds.width, y: 0.5))
         Theme.separator.setStroke(); l.stroke()
     }
+
+    private func optionsMenu() -> NSMenu {
+        let menu = modeMenu()
+        menu.addItem(.separator())
+        let match = NSMenuItem(title: "Match Case", action: #selector(toggleCase), keyEquivalent: "")
+        match.target = self; match.state = filter.caseSensitive ? .on : .off; menu.addItem(match)
+        let lock = NSMenuItem(title: "Keep Filter When Changing Folders", action: #selector(toggleLock), keyEquivalent: "")
+        lock.target = self; lock.state = isLocked ? .on : .off; menu.addItem(lock)
+        return menu
+    }
+
+    @objc private func toggleCase() { filter.caseSensitive.toggle(); caseButton.isToggled = filter.caseSensitive; notify() }
+    @objc private func toggleLock() { isLocked.toggle() }
 
     private func modeMenu() -> NSMenu {
         let m = NSMenu()
@@ -116,6 +143,7 @@ final class FilterBar: NSView, NSSearchFieldDelegate {
         let valid = filter.matcher() != nil
         invalidLabel.isHidden = valid
         needsLayout = true
+        superview?.needsLayout = true
         if valid { delegate?.filterBar(self, changed: filter) }
     }
 

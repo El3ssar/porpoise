@@ -92,9 +92,11 @@ final class MetadataFileLoad {
                 guard !cancellation.isCancelled else { return }
                 if let item = load(url) { items.append(item) }
             }
+            let urls = items.map(\.url)
+            let keys = FilePath.keys(urls, cancelled: { cancellation.isCancelled })
             DispatchQueue.main.async {
                 guard !cancellation.isCancelled else { return }
-                done(LocationListing(items: items))
+                done(LocationListing(items: items, entryKeys: Dictionary(zip(urls, keys), uniquingKeysWith: { first, _ in first })))
             }
         }
     }

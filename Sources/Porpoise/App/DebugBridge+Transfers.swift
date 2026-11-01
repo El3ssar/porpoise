@@ -130,7 +130,7 @@ extension DebugBridge {
 
     func transferpopoverCommand(_ arg: String) {
         guard Settings.isTesting else { return }
-        wc?.toolbar.transfers.showTransfers()
+        ActivityWindowController.shared.show()
     }
 
     func activitypreviewCommand(_ arg: String) {

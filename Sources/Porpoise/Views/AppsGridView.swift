@@ -355,10 +355,30 @@ final class AppsGridView: NSView, NSDraggingSource {
         model.rows.indices.filter { cellRect($0).intersects(visibleRect) }.map { i in
             let item = model.rows[i].item
             return AccessibleRegion(
-                in: self, role: .button, label: AppLibrary.displayName(item.url),
+                in: self, role: .row, label: AppLibrary.displayName(item.url),
                 // Found again by the app, not the row it had: after a filter the row may be another app's.
                 frame: { [weak self] in self.flatMap { g in g.model.index(of: item.url).map(g.cellRect) } ?? .zero },
                 selected: { [weak self] in self?.model.selection.contains(item.url) ?? false },
+                select: { [weak self] selected in
+                    guard let self else { return }
+                    if let owner = self.owner { owner.host?.appsViewDidBecomeActive(owner) }
+                    if selected {
+                        self.model.selection.insert(item.url); self.model.currentURL = item.url
+                    } else {
+                        self.model.selection.remove(item.url)
+                    }
+                    self.needsDisplay = true
+                    NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
+                },
+                showMenu: { [weak self] in
+                    guard let self, let owner = self.owner, let index = self.model.index(of: item.url) else { return false }
+                    if !self.model.selection.contains(item.url) { self.selecting.select(item.url) }
+                    // Menu composition and custom tools read selection, so the clicked app must already own it.
+                    guard let menu = owner.host?.appsView(owner, menuFor: item) else { return false }
+                    let cell = self.cellRect(index)
+                    menu.popUp(positioning: nil, at: CGPoint(x: cell.midX, y: cell.midY), in: self)
+                    return true
+                },
                 press: { [weak self] in if let o = self?.owner { o.host?.appsView(o, open: [item]) } })
         }
     }

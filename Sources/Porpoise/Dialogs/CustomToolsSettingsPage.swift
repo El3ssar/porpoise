@@ -165,6 +165,7 @@ enum CustomToolsSettingsPage {
         let editor = CustomToolsEditorView()
         form.wide(editor)
         form.note(
-            "Commands run in the active pane’s folder. Output and exit status appear in Activity. Custom tool changes cannot be undone by Porpoise.")
+            "Commands run in the active pane’s folder. Output and exit status appear in Transfers → Tools. Custom tool changes cannot be undone by Porpoise."
+        )
     }
 }

@@ -52,6 +52,25 @@ import Testing
             signed.value(forHTTPHeaderField: "Authorization")?.hasSuffix("Signature=98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd")
                 == true)
     }
+    @Test func exclusiveCreatePreservesExistingObjectsAndTemplateBytes() async throws {
+        let target = location.replacingKey("new.html").url
+        let template = Data("<!DOCTYPE html>\n<html></html>\n".utf8)
+        try await offThePool { try provider.createFile(target, contents: template) }
+        do {
+            try await offThePool { try provider.createFile(target, contents: Data()) }
+            Issue.record("Existing object was accepted as a new file")
+        } catch {}
+        let local = try Scratch()
+        let downloaded = try await offThePool { try provider.download(target, into: local.url) }
+        #expect(try Data(contentsOf: downloaded) == template)
+        let folder = location.replacingKey("new folder/").url
+        try await offThePool { try provider.createFolder(folder) }
+        do {
+            try await offThePool { try provider.createFolder(folder) }
+            Issue.record("Existing folder was accepted as new")
+        } catch {}
+    }
+
     @Test func locationAndCredentialIsolation() throws {
         let url = location.replacingKey("a//b + %?#/ü.txt").url
         #expect(S3Location(url: url)?.key == "a//b + %?#/ü.txt")

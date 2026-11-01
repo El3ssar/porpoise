@@ -78,7 +78,7 @@ extension AppDelegate {
             return StatusCenter.post(text)
         }
         let bar = w.view.messageBar
-        bar.show(text, error: false, action: "Review in Activity…") { [weak bar] in
+        bar.show(text, error: false, action: "Review Transfers…") { [weak bar] in
             bar?.dismiss()
             ActivityWindowController.shared.show()
         }

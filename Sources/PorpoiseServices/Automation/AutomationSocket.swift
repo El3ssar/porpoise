@@ -126,7 +126,8 @@ public enum AutomationSocket {
         let payload = try JSONEncoder().encode(request)
         guard payload.count <= maximumRequest else { throw AutomationError.oversized }
         try writeFrame(payload, fd: fd, deadline: deadline)
-        let response = try JSONDecoder().decode(AutomationResponse.self, from: readFrame(fd, deadline: deadline))
+        let data = try readFrame(fd, deadline: deadline)
+        guard let response = try? JSONDecoder().decode(AutomationResponse.self, from: data) else { throw AutomationError.invalidResponse }
         guard response.version == 1, response.id == request.id else { throw AutomationError.invalidResponse }
         return response
     }

@@ -49,7 +49,7 @@ struct RevealInPorpoiseIntent: AppIntent {
 struct CopyWithPorpoiseIntent: AppIntent {
     static var title: LocalizedStringResource = "Copy with Porpoise"
     static var description = IntentDescription(
-        "Queue a copy in Activity. Conflicts and progress are handled by Porpoise. Supply absolute local paths, or use the current selection.")
+        "Queue a copy in Transfers. Conflicts and progress are handled by Porpoise. Supply absolute local paths, or use the current selection.")
     static var openAppWhenRun = true
     @Parameter(title: "Paths") var paths: [String]?
     @Parameter(title: "Use Current Selection", default: false) var useSelection: Bool
@@ -63,7 +63,7 @@ struct CopyWithPorpoiseIntent: AppIntent {
 struct MoveWithPorpoiseIntent: AppIntent {
     static var title: LocalizedStringResource = "Move with Porpoise"
     static var description = IntentDescription(
-        "Queue a move in Activity. Conflicts and progress are handled by Porpoise. Supply absolute local paths, or use the current selection.")
+        "Queue a move in Transfers. Conflicts and progress are handled by Porpoise. Supply absolute local paths, or use the current selection.")
     static var openAppWhenRun = true
     @Parameter(title: "Paths") var paths: [String]?
     @Parameter(title: "Use Current Selection", default: false) var useSelection: Bool
@@ -95,7 +95,7 @@ struct PorpoiseToolQuery: EntityQuery {
 struct RunPorpoiseCustomToolIntent: AppIntent {
     static var title: LocalizedStringResource = "Run Porpoise Custom Tool"
     static var description = IntentDescription(
-        "Run a tool saved in Porpoise Settings on the active folder and selection. Output and exit status appear in Activity. Large selections require confirmation."
+        "Run a tool saved in Porpoise Settings on the active folder and selection. Output and exit status appear in Transfers → Tools. Large selections require confirmation."
     )
     static var openAppWhenRun = true
     @Parameter(title: "Custom Tool") var tool: PorpoiseToolEntity

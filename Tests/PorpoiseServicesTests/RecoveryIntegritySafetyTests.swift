@@ -19,6 +19,7 @@ struct RecoveryIntegritySafetyTests {
         s = try Scratch("recovery-integrity")
         c = makeController(ui)
         c.journals = JournalStore(folder: s.path("journals"))
+        c.transferStages = TransferStageJournal(folder: s.path("stages"))
         c.driveJournals = DriveMutationJournal(folder: s.path("drive-journals"))
         c.history = OperationHistory(file: s.path("history.jsonl"))
         c.prepareJob = { job in job.allowsClone = false }
