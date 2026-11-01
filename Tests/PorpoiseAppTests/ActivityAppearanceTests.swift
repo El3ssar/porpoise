@@ -6,91 +6,66 @@ import Testing
 
 @testable import Porpoise
 
-/// Exercise the app-level appearance change: setting a window's appearance alone skips followLook's refresh.
+/// Offscreen layout and theme contracts. These tests never order, activate or make a window key.
 @MainActor @Suite(.serialized, .isolatedSettings) struct ActivityAppearanceTests {
-    @Test func activityTabsFollowLightAndDarkAppearance() async throws {
+    @Test func compactTransferSectionsFollowAppearanceWithoutPresentingAWindow() async throws {
         let app = NSApplication.shared
         let previous = app.appearance
         defer { app.appearance = previous; Theme.lookChanged() }
         let controller = ActivityWindowController.shared
         let window = try #require(controller.window)
-        defer { window.close() }
         let content = try #require(window.contentView)
         let tools = try #require(descendants(content, as: CustomToolActivityView.self).first)
-        let originalSize = window.contentLayoutRect.size
-        defer { window.setContentSize(originalSize) }
-        let tabs = try #require(descendants(content, as: NSSegmentedControl.self).first)
-        // UI-5/E1: an empty list says so with the shared empty state, filling the list's pane (it centres itself).
+        let navigation = try #require(descendants(content, as: NSPopUpButton.self).first { $0.itemTitles == ["Transfers", "History", "Tools"] })
+        #expect(window.title == "Transfers")
+        #expect(!window.isVisible)
         content.layoutSubtreeIfNeeded()
+        #expect(window.contentLayoutRect.width == 480)
+        #expect(window.contentLayoutRect.height < 300)
+        #expect(descendants(content, as: NSSegmentedControl.self).isEmpty)
         let empty = controller.emptyState
         #expect(empty.state == nil || empty.state == ActivityWindowController.emptyListState)
-        #expect(empty.frame.width > 300 && empty.frame.height > 100, "\(empty.frame)")
-        // Its line is no stronger than its title (finishgate #8160): smaller, and not darker.
-        empty.show(nil)
-        empty.show(ActivityWindowController.emptyListState)
+        empty.show(nil); empty.show(ActivityWindowController.emptyListState)
         let labels = descendants(empty, as: NSTextField.self).filter { !$0.isHidden && !$0.stringValue.isEmpty }
         let title = try #require(labels.first { $0.stringValue == "No activity" })
-        let line = try #require(labels.first { $0.stringValue == "Copies and moves show up here." })
-        #expect((line.font?.pointSize ?? 99) < (title.font?.pointSize ?? 0))
-        #expect(line.textColor == title.textColor)
-        let buttons = descendants(tools, as: NSButton.self)
-        #expect(buttons.map(\.title) == ["Cancel Tool", "Clear Finished"])
-        for width in [480.0, 640.0] {
-            window.setContentSize(NSSize(width: width, height: 460))
-            content.layoutSubtreeIfNeeded()
-            #expect(tabs.frame.width >= tabs.intrinsicContentSize.width)
-            #expect(tabs.convert(tabs.bounds, to: content).minX >= 88)
-        }
-        for look in [AppearanceChoice.light, .dark, .light] {
-            Settings.shared.appearance = look
-            app.appearance = Theme.appearance
-            try #require(await eventually { window.effectiveAppearance.isDark == (look == .dark) })
-            Theme.lookChanged()
-            #expect(window.effectiveAppearance.isDark == (look == .dark))
-            window.effectiveAppearance.performAsCurrentDrawingAppearance {
-                #expect(window.backgroundColor.usingColorSpace(.sRGB) == Theme.windowBackground.usingColorSpace(.sRGB))
-                #expect(tools.table.backgroundColor.usingColorSpace(.sRGB) == Theme.viewBackground.usingColorSpace(.sRGB))
-                #expect(tools.output.backgroundColor.usingColorSpace(.sRGB) == Theme.viewBackground.usingColorSpace(.sRGB))
-                #expect(tools.output.textColor?.usingColorSpace(.sRGB) == Theme.viewText.usingColorSpace(.sRGB))
-            }
-            for segment in 0..<tabs.segmentCount {
-                tabs.selectedSegment = segment
-                tabs.sendAction(tabs.action, to: tabs.target)
+        let message = try #require(labels.first { $0.stringValue == "Copies and moves show up here." })
+        #expect((message.font?.pointSize ?? 99) < (title.font?.pointSize ?? 0))
+        #expect(message.textColor == title.textColor)
+        for appearance in [AppearanceChoice.light, .dark, .light] {
+            Settings.shared.appearance = appearance; app.appearance = Theme.appearance; Theme.lookChanged()
+            try #require(await eventually { window.effectiveAppearance.isDark == (appearance == .dark) })
+            for section in 0..<navigation.numberOfItems {
+                navigation.selectItem(at: section)
+                navigation.sendAction(navigation.action, to: navigation.target)
                 content.layoutSubtreeIfNeeded()
-                if segment == 2 {
-                    for button in buttons {
-                        #expect(button.frame.width >= button.intrinsicContentSize.width)
-                        #expect(button.frame.height > 16 && !button.isHiddenOrHasHiddenAncestor)
-                        #expect(button.effectiveAppearance.isDark == (look == .dark))
-                        #expect(button.cell?.title == button.title)
+                #expect(!window.isVisible)
+                #expect(navigation.convert(navigation.bounds, to: content).minX >= 0)
+                #expect(navigation.frame.width >= navigation.intrinsicContentSize.width)
+                if section == 2 {
+                    #expect(!tools.isHidden)
+                    window.effectiveAppearance.performAsCurrentDrawingAppearance {
+                        #expect(tools.table.backgroundColor.usingColorSpace(.sRGB) == Theme.viewBackground.usingColorSpace(.sRGB))
+                        #expect(tools.output.textColor?.usingColorSpace(.sRGB) == Theme.viewText.usingColorSpace(.sRGB))
                     }
                 }
                 if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
-                    try await capture(window, to: URL(fileURLWithPath: folder).appendingPathComponent("activity-\(segment)-\(look.rawValue).png"))
+                    try captureOffscreen(
+                        window, to: URL(fileURLWithPath: folder).appendingPathComponent("transfers-\(section)-\(appearance.rawValue).png"))
                 }
             }
         }
+        navigation.selectItem(at: 0); navigation.sendAction(navigation.action, to: navigation.target)
     }
 
-    private func descendants<T: NSView>(_ view: NSView, as kind: T.Type) -> [T] {
-        (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, as: kind) }
+    private func descendants<T: NSView>(_ view: NSView, as type: T.Type) -> [T] {
+        (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, as: type) }
     }
 
-    private func capture(_ window: NSWindow, to url: URL) async throws {
-        let view = try #require(window.contentView)
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        window.effectiveAppearance.performAsCurrentDrawingAppearance {
-            view.cacheDisplay(in: view.bounds, to: bitmap)
-        }
+    private func captureOffscreen(_ window: NSWindow, to url: URL) throws {
+        let content = try #require(window.contentView)
+        let bitmap = try #require(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+        window.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: bitmap) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
-        // Native button/segmented-control layers are not included faithfully by cacheDisplay on macOS 27.
-        // Capture only this test window through WindowServer as well; ordering it does not activate the app.
-        window.orderFront(nil)
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(150))
-        let image = try #require(WindowCapture.image(of: window.windowNumber))
-        let server = url.deletingPathExtension().appendingPathExtension("window.png")
-        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: server)
     }
 }

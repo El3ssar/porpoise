@@ -83,7 +83,7 @@ import Testing
         #expect(expired.error != nil)
         #expect(FileOperationsController.shared.activities.count == before)
         let copy = await app.handle(.init(action: .copy, paths: [source.path], destination: copied.path))
-        #expect(copy.error == nil && copy.message == "Queued in Activity; awaiting approval in Porpoise." && copy.state == .awaitingApproval)
+        #expect(copy.error == nil && copy.message == "Queued in Transfers; awaiting approval in Porpoise." && copy.state == .awaitingApproval)
         let copiedFile = copied.appendingPathComponent(source.lastPathComponent)
         #expect(await eventually { FileManager.default.fileExists(atPath: copiedFile.path) })
         #expect(FileOperationsController.shared.activities.contains { $0.sources == [source] && $0.destination?.path == copied.path })

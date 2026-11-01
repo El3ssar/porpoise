@@ -188,7 +188,12 @@ public struct JobProgress: Sendable {
     public var retainedCopies: Int = 0
     public var totalFiles: Int = 0
     public var totalFolders: Int = 0
+    /// Resolved work, including skipped and previously completed entries; not a count of newly written files.
     public var doneFiles: Int = 0
+    /// Resolved folder work, including reuse, merge and skip; not a count of newly created directories.
+    public var doneFolders: Int = 0
+    /// False during inventory, after incomplete enumeration, or for fast directory renames without a tree walk.
+    public var countsAreComplete = false
     public var copiedItems: Int = 0
     public var replacedItems: Int = 0
     public var skippedIdenticalItems: Int = 0
@@ -196,6 +201,14 @@ public struct JobProgress: Sendable {
     public var kind: FileOperationKind
     public var totalBytes: Int64
     public var doneBytes: Int64
+    /// Logical progress credited by skips, reuse, clones or an earlier session; excluded from throughput.
+    public var nonTransferredBytes: Int64 = 0
+    /// Remote retries preserve actual session work even when logical progress restarts at an earlier offset.
+    public var sessionTransferredBytes: Int64?
+    public var transferredBytes: Int64 { max(0, sessionTransferredBytes ?? (doneBytes - nonTransferredBytes)) }
+    public var transferBytesTotal: Int64 {
+        sessionTransferredBytes.map { max(0, $0) + max(0, totalBytes - doneBytes) } ?? max(0, totalBytes - nonTransferredBytes)
+    }
     public var totalItems: Int
     public var doneItems: Int
     public var currentName: String

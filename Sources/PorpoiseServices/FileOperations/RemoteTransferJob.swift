@@ -33,10 +33,16 @@ final class RemoteTransferJob {
     var failedSources: [URL] = []
     var sticky: ConflictResolution?
     var totals: [URL: (bytes: Int64, files: Int)] = [:]
+    private var folderCounts: [URL: Int] = [:]
+    private var inventoryCountsComplete = true
     var progress: JobProgress
     let progressLock = NSLock()
     var committedBytes: Int64 = 0
     var activeBytes: Int64 = 0
+    var activeNonTransferredBytes: Int64 = 0
+    var committedNonTransferredBytes: Int64 = 0
+    private var sessionTransferredBytes: Int64 = 0
+    private var pendingCreditBytes: Int64 = 0
     var activeLimit: Int64 = 0
     var activeLegs: Int64 = 1
     var listings: [URL: [FileItem]] = [:]
@@ -97,6 +103,7 @@ final class RemoteTransferJob {
             }
         }
         let transport = control.asTransferControl(onBytes: { self.advance(bytes: $0) }, onStatus: { self.onNotice($0) })
+        transport.onNonTransferredBytes = { self.creditActive(bytes: $0) }
         Shell.withTransferControl(transport) {
             if runSmallCloudCopies() { return }
             do {
@@ -104,6 +111,7 @@ final class RemoteTransferJob {
                     try control.checkpoint()
                     if kind == .copy || kind == .move { _ = try inventory(source) }
                 }
+                progressLock.withLock { progress.countsAreComplete = (kind == .copy || kind == .move) && inventoryCountsComplete }
             } catch {
                 // The per-item execution path reports inventory failures without duplicating them.
                 // Missing metadata must not authorize replacement, but other top-level items may still succeed.
@@ -191,20 +199,23 @@ final class RemoteTransferJob {
         if !control.policy.exclusions.isEmpty, PlacesModel.isCloud(url), logicalPaths[url] == nil, let metadata = try item(url) {
             logicalPaths[url] = metadata.name
         }
-        if isExcluded(url) { totals[url] = (0, 0); return (0, 0) }
-        guard let item = try item(url) else { return (0, 0) }
+        if isExcluded(url) { totals[url] = (0, 0); folderCounts[url] = 0; return (0, 0) }
+        guard let item = try item(url) else { inventoryCountsComplete = false; return (0, 0) }
         var count = (bytes: item.isSymlink || item.isDirectory ? Int64(0) : item.size, files: item.isDirectory && !item.isSymlink ? 0 : 1)
+        var folders = item.isDirectory && !item.isSymlink ? 1 : 0
         if item.isDirectory && !item.isSymlink {
             progressLock.withLock { progress.totalFolders += 1 }
             for child in try children(url) {
                 // A transfer is one long work item: what Foundation autoreleases per file goes after each.
                 let next = try autoreleasepool { try inventory(child.url) }
                 count.bytes += next.bytes; count.files += next.files
+                folders += folderCounts[child.url] ?? 0
             }
         } else {
             progress.totalFiles += 1; progress.totalBytes += count.bytes
         }
         totals[url] = count
+        folderCounts[url] = folders
         publish()
         return count
     }
@@ -228,10 +239,12 @@ final class RemoteTransferJob {
         guard source.isFileURL || RemoteFS.provider(for: source) != nil else {
             throw RemoteError.unsupported("Unsupported source: \(source.scheme ?? "unknown")")
         }
-        if let target = completed[source] { finishProgress(source); return target }
+        if let target = completed[source] { finishProgress(source, credited: true); return target }
         guard let incoming = try item(source) else { throw RemoteError.failed("“\(source.lastPathComponent)” is no longer there.") }
         var target = folder.appendingPathComponent(source.lastPathComponent)
-        if kind == .move && source.standardized == target.standardized { completed[source] = target; finishProgress(source); return nil }
+        if kind == .move && source.standardized == target.standardized {
+            completed[source] = target; finishProgress(source, credited: true); return nil
+        }
         let topLevel = sources.contains(source)
         defer { if topLevel { onIncoming(nil) } }
         var existing = try item(target)
@@ -270,6 +283,7 @@ final class RemoteTransferJob {
             activeLimit = totals[source]?.bytes ?? incoming.size
             activeLegs = legCount(source)
             activeBytes = 0
+            activeNonTransferredBytes = 0
         }
         while true {
             do { try stagedFile(source, to: target, replacing: replace, modified: incoming.modificationDate); break } catch {
@@ -279,6 +293,8 @@ final class RemoteTransferJob {
                 }
                 progressLock.withLock {
                     activeBytes = 0; progress.doneBytes = committedBytes
+                    activeNonTransferredBytes = 0; progress.nonTransferredBytes = committedNonTransferredBytes
+                    pendingCreditBytes = 0
                 }
                 publish(force: true)
                 guard onNoSpace(totals[source]?.bytes ?? incoming.size) else { control.cancel(); throw FileOperationError.cancelled }
@@ -368,7 +384,7 @@ final class RemoteTransferJob {
 
     func skipConflict(_ source: URL, target: URL, identical: Bool) {
         if identical { progressLock.withLock { progress.skippedIdenticalItems += 1 } }
-        completed[source] = target; finishProgress(source)
+        completed[source] = target; finishProgress(source, credited: true)
     }
 
     func publishIncoming(_ source: URL, item: FileItem, target: URL) {
@@ -405,6 +421,7 @@ final class RemoteTransferJob {
             movedItems[source] = target
         }
         completed[source] = target
+        progressLock.withLock { progress.doneFolders += 1 }
         return target
     }
 
@@ -448,6 +465,7 @@ final class RemoteTransferJob {
         if let native = RemoteFS.provider(for: target) as? RemoteTransferNativeCopy {
             let preserved = replacing && options.method == .sizeAndDate ? modified : nil
             if let result = try native.copyTransferFile(source, to: target, replacing: replacing, modified: preserved) {
+                creditActive(bytes: (totals[source]?.bytes ?? 0) * activeLegs)
                 try Shell.withoutTransferControl {
                     try beforeSourceRemoval?()
                     if kind == .move && !sourceRemovalHandled {
@@ -466,11 +484,11 @@ final class RemoteTransferJob {
         defer { if !destinationStaging { try? FileManager.default.removeItem(at: scratch) } }
         var downloaded: URL
         if let cloud = RemoteFS.provider(for: source) as? CloudTransferProvider, let operationID = sourceDownloadOperationID {
-            downloaded = try TransferRetry.run(control: control, notice: onNotice) {
+            downloaded = try retryDownload {
                 try cloud.downloadTransfer(source, into: scratch, operationID: operationID)
             }
         } else {
-            downloaded = try TransferRetry.run(control: control, notice: onNotice) {
+            downloaded = try retryDownload {
                 guard let provider = RemoteFS.provider(for: source) else { return source }
                 let attempt = scratch.appendingPathComponent(UUID().uuidString)
                 try FileManager.default.createDirectory(at: attempt, withIntermediateDirectories: false)
@@ -555,10 +573,13 @@ final class RemoteTransferJob {
             if staged != downloaded {
                 let copy = FileJob(kind: .copy, sources: [downloaded], destinationFolder: stageFolder)
                 var previous: Int64 = 0
+                var previousCredits: Int64 = 0
                 copy.onProgress = { [weak copy] snapshot in
                     do { try self.control.checkpoint() } catch { copy?.cancel() }
                     let next = max(0, snapshot.doneBytes - previous)
                     previous = snapshot.doneBytes
+                    self.creditActive(bytes: max(0, snapshot.nonTransferredBytes - previousCredits))
+                    previousCredits = snapshot.nonTransferredBytes
                     self.advance(bytes: next)
                 }
                 _ = try copy.run()
@@ -634,24 +655,67 @@ final class RemoteTransferJob {
     func legCount(_ source: URL) -> Int64 {
         (!source.isFileURL && destination?.isFileURL == false) ? 2 : 1
     }
-    func finishProgress(_ source: URL, copied: Bool = false) {
+    func finishProgress(_ source: URL, copied: Bool = false, credited: Bool = false) {
         progressLock.withLock {
             progress.doneFiles += totals[source]?.files ?? 1
+            progress.doneFolders += folderCounts[source] ?? 0
             if copied { progress.copiedItems += totals[source]?.files ?? 1 }
             committedBytes += totals[source]?.bytes ?? 0
+            committedNonTransferredBytes += credited ? (totals[source]?.bytes ?? 0) : activeNonTransferredBytes
             activeBytes = 0
+            activeNonTransferredBytes = 0
+            pendingCreditBytes = 0
             activeLimit = 0
             progress.doneBytes = min(progress.totalBytes, committedBytes)
+            progress.nonTransferredBytes = min(progress.doneBytes, committedNonTransferredBytes)
+            progress.sessionTransferredBytes = sessionTransferredBytes
         }
         publish()
     }
     func advance(bytes: Int64) {
         progressLock.withLock {
             guard activeLimit > 0 else { return }
-            activeBytes = min(activeLimit, activeBytes + max(0, bytes) / activeLegs)
+            let bytes = max(0, bytes)
+            let credited = min(bytes, pendingCreditBytes)
+            pendingCreditBytes -= credited
+            sessionTransferredBytes += (bytes - credited) / activeLegs
+            activeBytes = min(activeLimit, activeBytes + bytes / activeLegs)
             progress.doneBytes = min(progress.totalBytes, committedBytes + activeBytes)
+            progress.nonTransferredBytes = min(progress.doneBytes, committedNonTransferredBytes + activeNonTransferredBytes)
+            progress.sessionTransferredBytes = sessionTransferredBytes
         }
         publish()
+    }
+
+    func creditActive(bytes: Int64, reportedByProgress: Bool = true) {
+        progressLock.withLock {
+            activeNonTransferredBytes = min(activeLimit, activeNonTransferredBytes + max(0, bytes) / activeLegs)
+            if reportedByProgress {
+                pendingCreditBytes += max(0, bytes)
+            } else {
+                activeBytes = min(activeLimit, activeBytes + max(0, bytes) / activeLegs)
+            }
+        }
+    }
+
+    func resetActiveCredits() {
+        progressLock.withLock {
+            activeNonTransferredBytes = 0; pendingCreditBytes = 0
+        }
+    }
+
+    /// A resumed attempt reports its prefix again. Reset only logical leg progress; actual session work survives.
+    func retryDownload<T>(_ body: () throws -> T) throws -> T {
+        let baseline = progressLock.withLock { (activeBytes, activeNonTransferredBytes) }
+        return try TransferRetry.run(control: control, notice: onNotice) {
+            self.progressLock.withLock {
+                self.activeBytes = baseline.0; self.activeNonTransferredBytes = baseline.1; self.pendingCreditBytes = 0
+                self.progress.doneBytes = min(self.progress.totalBytes, self.committedBytes + baseline.0)
+                self.progress.nonTransferredBytes = min(self.progress.doneBytes, self.committedNonTransferredBytes + baseline.1)
+                self.progress.sessionTransferredBytes = self.sessionTransferredBytes
+            }
+            return try body()
+        }
     }
     func publish(force: Bool = false) {
         let snapshot: JobProgress? = progressLock.withLock {

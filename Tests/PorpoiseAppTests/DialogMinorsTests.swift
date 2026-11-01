@@ -177,26 +177,13 @@ import Testing
         #expect(reads == before + 1)
     }
 
-    /// #19: the toolbar's transfer button stops ticking once nothing moves (a failure waits without a timer), and
-    /// forgets activities that are gone.
-    @Test func theTransferButtonRestsOnAFailure() async throws {
-        let w = window(NSView())
-        defer { w.close() }
-        let button = TransferToolbarButton(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
-        w.contentView?.addSubview(button)
-        let controller = FileOperationsController.shared
-        let failed = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/tmp/x")], destination: nil, job: nil)
-        failed.originWindow = w
-        failed.errors = ["“x” couldn’t be copied."]
-        failed.state = .failed
-        failed.finishedAt = Date().addingTimeInterval(-10)
-        controller.activities.append(failed)
-        defer {
-            controller.activities.removeAll { $0 === failed }
-            NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+    /// Transfer progress has its own compact window; it must not reserve a toolbar control or location gap.
+    @Test func theToolbarHasNoTransferProgressControl() {
+        let toolbar = ToolbarView(frame: CGRect(x: 0, y: 0, width: 900, height: 52))
+        func labels(_ view: NSView) -> [String] {
+            [view.accessibilityLabel()].compactMap { $0 } + view.subviews.flatMap(labels)
         }
-        NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
-        #expect(!button.tickingForTests)
+        #expect(!labels(toolbar).contains { $0.contains("File operations") })
     }
 
     /// #16: a click near the middle of a changed row only focuses: changes are copied with the buttons.

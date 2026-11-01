@@ -248,7 +248,7 @@ extension AppDelegate {
         win.addItem(mi("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"))
         win.addItem(mi("Zoom", #selector(NSWindow.performZoom(_:))))
         win.addItem(sep())
-        win.addItem(mi("Activity", #selector(AppDelegate.showActivity(_:)), "j", [.command, .option]))
+        win.addItem(mi("Transfers", #selector(AppDelegate.showActivity(_:)), "j", [.command, .option]))
         win.addItem(sep())
         win.addItem(mi("Next Tab", #selector(W.nextTab(_:)), "\t", .control))
         win.addItem(mi("Previous Tab", #selector(W.previousTab(_:)), "\t", [.control, .shift]))

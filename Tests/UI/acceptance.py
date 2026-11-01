@@ -287,8 +287,8 @@ class Run:
             b.ask("transferstate", parse=json.loads)), self.args.step_timeout, "the copy to finish in Activity")
         self.check("copy: Activity shows it completed", jobs[-1]["state"] == "completed", jobs)
         b.send("action", "showActivity:")
-        wait_until(lambda: any(w.startswith("Activity") for w in b.windows()), self.args.step_timeout, "the Activity window")
-        self.capture("30-activity", window="Activity")
+        wait_until(lambda: any(w.startswith("Transfers") for w in b.windows()), self.args.step_timeout, "the Transfers window")
+        self.capture("30-activity", window="Transfers")
 
     def connect(self):
         b = self.bridge

@@ -156,7 +156,7 @@ import PorpoiseServices
                     operations.finishAutomationApproval(pending, approved: allowed)
                 }
                 ActivityWindowController.shared.show()
-                return AutomationResponse(id: request.id, message: "Queued in Activity; awaiting approval in Porpoise.", state: .awaitingApproval)
+                return AutomationResponse(id: request.id, message: "Queued in Transfers; awaiting approval in Porpoise.", state: .awaitingApproval)
             case .runTool: throw AutomationError.invalidRequest
             }
             return AutomationResponse(id: request.id)

@@ -41,9 +41,13 @@ extension FileOperationsController {
                     var progress = JobProgress(
                         kind: .copy, totalBytes: total, doneBytes: bytes, totalItems: 1,
                         doneItems: bytes == total ? 1 : 0, currentName: item?.name ?? title, destination: nil)
+                    progress.nonTransferredBytes = activity.progress?.nonTransferredBytes ?? 0
                     if item == nil, let prior = activity.progress {
                         progress.totalItems = prior.totalItems; progress.doneItems = prior.doneItems
                         progress.totalFiles = prior.totalFiles; progress.doneFiles = prior.doneFiles
+                    } else if let item, !item.isDirectory {
+                        progress.totalFiles = 1; progress.doneFiles = bytes == total ? 1 : 0
+                        progress.countsAreComplete = true
                     }
                     self.progressed(activity, progress)
                     self.ui?.jobProgressed(activity, progress)
@@ -61,6 +65,9 @@ extension FileOperationsController {
                 DispatchQueue.main.async {
                     activity?.notice = message; self?.activityDidChange()
                 }
+            },
+            nonTransferred: { [weak activity] bytes in
+                DispatchQueue.main.async { activity?.creditProgress(bytes: bytes) }
             })
         let wake = CloudTransferWake()
         activity.resumeCloudTask = { wake.signal() }

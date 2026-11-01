@@ -159,7 +159,7 @@ func run() throws {
                 "Dry run: \(preview.action) \(paths.count) item\(paths.count == 1 ? "" : "s") to \(AutomationDisplay.quotedPath(preview.destination))"
             )
             for path in paths { print("  \(AutomationDisplay.quotedPath(path))") }
-            print("Nothing submitted. Running without --dry-run queues an approval request in Activity.")
+            print("Nothing submitted. Running without --dry-run queues an approval request in Transfers.")
         }
         return
     }

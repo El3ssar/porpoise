@@ -91,6 +91,7 @@ extension S3Client {
             do {
                 let object = try await head(key)
                 if object.operation == operationID.uuidString, object.size == record.total {
+                    context.nonTransferred(record.total)
                     try journal.remove(operationID); context.progress(record.total, record.total); return
                 }
             } catch S3Error.service(404, _) {}
@@ -111,6 +112,11 @@ extension S3Client {
         }
         let id = record.uploadID!, handle = try FileHandle(forReadingFrom: local); defer { try? handle.close() }
         let count = Int((record.total + Int64(record.partSize) - 1) / Int64(record.partSize))
+        let credited = (1...count).reduce(Int64(0)) { total, number in
+            guard record.parts[String(number)] != nil else { return total }
+            return total + min(Int64(record.partSize), record.total - Int64(number - 1) * Int64(record.partSize))
+        }
+        context.nonTransferred(credited)
         for number in 1...count {
             try await context.checkpoint()
             guard JobJournal.Fingerprint(local) == fingerprint else { throw S3Error.changed }
@@ -179,6 +185,7 @@ extension S3Client {
     func multipartCopy(_ object: S3Object, to key: String, sourceHeaders: [String: String], revision: String?, context: CloudTransferContext)
         async throws
     {
+        context.nonTransferred(object.size)
         let initiation = try S3XML.parse(await send("POST", key: key, query: ["uploads": ""], idempotent: false).0)
         guard let id = initiation.first("UploadId"), !id.isEmpty else { throw S3Error.invalidResponse }
         do {
