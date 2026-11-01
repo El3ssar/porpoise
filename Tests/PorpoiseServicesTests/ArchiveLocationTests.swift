@@ -163,22 +163,21 @@ import Testing
         let root = ArchiveLocation(archive: file).url
         let provider = try #require(RemoteFS.provider(for: root))
         let item = try #require(try provider.list(root.appendingPathComponent("src")).first { $0.name == "top.txt" })
-        var opened: URL?
-        RemoteOpener.open(item) { local in
-            #expect(FileOperationsController.shared.activities.last(where: { $0.sources.contains(item.url) })?.state.isEnded == true)
-            opened = local
+        // The launch callback is the completion barrier, including extraction and the activity's terminal state.
+        let first: URL = await withCheckedContinuation { opened in
+            RemoteOpener.open(item) { local in
+                #expect(FileOperationsController.shared.activities.last(where: { $0.sources.contains(item.url) })?.state.isEnded == true)
+                opened.resume(returning: local)
+            }
         }
-        #expect(await eventually { opened != nil })
-        let first = try #require(opened)
         defer { try? FileManager.default.removeItem(at: first.deletingLastPathComponent()) }
         #expect(try String(contentsOf: first, encoding: .utf8) == "top")
         #expect(try FileManager.default.contentsOfDirectory(atPath: first.deletingLastPathComponent().path) == [item.name])
         try "changed".write(to: s.path("src/top.txt"), atomically: true, encoding: .utf8)
         try run("/usr/bin/zip", ["-q", file.path, "src/top.txt"], in: s.url)
-        opened = nil
-        RemoteOpener.open(item) { opened = $0 }
-        #expect(await eventually { opened != nil })
-        let second = try #require(opened)
+        let second: URL = await withCheckedContinuation { opened in
+            RemoteOpener.open(item) { opened.resume(returning: $0) }
+        }
         defer { try? FileManager.default.removeItem(at: second.deletingLastPathComponent()) }
         #expect(second != first)
         #expect(try String(contentsOf: second, encoding: .utf8) == "changed")

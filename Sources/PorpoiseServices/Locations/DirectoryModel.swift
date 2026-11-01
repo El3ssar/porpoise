@@ -343,6 +343,10 @@ public final class DirectoryModel {
     private var dynamicViewPending = true
 
     private let prefetchFolders: Bool
+    /// Instance-scoped source creation also lets semantic tests avoid the host's Spotlight service.
+    var sourceFactory: (URL, Bool) -> LocationContentSource = {
+        LocationContentSources.source(for: $0, allowAppLibrary: $1)
+    }
 
     public init(location: URL, prefetchFolders: Bool = true) {
         self.prefetchFolders = prefetchFolders
@@ -421,7 +425,7 @@ public final class DirectoryModel {
             dynamicViewPending = true
             columnOverride = ViewOverride()
             props = inColumns(ViewStyleStore().style(for: url))
-            let replacement = LocationContentSources.source(for: url, allowAppLibrary: appLibraryPresentationEnabled)
+            let replacement = sourceFactory(url, appLibraryPresentationEnabled)
             replacement.retainMetadata(for: [url])
             source = replacement
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
@@ -549,7 +553,7 @@ public final class DirectoryModel {
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
-        let replacement = LocationContentSources.source(for: location, allowAppLibrary: appLibraryPresentationEnabled)
+        let replacement = sourceFactory(location, appLibraryPresentationEnabled)
         replacement.retainMetadata(for: expanded.union([location]))
         source = replacement
         folderPrefetch?.cancel(); folderPrefetch = nil
@@ -622,7 +626,7 @@ public final class DirectoryModel {
         _ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool, changedOnly: Bool = false
     ) {
         let traits = source.traits
-        fileKeyCache.merge(listing.entryKeys) { _, new in new }
+        if fileKeyCache.isEmpty { fileKeyCache = listing.entryKeys } else { fileKeyCache.merge(listing.entryKeys) { _, new in new } }
         if traits.optimisticEdits, listing.complete { listingArrived(token) }
         let before = changedOnly ? folderDates() : [:]
         items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
@@ -725,7 +729,7 @@ public final class DirectoryModel {
             filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
             knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil,
-            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [])
+            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [], knownEntryKeys: fileKeyCache)
         // Never let a later filter/mode change reuse order from a superseded listing.
         if !keepingOrder { sortedTop = nil }
         rowPreparation = prepareRows(snapshot) { [weak self] result in

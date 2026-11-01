@@ -8,6 +8,29 @@ import Testing
 @testable import PorpoiseServices
 
 @MainActor @Suite(.isolatedSettings) struct PreparedEntryIdentityTests {
+    @Test func rowPreparationReusesListingIdentitiesAndResolvesOnlyNewEntries() throws {
+        let scratch = try Scratch()
+        let original = try scratch.folder("original"), replacement = try scratch.folder("replacement")
+        let alias = try scratch.symlink("alias", to: "original")
+        let listed = FileItem(url: alias.appendingPathComponent("listed.txt"), name: "listed.txt", isDirectory: false)
+        let originalKey = FilePath.key(listed.url)
+        // The listing snapshot owns this identity even if the path changes before row preparation.
+        try FileManager.default.removeItem(at: alias)
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: replacement)
+        let added = FileItem(url: alias.appendingPathComponent("new.txt"), name: "new.txt", isDirectory: false)
+        var input = DirectoryModelPreparation(
+            items: [listed, added], incoming: [], children: [:], expanded: [], props: ViewProperties(), filter: NameFilter(),
+            choice: .natural, hideBackups: false, sizes: [:], knownTags: [:], ordered: nil)
+        input.knownEntryKeys = [listed.url: originalKey]
+        let result = try #require(input.build())
+        #expect(result.keyCache[listed.url] == originalKey)
+        #expect(result.keyCache[listed.url] == FilePath.key(original.appendingPathComponent("listed.txt")))
+        #expect(result.keyCache[listed.url] != FilePath.key(listed.url))
+        #expect(result.keyCache[added.url] == FilePath.key(replacement.appendingPathComponent("new.txt")))
+        for (row, key) in zip(result.rows, result.keys) { #expect(key == result.keyCache[row.item.url]) }
+        #expect(input.build(cancelled: { true }) == nil)
+    }
+
     @Test func smallLocalListingRetainsWorkerResolvedIdentityAfterParentDisappears() async throws {
         let scratch = try Scratch()
         let real = try scratch.folder("real")
