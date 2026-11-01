@@ -9,14 +9,20 @@ from workflow_actions import references
 
 
 def git(root, *args):
-    return subprocess.check_output(['git', '-C', str(root), *args])
+    return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.PIPE)
 
 
 def action_pins(root, revision, paths):
     result = []
     for path in paths:
         content = git(root, 'show', f'{revision}:{path}').decode('utf-8')
-        result.extend(reference for reference, _ in references(content))
+        for reference, _ in references(content):
+            repository, separator, action_revision = reference.rpartition('@')
+            parts = repository.split('/')
+            if not separator or len(parts) < 2:
+                raise ValueError('External actions must identify a repository and immutable revision')
+            # Nested actions such as cache/restore and cache/save are the same repository dependency.
+            result.append('/'.join(parts[:2]).lower() + '@' + action_revision)
     return sorted(set(result))
 
 

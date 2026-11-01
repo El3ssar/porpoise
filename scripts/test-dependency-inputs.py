@@ -88,6 +88,13 @@ class InputTests(unittest.TestCase):
         self.write('.github/workflows/reuse.yml', 'uses: actions/checkout@' + 'a' * 40)
         self.assertFalse(self.check()['graph_required'])
 
+    def test_cache_subactions_at_the_same_repository_revision_are_not_new_dependencies(self):
+        self.write('.github/workflows/ci.yml', 'uses: actions/cache@' + 'a' * 40)
+        self.base = self.commit()
+        self.write('.github/workflows/ci.yml', 'steps:\n - uses: actions/cache/restore@' + 'a' * 40
+                   + '\n - uses: actions/cache/save@' + 'a' * 40)
+        self.assertFalse(self.check()['graph_required'])
+
     def test_vendored_change_remains_explicit_manual_review(self):
         self.write('Vendor/SwiftTerm/SOURCE.txt', 'new upstream revision')
         result = self.check()

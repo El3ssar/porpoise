@@ -135,6 +135,11 @@ sys.exit(scenario.get('status', 0))
         pgrep = self.bin / 'pgrep'
         pgrep.write_text('#!/bin/sh\nexit 1\n')
         pgrep.chmod(0o755)
+        # Fake processes/report files are ready immediately: shorten polling and crash-report grace only.
+        # The watchdog's Bash SECONDS deadline and fake Swift's Python time.sleep remain real.
+        sleep = self.bin / 'sleep'
+        sleep.write_text('#!/bin/sh\nexec /bin/sleep 0.01\n')
+        sleep.chmod(0o755)
 
     def watchdog(self, scenario, arguments=('--filter', 'Buttons'), timeout='10', environment=None):
         self.calls = self.root / 'swift-calls.jsonl'
@@ -259,9 +264,10 @@ sys.exit(scenario.get('status', 0))
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
 
     def test_hung_test_is_still_bounded(self):
-        result = self.watchdog({'output': '◇ Test run started.', 'sleep': 10}, timeout='1')
+        result = self.watchdog({'output': '◇ Test run started.', 'sleep': 3}, timeout='1')
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('still running after 1s', result.stdout)
+        self.assertEqual(len(self.execution_calls()), 1)
+        self.assertIn('::error::swift test still running after 1s', result.stdout)
 
 
 if __name__ == '__main__':

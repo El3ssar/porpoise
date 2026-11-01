@@ -96,7 +96,8 @@ jobs:
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Restore shipping build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: release-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
@@ -268,6 +269,13 @@ jobs:
           gh release create "v$V" \
             "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml build/helper-cdhash.txt \
             --target "$(git rev-parse HEAD)" --title "Porpoise $V" --notes-file build/notes.md --latest
+
+      - name: Save release compiler state even after a failed check
+        if: ${{ !cancelled() && steps.release-cache.outputs.cache-primary-key != '' && steps.release-cache.outputs.cache-matched-key != steps.release-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.release-cache.outputs.cache-primary-key }}
 
       - name: Remove the keychain
         if: always()

@@ -26,7 +26,8 @@ jobs:
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: ui-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
@@ -70,3 +71,9 @@ jobs:
           path: build/ui-acceptance/run
           retention-days: 30
           if-no-files-found: warn
+      - name: Save UI compiler state even after a failed check
+        if: ${{ !cancelled() && steps.ui-cache.outputs.cache-primary-key != '' && steps.ui-cache.outputs.cache-matched-key != steps.ui-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.ui-cache.outputs.cache-primary-key }}
