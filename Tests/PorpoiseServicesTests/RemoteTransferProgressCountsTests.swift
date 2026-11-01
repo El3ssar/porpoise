@@ -7,6 +7,24 @@ import Testing
 @testable import PorpoiseServices
 
 struct RemoteTransferProgressCountsTests {
+    @Test func oddByteCallbacksPreserveNormalizedThroughputAcrossLegChanges() {
+        let job = RemoteTransferJob(kind: .copy, sources: [], destination: nil, control: JobControl(), rule: .ask, options: .init())
+        job.progress.totalBytes = 100; job.activeLimit = 100; job.activeLegs = 2
+        job.advance(bytes: 1); job.advance(bytes: 1)
+        #expect(job.progress.transferredBytes == 1)
+        job.advance(bytes: 3); job.advance(bytes: 3)
+        #expect(job.progress.transferredBytes == 4)
+        job.activeLegs = 1; job.advance(bytes: 1)
+        #expect(job.progress.transferredBytes == 5)
+        job.activeLegs = 2; job.advance(bytes: 1)
+        job.activeLegs = 1; job.advance(bytes: 1)
+        #expect(job.progress.transferredBytes == 6)
+        job.activeLegs = 2; job.advance(bytes: 1)
+        #expect(job.progress.transferredBytes == 7)
+        job.creditActive(bytes: 1); job.advance(bytes: 1)
+        #expect(job.progress.transferredBytes == 7)
+    }
+
     @Test func sameJobRetryPreservesTransferredBytesButPriorSessionResumeDoesNotCountThem() throws {
         func job() -> RemoteTransferJob {
             let value = RemoteTransferJob(

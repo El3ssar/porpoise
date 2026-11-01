@@ -104,7 +104,8 @@ final class TransferProgressView: NSView {
         title.toolTip = activity.title
         func count(_ done: Int?, _ total: Int?, _ name: String) -> String {
             guard let done, let total else { return "\(name.capitalized): " + (activity.state.isEnded ? "not counted" : "counting…") }
-            return "\(FileFormat.count(done)) of \(FileFormat.count(total)) \(name)"
+            let noun = total == 1 ? String(name.dropLast()) : name
+            return "\(FileFormat.count(done)) of \(FileFormat.count(total)) \(noun)"
         }
         let knownCounts = summary.totalFiles != nil && summary.totalFolders != nil
         counts.stringValue =
@@ -127,6 +128,16 @@ final class TransferProgressView: NSView {
             ? "Paused" : activity.state.isEnded ? activity.state.rawValue.capitalized : summary.timeLeftText ?? activity.statusText
         remaining.toolTip = remaining.stringValue
         speedHistory.samples = summary.speedSamples
+        let hasFinishedWithoutSamples = activity.state.isEnded && summary.speedSamples.count < 2
+        disclosure.isHidden = hasFinishedWithoutSamples
+        if hasFinishedWithoutSamples, isExpanded {
+            isExpanded = false
+            speedHistory.isHidden = true
+            disclosure.title = "Show Speed"
+            disclosure.setAccessibilityLabel("Show transfer speed graph")
+            disclosure.setAccessibilityValue(0)
+            onHeightChanged?()
+        }
         setActions(presentation.actions)
         setAccessibilityLabel(activity.title + ". " + counts.stringValue + ". " + current.stringValue)
         needsLayout = true

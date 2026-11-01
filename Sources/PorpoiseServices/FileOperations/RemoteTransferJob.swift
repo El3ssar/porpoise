@@ -42,6 +42,7 @@ final class RemoteTransferJob {
     var activeNonTransferredBytes: Int64 = 0
     var committedNonTransferredBytes: Int64 = 0
     private var sessionTransferredBytes: Int64 = 0
+    private var sessionTransferredHalfByte: Int64 = 0
     private var pendingCreditBytes: Int64 = 0
     var activeLimit: Int64 = 0
     var activeLegs: Int64 = 1
@@ -678,7 +679,14 @@ final class RemoteTransferJob {
             let bytes = max(0, bytes)
             let credited = min(bytes, pendingCreditBytes)
             pendingCreditBytes -= credited
-            sessionTransferredBytes += (bytes - credited) / activeLegs
+            let transferred = bytes - credited
+            sessionTransferredBytes += transferred / activeLegs
+            // A job has one or two legs. Preserve half bytes across callbacks, retries and source changes.
+            if activeLegs == 2 {
+                sessionTransferredHalfByte += transferred % 2
+                sessionTransferredBytes += sessionTransferredHalfByte / 2
+                sessionTransferredHalfByte %= 2
+            }
             activeBytes = min(activeLimit, activeBytes + bytes / activeLegs)
             progress.doneBytes = min(progress.totalBytes, committedBytes + activeBytes)
             progress.nonTransferredBytes = min(progress.doneBytes, committedNonTransferredBytes + activeNonTransferredBytes)

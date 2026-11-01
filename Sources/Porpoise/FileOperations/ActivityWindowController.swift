@@ -73,7 +73,8 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
     func showProgress() {
         let active = Set(controller.activities.filter { $0.state.isActive || $0.state == .queued }.map(\.id))
         dismissedJobs.formIntersection(active)
-        guard Self.shouldPresentProgress(active: active, dismissed: dismissedJobs, visible: window?.isVisible == true) else { return }
+        let alreadyPresented = window?.isVisible == true || window?.isMiniaturized == true
+        guard Self.shouldPresentProgress(active: active, dismissed: dismissedJobs, visible: alreadyPresented) else { return }
         section = 0; navigation.selectItem(at: 0)
         reveal()
     }

@@ -197,7 +197,9 @@ class Run:
             size = wait_until(lambda: png_size(path), 10, f"capture {name}")
         except StepFailed:
             size = None
-        note = "missing" if size is None else ("narrow (Stage Manager?)" if size[0] < 500 else "")
+        # Transfers is intentionally a 480pt window, unlike the main browser and Settings.
+        minimum_width = 400 if window == "Transfers" else 500
+        note = "missing" if size is None else ("narrow (Stage Manager?)" if size[0] < minimum_width else "")
         self.results.append({"look": self.look, "shot": os.path.relpath(path, self.out), "size": size, "note": note})
 
     def step(self, name, body):

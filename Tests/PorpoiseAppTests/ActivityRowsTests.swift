@@ -62,6 +62,18 @@ import Testing
         #expect(!card.isExpanded && card.speedHistory.isHidden)
     }
 
+    @Test(.isolatedSettings) func finishedInstantOperationDoesNotOfferAnEmptySpeedGraph() throws {
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running
+        let card = TransferProgressView(window: nil); card.update(activity)
+        let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Show Speed" })
+        disclosure.performClick(nil)
+        #expect(card.isExpanded)
+        activity.state = .completed; card.update(activity)
+        #expect(disclosure.isHidden && !card.isExpanded && card.speedHistory.isHidden)
+        #expect(card.preferredHeight < 180)
+    }
+
     @Test func automaticProgressRespectsDismissalAndNeverRaisesAnAlreadyVisibleWindow() {
         let previous = UUID(), fresh = UUID()
         #expect(!ActivityWindowController.shouldPresentProgress(active: [], dismissed: [], visible: false))

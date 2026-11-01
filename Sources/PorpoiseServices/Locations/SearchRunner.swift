@@ -37,13 +37,15 @@ public final class SearchRunner: NSObject {
     private var snippetWork: DiskCancellation?
     private var snippetOperation: Operation?
     /// Across tabs, content snippets never consume an unbounded number of reader threads.
-    private static let snippetQueue: OperationQueue = {
+    private static let sharedSnippetQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "app.porpoise.search-snippets"
         queue.maxConcurrentOperationCount = 2
         queue.qualityOfService = .utility
         return queue
     }()
+    /// Tests can own their scheduling boundary; production readers share the same process-wide two lanes.
+    var snippetQueue = SearchRunner.sharedSnippetQueue
     // Snapshotted before dispatch; tests can pause one metadata read without real network volumes.
     var loadSpotlightItem: (URL) -> FileItem? = { FileItem.load($0) }
     var readSpotlightText: (String, Int, () -> Bool) -> String? = { path, limit, cancelled in
@@ -280,7 +282,7 @@ public final class SearchRunner: NSObject {
             }
         }
         snippetOperation = operation
-        Self.snippetQueue.addOperation(operation)
+        snippetQueue.addOperation(operation)
     }
 
     /// The folder itself searched: with the bundled tools, else walked.
