@@ -8,7 +8,8 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
     static let shared = ActivityWindowController()
     static let emptyListState = ListState(title: "No activity", message: "Copies and moves show up here.", symbol: "clock")
     let emptyState = ListStateView()
-    private let controller = FileOperationsController.shared
+    private let controller: FileOperationsController
+    private let cloudEditing: CloudEditing
     private let activityPane = NSView()
     private let historyPane = NSView()
     private let toolPane = CustomToolActivityView()
@@ -40,7 +41,9 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         return (value as NSString).lastPathComponent
     }
 
-    private init() {
+    init(controller: FileOperationsController = .shared, cloudEditing: CloudEditing = .shared) {
+        self.controller = controller
+        self.cloudEditing = cloudEditing
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 480, height: 232),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: true)
@@ -59,6 +62,8 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         }
         reload(force: true)
     }
+
+    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     required init?(coder: NSCoder) { fatalError() }
 
@@ -232,7 +237,7 @@ final class ActivityWindowController: SecondaryWindowController, NSTableViewData
         guard force || window?.isVisible == true || rows.isEmpty else { return }
         let ordered = Self.ordered(controller.activities)
         rows = ordered.filter { !$0.state.isEnded } + ordered.filter(\.state.isEnded).prefix(3)
-        edits = CloudEditing.shared.entries
+        edits = cloudEditing.entries
         activityPane.isHidden = section != 0; historyPane.isHidden = section != 1; toolPane.isHidden = section != 2
         clear.isHidden = section != 0; clear.isEnabled = rows.contains { $0.state.isEnded }
         let ids = Self.progressOrder(rows, editIDs: edits.map(\.id))

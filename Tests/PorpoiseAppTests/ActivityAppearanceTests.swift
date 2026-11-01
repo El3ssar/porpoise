@@ -12,8 +12,12 @@ import Testing
         let app = NSApplication.shared
         let previous = app.appearance
         defer { app.appearance = previous; Theme.lookChanged() }
-        let controller = ActivityWindowController.shared
+        // Other suites create real shared jobs concurrently. This empty-layout contract owns its data sources.
+        let operations = FileOperationsController(), cloudEditing = CloudEditing()
+        cloudEditing.operations = operations
+        let controller = ActivityWindowController(controller: operations, cloudEditing: cloudEditing)
         let window = try #require(controller.window)
+        defer { window.close() }
         let content = try #require(window.contentView)
         let tools = try #require(descendants(content, as: CustomToolActivityView.self).first)
         let navigation = try #require(descendants(content, as: NSPopUpButton.self).first { $0.itemTitles == ["Transfers", "History", "Tools"] })
@@ -22,9 +26,11 @@ import Testing
         content.layoutSubtreeIfNeeded()
         #expect(window.contentLayoutRect.width == 480)
         #expect(window.contentLayoutRect.height < 300)
+        #expect(operations.activities.isEmpty && cloudEditing.entries.isEmpty)
+        #expect(descendants(content, as: TransferProgressView.self).isEmpty)
         #expect(descendants(content, as: NSSegmentedControl.self).isEmpty)
         let empty = controller.emptyState
-        #expect(empty.state == nil || empty.state == ActivityWindowController.emptyListState)
+        #expect(empty.state == ActivityWindowController.emptyListState)
         empty.show(nil); empty.show(ActivityWindowController.emptyListState)
         let labels = descendants(empty, as: NSTextField.self).filter { !$0.isHidden && !$0.stringValue.isEmpty }
         let title = try #require(labels.first { $0.stringValue == "No activity" })
