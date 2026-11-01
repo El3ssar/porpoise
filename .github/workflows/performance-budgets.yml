@@ -43,11 +43,24 @@ jobs:
         env:
           FFMPEG_JOBS: '2'
         run: scripts/build-ffmpeg.sh
+      - name: Optimized compiler cache identity
+        id: compiler
+        run: |
+          identity=$( { swift --version; xcodebuild -version; sw_vers -productVersion; } | shasum -a 256 | cut -d ' ' -f 1)
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+      - name: Restore private optimized compiler cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          # Only SwiftPM build state and content-checked source timestamps. Staged apps/results stay fresh.
+          path: .build-budgets
+          key: budgets-swift-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/performance-budgets.py', 'scripts/make-app.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            budgets-swift-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/performance-budgets.py', 'scripts/make-app.sh') }}-
       - name: Compare identical optimized app workloads
         timeout-minutes: 27
         env:
           BASE_REF: ${{ inputs.base_ref }}
-        run: python3 scripts/performance-budgets.py --base "$BASE_REF" --out "$PWD/build/performance-budgets"
+        run: python3 scripts/performance-budgets.py --reuse-compiler-cache --base "$BASE_REF" --out "$PWD/build/performance-budgets"
       - name: Summary
         if: always()
         run: |

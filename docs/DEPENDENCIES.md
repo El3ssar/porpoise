@@ -44,8 +44,11 @@ shared build directories are unsupported. No downloaded binary is auto-published
 Review monthly and before a release, plus promptly when an upstream advisory is
 reported. `.github/workflows/dependency-review.yml` runs on every PR and monthly:
 it creates a retained Markdown review proposal from this ledger and changed
-files. PRs also run GitHub's dependency review for dependencies covered by its
-graph. The workflow has read-only repository permissions, never edits pins,
+files. PRs run GitHub's dependency review when Swift manifests/lockfiles or
+external Action references change. Unchanged dependency inputs do not need a
+graph diff. Version-specific Swift manifests, YAML flow steps and composite
+actions are included; unsupported action-key syntax fails closed. Pin checks
+and the inventory proposal still run on source-only PRs. The workflow has read-only repository permissions, never edits pins,
 opens a PR, builds, signs or publishes binaries. A maintainer turns its proposal
 into a small reviewed change; monthly proposals are review reminders, not proof
 that upstream/advisory checks were completed.
@@ -56,7 +59,8 @@ provenance. Cover vendored SwiftTerm, FFmpeg, fd/rg, optional Android tools, ass
 and pinned Actions manually: GitHub dependency graph coverage is incomplete for
 these. No current vulnerability-free claim is made. GitHub dependency review
 requires a supported public repository or the relevant private-repository license;
-an unavailable API fails the PR action and requires maintainer resolution.
+an unavailable API on an actual dependency change fails the PR action and
+requires maintainer resolution. A source-only skip is not an advisory scan.
 
 A dependency-update PR records old/new pin, upstream links, verified source/build
 identity, license/notice changes and rationale. Run `python3 scripts/test-bundled-tools.py`,

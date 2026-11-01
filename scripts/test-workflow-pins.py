@@ -39,6 +39,17 @@ class WorkflowTests(unittest.TestCase):
             workflow.write_text('path: build/ffmpeg/ffmpeg\nrun: scripts/build-ffmpeg.sh\n')
             self.assertTrue(pins.check(root))
 
+    def test_flow_steps_yaml_and_composite_actions_require_immutable_pins(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            for relative in ['.github/workflows/flow.yaml', '.github/actions/local/action.yml']:
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('- {uses: owner/action@main} # v1\n')
+                self.assertTrue(pins.check(root))
+                path.write_text('- {uses: owner/action@' + 'a' * 40 + '} # v1\n')
+                self.assertEqual(pins.check(root), [])
+
     def test_legacy_digest_alone_cannot_authorize_reuse(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)

@@ -116,7 +116,12 @@ class WatchdogProcessTests(unittest.TestCase):
 import json, os, sys, time
 scenario = json.loads(os.environ['FAKE_SWIFT_SCENARIO'])
 alone = os.environ.get('PORPOISE_TESTS_ALONE') == '1'
-if sys.argv[1] == 'build': sys.exit(0)
+with open(os.environ['FAKE_SWIFT_CALLS'], 'a') as log:
+    log.write(json.dumps(dict(arguments=sys.argv[1:], alone=alone)) + '\\n')
+if '--help-hidden' in sys.argv:
+    print('--experimental-maximum-parallelization-width' if scenario.get('supports_width', True) else '--num-workers')
+    sys.exit(scenario.get('help_status', 0))
+if sys.argv[1] == 'build': sys.exit(scenario.get('build_status', 0))
 if 'list' in sys.argv:
     discovery = scenario.get('discovery', 'AppTests.Buttons/click()')
     print(discovery.replace('Buttons', 'BusyPoolTests') if alone else discovery)
@@ -131,12 +136,98 @@ sys.exit(scenario.get('status', 0))
         pgrep.write_text('#!/bin/sh\nexit 1\n')
         pgrep.chmod(0o755)
 
-    def watchdog(self, scenario, arguments=('--filter', 'Buttons'), timeout='10'):
+    def watchdog(self, scenario, arguments=('--filter', 'Buttons'), timeout='10', environment=None):
+        self.calls = self.root / 'swift-calls.jsonl'
+        self.calls.unlink(missing_ok=True)
         env = dict(os.environ, PATH=str(self.bin) + os.pathsep + os.environ['PATH'],
-                   FAKE_SWIFT_SCENARIO=json.dumps(scenario), TEST_TIMEOUT=timeout)
+                   FAKE_SWIFT_SCENARIO=json.dumps(scenario), FAKE_SWIFT_CALLS=str(self.calls), TEST_TIMEOUT=timeout)
         env.pop('PORPOISE_DENY_KEYCHAIN_DYLIB', None)
+        env.pop('PORPOISE_TEST_PARALLELISM', None)
+        env.pop('PORPOISE_BUILD_JOBS', None)
+        env.update(environment or {})
         return subprocess.run(['bash', str(self.root / 'test-with-watchdog.sh'), *arguments],
                               cwd=self.root, env=env, capture_output=True, text=True, timeout=20)
+
+    def swift_calls(self):
+        return [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+
+    def execution_calls(self):
+        return [call for call in self.swift_calls()
+                if call['arguments'][0] == 'test' and 'list' not in call['arguments'] and '--help-hidden' not in call['arguments']]
+
+    def test_build_matches_coverage_configuration_and_compiler_flags_then_runs_skip_build(self):
+        arguments = ('--enable-code-coverage', '-c', 'release', '-Xswiftc', '-DCAUSAL_TEST', '--filter', 'Buttons', '--skip', 'Unused')
+        result = self.watchdog({'output': run_output('Buttons', 1)}, arguments=arguments)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        builds = [call['arguments'] for call in self.swift_calls() if call['arguments'][0] == 'build']
+        self.assertEqual(builds, [['build', '--build-tests', '--enable-code-coverage', '-c', 'release', '-Xswiftc', '-DCAUSAL_TEST', '-j', '4']])
+        execution = self.execution_calls()
+        self.assertEqual(len(execution), 1)
+        self.assertEqual(execution[0]['arguments'], ['test', *arguments, '--experimental-maximum-parallelization-width', '6', '--skip-build'])
+        discovery = [call['arguments'] for call in self.swift_calls() if 'list' in call['arguments']]
+        self.assertEqual(discovery, [['test', *arguments, 'list', '--skip-build']])
+
+    def test_override_and_xctest_workers_are_passed_to_the_correct_runner(self):
+        arguments = ('--filter=Buttons', '--parallel', '--num-workers', '2', '-j', '3')
+        result = self.watchdog({'output': run_output('Buttons', 1)}, arguments=arguments,
+                               environment={'PORPOISE_TEST_PARALLELISM': '5'})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        execution = self.execution_calls()[0]['arguments']
+        self.assertEqual(execution, ['test', *arguments, '--experimental-maximum-parallelization-width', '5', '--skip-build'])
+        build = next(call['arguments'] for call in self.swift_calls() if call['arguments'][0] == 'build')
+        self.assertEqual(build, ['build', '--build-tests', '-j', '3'])
+
+    def test_an_explicit_width_is_preserved_without_a_duplicate_default(self):
+        arguments = ('--filter', 'Buttons', '--experimental-maximum-parallelization-width', '2')
+        result = self.watchdog({'output': run_output('Buttons', 1)}, arguments=arguments)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.execution_calls()[0]['arguments'], ['test', *arguments, '--skip-build'])
+
+    def test_empty_or_invalid_explicit_width_does_not_fall_back_to_a_default(self):
+        for value in ['', '0', '-2', 'NaN']:
+            with self.subTest(value=value):
+                result = self.watchdog({'output': run_output('Buttons', 1)},
+                                       arguments=('--filter', 'Buttons', '--experimental-maximum-parallelization-width', value))
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('must be a positive integer', result.stderr)
+                self.assertEqual(self.swift_calls(), [])
+
+    def test_old_toolchain_uses_an_explicit_serial_fallback(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'supports_width': False})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('explicit serial execution', result.stdout)
+        self.assertEqual(self.execution_calls()[0]['arguments'], ['test', '--filter', 'Buttons', '--no-parallel', '--skip-build'])
+
+    def test_failed_capability_probe_does_not_guess_width_support(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'help_status': 1})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('--no-parallel', self.execution_calls()[0]['arguments'])
+
+    def test_legacy_serial_fallback_does_not_silently_drop_xctest_worker_options(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'supports_width': False},
+                               arguments=('--filter', 'Buttons', '--parallel', '--num-workers', '2'))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('incompatible with --num-workers', result.stderr)
+        self.assertEqual(self.execution_calls(), [])
+
+    def test_invalid_parallelism_fails_before_building_or_discovering_tests(self):
+        for value in ['', '0', '-1', '1.5', 'nan', '6 jobs', '999999999999999999999999']:
+            with self.subTest(value=value):
+                result = self.watchdog({'output': run_output('Buttons', 1)}, environment={'PORPOISE_TEST_PARALLELISM': value})
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('must be a positive integer', result.stderr)
+                self.assertEqual(self.swift_calls(), [])
+
+    def test_unknown_build_configuration_option_is_not_silently_ignored(self):
+        result = self.watchdog({'output': run_output('Buttons', 1)}, arguments=('--disable-testable-imports', '--filter', 'Buttons'))
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('cannot guarantee an identical prebuild', result.stderr)
+        self.assertEqual(self.swift_calls(), [])
+
+    def test_failed_prebuild_never_starts_a_skip_build_test(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'build_status': 9})
+        self.assertEqual(result.returncode, 9, result.stdout + result.stderr)
+        self.assertEqual(self.execution_calls(), [])
 
     def test_successful_early_exit_fails(self):
         result = self.watchdog({'output': '◇ Test run started.\n◇ Suite Buttons started.\n'})
@@ -153,6 +244,10 @@ sys.exit(scenario.get('status', 0))
         result = self.watchdog({'output': run_output('Buttons', 1)}, arguments=())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count('Test completion verified:'), 2)
+        execution = self.execution_calls()
+        self.assertEqual([call['alone'] for call in execution], [True, False])
+        self.assertTrue(all('--skip-build' in call['arguments'] for call in execution))
+        self.assertTrue(all(call['arguments'][-3:] == ['--experimental-maximum-parallelization-width', '6', '--skip-build'] for call in execution))
 
     def test_discovery_failure_is_not_a_green_run(self):
         result = self.watchdog({'output': run_output('Buttons', 1), 'discovery_status': 2})

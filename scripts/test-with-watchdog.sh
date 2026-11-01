@@ -9,12 +9,71 @@ set -uo pipefail
 # A test that traps takes the whole process down with its buffered output: afterwards, where it trapped is printed
 # from macOS's crash report.
 limit=${TEST_TIMEOUT:-900}
-build=(--build-tests -j "${PORPOISE_BUILD_JOBS:-4}")  # capped: many builds share this Mac
+parallelism=${PORPOISE_TEST_PARALLELISM-6}
+positive_integer() {
+    python3 - "$1" <<'PY'
+import re, sys
+value = sys.argv[1]
+sys.exit(0 if re.fullmatch(r'[1-9][0-9]*', value) and int(value) <= sys.maxsize else 1)
+PY
+}
+if ! positive_integer "$parallelism"; then
+    echo '::error::PORPOISE_TEST_PARALLELISM must be a positive integer supported by this host.' >&2
+    exit 2
+fi
+build=(--build-tests)
 alone=1
-for a in "$@"; do
-    [ "$a" = --enable-code-coverage ] && build+=("$a")  # the same build swift test then reuses
-    case "$a" in --filter | --filter=* | --skip | --skip=*) alone=0 ;; esac
+has_jobs=0
+has_xctest_workers=0
+explicit_width=''
+has_explicit_width=0
+arguments=("$@")
+# Build once with the same instrumentation/configuration/compiler options as the run. SwiftPM's `test list`
+# builds with coverage disabled on older supported toolchains, so it cannot replace this explicit build.
+for ((i=0; i<${#arguments[@]}; i++)); do
+    a=${arguments[i]}
+    case "$a" in
+    --filter | --filter=* | --skip | --skip=* | --specifier | --specifier=* | -s) alone=0 ;;
+    esac
+    case "$a" in
+    -j | --jobs | --jobs=* | -j[0-9]*) has_jobs=1 ;;
+    esac
+    case "$a" in --num-workers | --num-workers=*) has_xctest_workers=1 ;; esac
+    case "$a" in
+    --experimental-maximum-parallelization-width) has_explicit_width=1; explicit_width=${arguments[i+1]:-} ;;
+    --experimental-maximum-parallelization-width=*) has_explicit_width=1; explicit_width=${a#*=} ;;
+    esac
+    case "$a" in
+    --filter | --skip | --specifier | -s | --num-workers | --maximum-repetitions | --repeat-until | --xunit-output | --attachments-path | --configuration-path | --event-stream-output-path | --event-stream-version | --experimental-maximum-parallelization-width)
+        ((i+=1))
+        if ((i>=${#arguments[@]})); then echo "::error::Missing value for $a" >&2; exit 2; fi ;;
+    --filter=* | --skip=* | --specifier=* | --num-workers=* | --maximum-repetitions=* | --repeat-until=* | --xunit-output=* | --attachments-path=* | --configuration-path=* | --event-stream-output-path=* | --event-stream-version=* | --experimental-maximum-parallelization-width=* | --parallel | --no-parallel | --skip-build | --enable-xctest | --disable-xctest | --enable-swift-testing | --disable-swift-testing | --skip-performance-tests) ;;
+    -c | --configuration | -j | --jobs | --scratch-path | --package-path | --cache-path | --toolchain | --sdk | --triple | --arch | --sanitize | -Xswiftc | -Xcc | -Xcxx | -Xlinker)
+        build+=("$a")
+        ((i+=1))
+        if ((i>=${#arguments[@]})); then echo "::error::Missing value for $a" >&2; exit 2; fi
+        build+=("${arguments[i]}") ;;
+    --configuration=* | --jobs=* | -j[0-9]* | --scratch-path=* | --package-path=* | --cache-path=* | --toolchain=* | --sdk=* | --triple=* | --arch=* | --sanitize=* | -Xswiftc=* | -Xcc=* | -Xcxx=* | -Xlinker=* | --enable-code-coverage | --disable-code-coverage | --enable-index-store | --disable-index-store | --auto-index-store | --disable-sandbox | --skip-update | --skip-dependency-update | --disable-automatic-resolution | --force-resolved-versions | --only-use-versions-from-resolved-file | --verbose | -v | --quiet | -q)
+        build+=("$a") ;;
+    *) echo "::error::Unsupported watchdog option $a: cannot guarantee an identical prebuild. Use swift test directly for this option." >&2; exit 2 ;;
+    esac
 done
+if ((has_jobs==0)); then build+=(-j "${PORPOISE_BUILD_JOBS:-4}"); fi  # capped: many builds share this Mac
+if ((has_explicit_width)) && ! positive_integer "$explicit_width"; then
+    echo '::error::Test parallelization width must be a positive integer.' >&2; exit 2
+fi
+parallel_options=()
+if help=$(swift test --help-hidden 2>/dev/null) && [[ "$help" == *--experimental-maximum-parallelization-width* ]]; then
+    if ((has_explicit_width==0)); then
+        parallel_options=(--experimental-maximum-parallelization-width "$parallelism")
+    fi
+    echo "Swift Testing maximum parallelization width: ${explicit_width:-$parallelism} (an explicit --no-parallel still takes precedence)."
+else
+    if ((has_explicit_width)); then echo '::error::This Swift toolchain does not support an explicit maximum parallelization width.' >&2; exit 2; fi
+    if ((has_xctest_workers)); then echo '::error::Serial fallback is incompatible with --num-workers; remove that XCTest-only option on this toolchain.' >&2; exit 2; fi
+    parallel_options=(--no-parallel)
+    echo 'Swift Testing maximum-width option is unavailable; using explicit serial execution.'
+fi
 swift build "${build[@]}" || exit $?
 run_artifacts=$(mktemp -d)
 trap 'rm -rf "$run_artifacts"' EXIT
@@ -62,7 +121,7 @@ watched() {
     mkfifo "$fifo" || return 1
     tee "$output" < "$fifo" &
     tee_pid=$!
-    "${test_command[@]}" test "$@" > "$fifo" 2>&1 &
+    "${test_command[@]}" test "$@" ${parallel_options[@]+"${parallel_options[@]}"} --skip-build > "$fifo" 2>&1 &
     pid=$!
     wait_for_process "$pid" 'swift test'
     status=$?

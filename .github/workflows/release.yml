@@ -81,7 +81,8 @@ jobs:
           if [ "$DRY_RUN" != true ] && git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then git checkout -q "v$V"; fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
-      # A changelog/docs-only descendant may reuse successful main-push CI for the identical app tree.
+      # Reuse successful main-push CI or attested CI from an approved, merged PR with unchanged trusted controls.
+      # Every build/test/security input must match; only unshipped documentation may differ.
       # No proof, failed API lookup or changed build/test/security input means all checks run here.
       - name: Find trusted CI proof
         id: ci
