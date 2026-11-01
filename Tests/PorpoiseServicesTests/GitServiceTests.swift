@@ -143,7 +143,7 @@ import Testing
         try #require(await eventually(10) { state.value?.snapshot.files["deep/child/file"] == .modified })
         #expect(state.value?.snapshot.status(for: "deep", directory: true) == .changedFolder)
         try #require(await eventually { second.value?.snapshot.files["deep/child/file"] == .modified })
-        try await Task.detached { try f.git(["symbolic-ref", "HEAD", "refs/heads/other"]) }.value
+        _ = try await Task.detached { try f.git(["symbolic-ref", "HEAD", "refs/heads/other"]) }.value
         try #require(await eventually(10) { state.value?.snapshot.branch == "other" })
         token.cancel()
         let deliveries = state.deliveries

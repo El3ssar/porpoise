@@ -117,7 +117,7 @@ enum TransitionKind: String {
     /// away fade out, new ones grow in. `cascade`: new ones come in one after another (search results). `pictures`:
     /// false when the change only adds items (nothing to fade out), which is quicker to start.
     func change(
-        _ kind: TransitionKind, duration: TimeInterval = ItemListView.transitionDuration,
+        _ kind: TransitionKind, duration: TimeInterval = Motion.glide,
         curve: @escaping (Double) -> Double = Animator.easeOutCubic, cascade: Bool = false, pictures: Bool = true, _ apply: () -> Void
     ) {
         let start = flying || arrival != nil ? nil : list.snapshotForTransition(pictures: pictures)

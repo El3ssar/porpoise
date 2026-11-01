@@ -3,7 +3,11 @@ import Foundation
 import PorpoiseCore
 
 /// Owns its stream for exactly the stream lifetime.
-final class IndexEvents {
+protocol IndexEventWatching: AnyObject {
+    var available: Bool { get }
+}
+
+final class IndexEvents: IndexEventWatching {
     static var currentEventID: UInt64 { FSEventsGetCurrentEventId() }
     static let exclusionLimit = 8
     private var stream: FSEventStreamRef?

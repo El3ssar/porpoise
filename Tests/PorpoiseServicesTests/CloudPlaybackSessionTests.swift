@@ -78,7 +78,7 @@ import Testing
     @Test func releasingTheSessionStopsItsOwnedStream() async throws {
         let stream = Stream()
         var session: CloudPlaybackSession? = CloudPlaybackSession()
-        weak var owner = session
+        weak let owner = session
         session?.start { CloudPlayback(url: stream.url, stream: stream) }
         await expectEventually { owner?.player != nil }
         session = nil

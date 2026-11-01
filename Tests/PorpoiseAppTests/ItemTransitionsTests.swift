@@ -11,14 +11,10 @@ import Testing
 /// listing does meanwhile, and nothing animates twice.
 @Suite(.serialized, .isolatedSettings) @MainActor struct ItemTransitionsTests {
     private func settle(_ seconds: Double) async throws {
-        let end = Date().addingTimeInterval(seconds)
-        while Date() < end {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await Task.sleep(for: .seconds(seconds))
     }
 
-    /// Runs the main run loop (the panes list and animate there) until `condition` holds, for as long as a slow
+    /// Yields the main actor (the panes list and animate there) until `condition` holds, for as long as a slow
     /// runner needs (`eventualTimeout` by the clock, not a number of turns). True when it came true.
     @discardableResult private func settle(until condition: () -> Bool) async throws -> Bool {
         let end = Date().addingTimeInterval(eventualTimeout)

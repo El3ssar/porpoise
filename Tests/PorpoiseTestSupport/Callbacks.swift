@@ -36,7 +36,7 @@ public func awaitCallback<T>(
     sourceLocation: SourceLocation = #_sourceLocation, _ start: (Callback<T>) throws -> Void
 ) async throws -> T {
     do {
-        return try await withCheckedThrowingContinuation(isolation: isolation) { (c: CheckedContinuation<T, Error>) in
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<T, Error>) in
             let callback = Callback<T> { c.resume(with: $0) }
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { callback.finish(.failure(CallbackTimedOut())) }
             do { try start(callback) } catch { callback.resume(throwing: error) }

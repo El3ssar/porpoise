@@ -301,9 +301,11 @@ import SwiftTerm
     /// Exercises a remote provider end to end: "rtest <folder-url>|<report-file>".
     func remoteTest(_ arg: String) {
         let parts = arg.components(separatedBy: "|")
-        guard parts.count == 2, let base = URL(string: parts[0]), let p = RemoteFS.provider(for: base) else { return }
+        guard parts.count == 2, let base = URL(string: parts[0]) else { return }
         let report = parts[1]
         DispatchQueue.global().async {
+            // Resolve and use the synchronous provider on this worker; no provider instance crosses the callback boundary.
+            guard let p = RemoteFS.provider(for: base) else { return }
             var log: [String] = []
             func step(_ name: String, _ f: () throws -> String) {
                 do { log.append("OK   \(name): \(try f())") } catch { log.append("FAIL \(name): \(error.localizedDescription)") }

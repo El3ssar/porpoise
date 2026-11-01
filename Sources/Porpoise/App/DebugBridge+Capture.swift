@@ -33,8 +33,10 @@ extension DebugBridge {
     /// A second distributed notification waits until menu tracking ends; a common-mode timer does not.
     func filediffmenucaptureCommand(_ arg: String) {
         let timer = Timer(timeInterval: 0.3, repeats: false) { [weak self] _ in
-            self?.fileDiffMenuSnapshot(to: arg)
-            FileDiffWindow.current?.endToolMenu()
+            MainActor.assumeIsolated {
+                self?.fileDiffMenuSnapshot(to: arg)
+                FileDiffWindow.current?.endToolMenu()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         FileDiffWindow.current?.debug("openwith")
@@ -324,19 +326,21 @@ extension DebugBridge {
             var times: [Double] = [], k = 0, start = 0.0, inFolder = false
             view.setURL(parent)
             let t = Timer(timeInterval: 0.001, repeats: true) { t in
-                guard !view.model.isLoading, !view.model.rows.isEmpty else { return }
-                if inFolder {
-                    win.displayIfNeeded()
-                    CATransaction.flush()
-                    times.append(CACurrentMediaTime() - start)
-                    k += 1
-                    inFolder = false
-                    view.setURL(parent)
-                    if k >= runs { t.invalidate(); report(times, extra: " mode=\(view.model.props.mode.rawValue) rows=\(view.model.rows.count)") }
-                } else {
-                    inFolder = true
-                    start = CACurrentMediaTime()
-                    view.setURL(folder)
+                MainActor.assumeIsolated {
+                    guard !view.model.isLoading, !view.model.rows.isEmpty else { return }
+                    if inFolder {
+                        win.displayIfNeeded()
+                        CATransaction.flush()
+                        times.append(CACurrentMediaTime() - start)
+                        k += 1
+                        inFolder = false
+                        view.setURL(parent)
+                        if k >= runs { t.invalidate(); report(times, extra: " mode=\(view.model.props.mode.rawValue) rows=\(view.model.rows.count)") }
+                    } else {
+                        inFolder = true
+                        start = CACurrentMediaTime()
+                        view.setURL(folder)
+                    }
                 }
             }
             RunLoop.main.add(t, forMode: .common)
@@ -384,13 +388,15 @@ extension DebugBridge {
             let end = last + 0.8
             list.animateZoom(to: CGFloat(n[0]))
             let t = Timer(timeInterval: 0.002, repeats: true) { t in
-                let now = CACurrentMediaTime()
-                gaps.append(now - last)
-                last = now
-                if list.iconSize != sizes.last { sizes.append(list.iconSize) }
-                if now > end {
-                    t.invalidate()
-                    report(gaps.filter { $0 > 0.004 }, extra: " frames=\(sizes.count - 1) sizes=\(sizes.map { Int($0) })")
+                MainActor.assumeIsolated {
+                    let now = CACurrentMediaTime()
+                    gaps.append(now - last)
+                    last = now
+                    if list.iconSize != sizes.last { sizes.append(list.iconSize) }
+                    if now > end {
+                        t.invalidate()
+                        report(gaps.filter { $0 > 0.004 }, extra: " frames=\(sizes.count - 1) sizes=\(sizes.map { Int($0) })")
+                    }
                 }
             }
             RunLoop.main.add(t, forMode: .common)

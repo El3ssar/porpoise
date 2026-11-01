@@ -107,7 +107,7 @@ extension ItemListView {
                 drawIncomingBar(incoming, in: CGRect(x: name.minX, y: name.maxY + 2, width: min(48, name.width), height: 4))
             }
         }
-        let (image, imageRect) = drawIcon(i)
+        let (_, imageRect) = drawIcon(i)
         // The list modes draw the badge after the name (drawNameWithTags); Icons on the icon's corner.
         let badge = cloudBadge(item, state: cloud)
         cloudRects[i] = nil

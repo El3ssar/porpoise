@@ -379,7 +379,7 @@ import Testing
         let list = ItemListView(model: model)
         let element = ItemAccessibilityElement(list: list, index: 0)
         let value = try #require(element.accessibilityValue() as? String)
-        #expect(value.contains(try #require(CloudState.cloudOnly.help)), "\(value)")
+        #expect(value.contains(CloudState.cloudOnly.help), "\(value)")
         var downloaded: [URL] = []
         ItemListView.downloadForTesting = { downloaded.append($0.url) }
         let action = try #require(element.accessibilityCustomActions()?.first)

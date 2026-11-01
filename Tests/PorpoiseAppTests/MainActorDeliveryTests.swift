@@ -4,7 +4,7 @@ import Testing
 @testable import Porpoise
 
 @MainActor @Suite struct MainActorDeliveryTests {
-    private final class State {
+    @MainActor private final class State {
         var values: [Int] = []
     }
 

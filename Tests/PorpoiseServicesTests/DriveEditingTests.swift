@@ -60,7 +60,7 @@ import Testing
         editing.post = { posts.append(($0, $1)) }
         #expect(editing.canEdit(item))
         var result: Bool?
-        editing.open(item) { result = $0 }
+        editing.open(item, done: { result = $0 })
         await expectEventually { result != nil }
         #expect(result == true && opened.count == 1)
         let entry = try #require(editing.entry(for: item.url))
