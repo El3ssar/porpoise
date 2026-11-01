@@ -1,5 +1,6 @@
 import Foundation
 import PorpoiseCore
+import PorpoiseFileSystem
 
 /// Network: the servers found nearby so far (the browser keeps looking).
 final class NetworkSource: LocationContentSource {
@@ -23,10 +24,15 @@ final class AppLibrarySource: LocationContentSource {
     var traits: LocationTraits { LocationTraits(watch: .appLibrary, prunesSelection: true) }
 
     func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+        let cancellation = DiskCancellation()
         DispatchQueue.global(qos: .userInitiated).async {
-            let apps = AppLibrary.listAll()
-            DispatchQueue.main.async { deliver(LocationListing(items: apps)) }
+            let apps = AppLibrary.listAll(cancelled: { cancellation.isCancelled })
+            let urls = apps.map(\.url), keys = FilePath.keys(apps.map(\.url), cancelled: { cancellation.isCancelled })
+            DispatchQueue.main.async {
+                guard !cancellation.isCancelled else { return }
+                deliver(LocationListing(items: apps, entryKeys: Dictionary(zip(urls, keys), uniquingKeysWith: { first, _ in first })))
+            }
         }
-        return LocationLoad()
+        return LocationLoad { cancellation.cancel() }
     }
 }

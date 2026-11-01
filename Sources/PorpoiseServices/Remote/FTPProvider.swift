@@ -221,6 +221,8 @@ final class FTPProvider: RemoteProvider {
         }
     }
 
+    func createFolder(_ remote: URL) throws { try makeFolder(remote) }
+
     func makeFolder(_ remote: URL) throws { try command("MKD \(try rel(remote))") }
 
     func removeEmptyFolder(_ remote: URL) throws { try command("RMD \(try rel(remote))") }

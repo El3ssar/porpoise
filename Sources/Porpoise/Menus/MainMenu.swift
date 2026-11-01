@@ -192,6 +192,7 @@ extension AppDelegate {
         view.addItem(mi("Reset Zoom Level", #selector(W.zoomReset(_:)), "0", icon: "zoom-original"))
         view.addItem(mi("Reload", #selector(W.reloadView(_:)), K.f(5), [], icon: "view-refresh"))
         view.addItem(sep())
+        view.addItem(mi("Show App Library", #selector(W.showApplicationLibrary(_:)), icon: "view-list-icons"))
         view.addItem(mi("Adjust View Display Style…", #selector(W.adjustViewStyle(_:)), "j", icon: "configure"))
         view.addItem(mi("Restore to Defaults", #selector(W.restoreViewDefaults(_:)), icon: "edit-undo"))
         view.addItem(mi("Customize Toolbar…", #selector(customizeToolbar(_:)), icon: "configure"))

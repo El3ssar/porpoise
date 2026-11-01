@@ -11,7 +11,7 @@ enum KeyboardAccess {
 /// Flat Breeze-style tool button (icon, optional text), with hover and pressed backgrounds.
 class FlatButton: NSControl {
     var iconName: String? { didSet { needsDisplay = true } }
-    var title: String = "" { didSet { invalidateIntrinsicContentSize(); needsDisplay = true } }
+    var title: String = "" { didSet { invalidateIntrinsicContentSize(); needsDisplay = true; if !title.isEmpty { setAccessibilityLabel(title) } } }
     /// Off: icon only (the title stays the accessibility label), for bars short of room.
     var showsTitle = true { didSet { if showsTitle != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     private var shownTitle: String { showsTitle || iconName == nil ? title : "" }
@@ -66,6 +66,7 @@ class FlatButton: NSControl {
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill() }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 125, menuProvider != nil { _ = accessibilityPerformShowMenu(); return }
         switch event.charactersIgnoringModifiers {
         case " ", "\r": perform()
         default: super.keyDown(with: event)
@@ -87,6 +88,7 @@ class FlatButton: NSControl {
     /// Every way of pressing it (mouse, Space or Return, VoiceOver) does nothing while it's disabled.
     private func perform() {
         guard isEnabled else { return }
+        if onClick == nil, action == nil, let menu = menuProvider?() { popUpMenu(menu); return }
         onClick?()
         if let a = action { NSApp.sendAction(a, to: target, from: self) }
     }

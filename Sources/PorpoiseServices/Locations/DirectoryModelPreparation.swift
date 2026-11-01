@@ -119,7 +119,7 @@ struct DirectoryModelPreparation {
         let rows = assembly.rows, groups = assembly.groups
         guard !cancelled() else { return nil }
         let urls = rows.map(\.item.url)
-        let keys = FilePath.keys(urls)
+        let keys = FilePath.keys(urls, cancelled: cancelled)
         guard !cancelled() else { return nil }
         return Result(
             top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: Dictionary(zip(urls, keys), uniquingKeysWith: { a, _ in a }),

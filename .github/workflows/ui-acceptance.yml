@@ -4,12 +4,11 @@ name: UI acceptance
 # recording gives none, which is noted, not failed). Keyboard and VoiceOver checks need a person and aren't run here.
 on:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: '17 4 * * 1'   # Mondays
-  pull_request:
-    paths: ['Tests/UI/**', '.github/workflows/ui-acceptance.yml']
 concurrency:
-  group: ui-acceptance-${{ github.ref }}
+  group: ui-acceptance-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -57,6 +56,8 @@ jobs:
       - name: Build the test app
         run: CONFIG=debug scripts/make-app.sh
       - name: Acceptance run (light and dark)
+        env:
+          PORPOISE_ALLOW_FOCUS: '1' # Own CI desktop: collect actual active-window appearance, not background thumbnails.
         run: python3 -I Tests/UI/acceptance.py --out build/ui-acceptance/run
       - name: Summary
         if: always()

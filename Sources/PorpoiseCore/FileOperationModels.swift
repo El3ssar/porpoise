@@ -129,10 +129,13 @@ public struct RemoteChange: Sendable, Equatable {
     }
     public var kind: Kind
     public var label: String
+    /// Small generated templates, retained so Redo restores the original artifact.
+    public var initialContents: Data?
 
-    public init(_ kind: Kind, label: String) {
+    public init(_ kind: Kind, label: String, initialContents: Data? = nil) {
         self.kind = kind
         self.label = label
+        self.initialContents = initialContents
     }
 
     public var urls: [URL] {
@@ -146,8 +149,8 @@ public struct RemoteChange: Sendable, Equatable {
     public var inverse: RemoteChange {
         switch kind {
         case .renamed(let from, let to): return RemoteChange(.renamed(from: to, to: from), label: label)
-        case .created(let url, let folder): return RemoteChange(.removed(url, folder: folder), label: label)
-        case .removed(let url, let folder): return RemoteChange(.created(url, folder: folder), label: label)
+        case .created(let url, let folder): return RemoteChange(.removed(url, folder: folder), label: label, initialContents: initialContents)
+        case .removed(let url, let folder): return RemoteChange(.created(url, folder: folder), label: label, initialContents: initialContents)
         }
     }
 }

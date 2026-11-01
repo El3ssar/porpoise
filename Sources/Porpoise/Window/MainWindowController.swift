@@ -144,7 +144,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         placesScroll.drawsBackground = false
         placesScroll.hasVerticalScroller = true
         placesScroll.autohidesScrollers = true
-        placesScroll.scrollerStyle = .overlay
         places.setFrameSize(NSSize(width: 160, height: places.frame.height))  // height: the panel sizes itself to its rows
         places.autoresizingMask = [.width]
         places.delegate = self
@@ -368,7 +367,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
         toolbar.up.isEnabled = v.canGoUp
         toolbar.viewMode.isEnabled = !v.showsAirDrop
         toolbar.search.isEnabled = !v.showsAirDrop
-        toolbar.viewMode.iconName = v.model.props.mode.iconName
+        toolbar.viewMode.iconName = v.showsApps ? ViewMode.icons.iconName : v.model.props.mode.iconName
+        toolbar.viewMode.toolTip = v.showsApps ? "App Library — Choose a File View" : "Change View Mode"
+        toolbar.viewMode.setAccessibilityLabel(v.showsApps ? "App Library, choose a file view" : "Change View Mode")
         toolbar.linkFolders.isToggled = t.linkedRoots != nil
         toolbar.linkFolders.iconName = t.missingCounterpart == nil ? "insert-link" : "edit-unlink"
         for (index, navigator) in t.navigators.enumerated() {

@@ -5,6 +5,7 @@ import PorpoiseServices
 /// KMessageWidget: an inline error/information message with an optional action button.
 final class MessageBar: NSView {
     private let label = NSTextField(wrappingLabelWithString: "")
+    private let textScroll = NSScrollView()
     private let close = FlatButton(icon: "dialog-close", tooltip: "Close")
     private let actionButton = NSButton(title: "", target: nil, action: nil)
     private var actionHandler: (() -> Void)?
@@ -26,7 +27,12 @@ final class MessageBar: NSView {
         actionButton.target = self
         actionButton.action = #selector(runAction)
         actionButton.isHidden = true
-        addSubview(label)
+        label.isSelectable = true
+        textScroll.drawsBackground = false
+        textScroll.hasVerticalScroller = true
+        textScroll.autohidesScrollers = true
+        textScroll.documentView = label
+        addSubview(textScroll)
         addSubview(actionButton)
         addSubview(close)
     }
@@ -66,12 +72,32 @@ final class MessageBar: NSView {
     var actionFrame: CGRect? { isHidden || actionButton.isHidden ? nil : actionButton.frame }
     var text: String { label.stringValue }
 
+    private func textHeight(for width: CGFloat) -> CGFloat {
+        let text = NSAttributedString(string: label.stringValue, attributes: [.font: label.font ?? Theme.font])
+        return max(
+            24,
+            ceil(
+                text.boundingRect(
+                    with: CGSize(width: max(24, width - 92), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading]
+                ).height))
+    }
+
+    /// Long explanations scroll within a bounded region; the recovery action never consumes their width.
+    func preferredHeight(for width: CGFloat) -> CGFloat {
+        12 + min(96, textHeight(for: width)) + (actionButton.isHidden ? 0 : 30)
+    }
+
     override func layout() {
         super.layout()
-        let aw = actionButton.isHidden ? 0 : actionButton.frame.width + 10
-        actionButton.frame.origin = CGPoint(x: bounds.width - 40 - aw, y: (bounds.height - actionButton.frame.height) / 2)
-        label.frame = CGRect(x: 34, y: 6, width: bounds.width - 76 - aw, height: bounds.height - 12)
-        close.frame = CGRect(x: bounds.width - 34, y: (bounds.height - 26) / 2, width: 26, height: 26)
+        let actionHeight: CGFloat = actionButton.isHidden ? 0 : 30
+        let textWidth = max(24, bounds.width - 76)
+        textScroll.frame = CGRect(x: 34, y: 6 + actionHeight, width: textWidth, height: max(24, bounds.height - 12 - actionHeight))
+        label.preferredMaxLayoutWidth = max(24, textScroll.contentSize.width)
+        label.frame = CGRect(x: 0, y: 0, width: max(24, textScroll.contentSize.width), height: textHeight(for: bounds.width))
+        actionButton.frame = CGRect(x: 34, y: 6, width: min(actionButton.intrinsicContentSize.width, max(24, bounds.width - 76)), height: 24)
+        actionButton.cell?.lineBreakMode = .byTruncatingTail
+        actionButton.toolTip = actionButton.title
+        close.frame = CGRect(x: max(0, bounds.width - 34), y: bounds.height - 32, width: 26, height: 26)
     }
 
     override func draw(_ dirty: NSRect) {

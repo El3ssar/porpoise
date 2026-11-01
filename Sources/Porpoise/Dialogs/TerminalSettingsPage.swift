@@ -40,21 +40,23 @@ enum TerminalSettingsPage {
                 }
             }
         }
-        f.colorGrid(
-            (0..<16).map { "ANSI \($0)" },
-            values: { index in
-                let c = s.appearancePreferences.theme(dark: Theme.isDark).terminalPalette[index]
-                return NSColor(rgb: c.red, c.green, c.blue)
-            },
-            set: { index, color in
-                guard let c = color.usingColorSpace(.sRGB) else { return }
-                s.updateAppearance { p in
-                    var theme = Theme.palette(dark: Theme.isDark)
-                    theme.terminalPalette[index] = ThemeColor(
-                        Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
-                    theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
-                }
-            })
+        f.disclosure("ANSI Colors") {
+            f.colorGrid(
+                (0..<16).map { "ANSI \($0)" },
+                values: { index in
+                    let c = s.appearancePreferences.theme(dark: Theme.isDark).terminalPalette[index]
+                    return NSColor(rgb: c.red, c.green, c.blue)
+                },
+                set: { index, color in
+                    guard let c = color.usingColorSpace(.sRGB) else { return }
+                    s.updateAppearance { p in
+                        var theme = Theme.palette(dark: Theme.isDark)
+                        theme.terminalPalette[index] = ThemeColor(
+                            Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+                        theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
+                    }
+                })
+        }
         let cursors = ["block", "bar", "underline"]
         f.popup("Cursor:", cursors.map { $0.capitalized }, cursors.firstIndex(of: s.appearancePreferences.cursor) ?? 0) { i in
             s.updateAppearance { $0.cursor = cursors[i] }

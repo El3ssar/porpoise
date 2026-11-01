@@ -19,10 +19,12 @@ final class ThumbnailWorkScheduler {
         case cloud
         /// A server's file copied here, one at a time: a folder of photos must not open dozens of connections.
         case server
+        /// Discovering files for visible folder collages; isolated from Quick Look and remote downloads.
+        case folder
     }
 
     struct Limits {
-        var active: [Lane: Int] = [.preview: 8, .video: 2, .cloud: 4, .server: 1]
+        var active: [Lane: Int] = [.preview: 8, .video: 2, .cloud: 4, .server: 1, .folder: 2]
         /// Enough for a screen of tiny icons that are all folder previews (eight files each); bookkeeping only.
         var pending = 1024
     }
@@ -139,6 +141,17 @@ final class ThumbnailWorkScheduler {
         if !stale.isEmpty {
             pending.removeAll { !$0.isWanted }
             stale.forEach(drop)
+        }
+        pump()
+    }
+
+    /// Invalidates a feature's jobs when its settings or cache generation changes.
+    func cancel(keysWithPrefix prefix: String) {
+        let stale = pending.filter { $0.key.hasPrefix(prefix) }
+        pending.removeAll { $0.key.hasPrefix(prefix) }
+        stale.forEach(drop)
+        for jobs in running.values {
+            for job in jobs where job.key.hasPrefix(prefix) { job.cancel() }
         }
         pump()
     }

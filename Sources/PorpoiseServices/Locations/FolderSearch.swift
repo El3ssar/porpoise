@@ -195,10 +195,15 @@ final class FolderSearch: @unchecked Sendable {
     }
 
     /// Shared bounded text verification also gives Spotlight results their first matching line.
-    static func lines(in paths: [String], spec: SearchSpec) -> [String: String] {
+    static func lines(
+        in paths: [String], spec: SearchSpec, cancelled: () -> Bool = { false },
+        read: ((String, Int, () -> Bool) -> String?)? = nil
+    ) -> [String: String] {
         var out: [String: String] = [:]
+        let load = read ?? { path, limit, cancelled in IndexFileText.read(path, limit: limit, cancelled: cancelled) }
         for path in paths {
-            guard let value = autoreleasepool(invoking: { IndexFileText.read(path, limit: 5_000_000) }),
+            guard !cancelled() else { break }
+            guard let value = autoreleasepool(invoking: { load(path, 5_000_000, cancelled) }), !cancelled(),
                 let line = value.split(separator: "\n", omittingEmptySubsequences: false).first(where: { spec.contentMatches(String($0)) })
             else { continue }
             out[path] = snippet(String(line), around: spec.text)

@@ -17,6 +17,8 @@ final class InformationPanel: NSView {
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
+    private let contentScroll = NSScrollView()
+    private let content = FlippedView()
     /// Inspector look: same tinted material as the sidebar.
     private let material = TintedMaterialView(material: .sidebar, tint: Theme.panelBackground, alpha: 0.72)
     /// Off where the panel sits inside the file view (Column view's preview column): the view's own background shows.
@@ -29,6 +31,7 @@ final class InformationPanel: NSView {
     private var hoverArea: NSTrackingArea?
 
     private var shownURLs: [URL] = []
+    private var scrollSelection: [URL] = []
     /// The size and date of the one item shown, as listed: a listing that says otherwise (a download growing, an
     /// image edited) shows it again.
     private var shownStamp: (size: Int64, date: Date?)?
@@ -99,12 +102,17 @@ final class InformationPanel: NSView {
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
         controls.isHidden = true
         codePreview.isHidden = true
-        [preview, codePreview, player, controls, nameLabel, grid].forEach(addSubview)
-        addSubview(previewSpinner)
+        contentScroll.drawsBackground = false
+        contentScroll.hasVerticalScroller = true
+        contentScroll.autohidesScrollers = true
+        contentScroll.documentView = content
+        addSubview(contentScroll)
+        [preview, codePreview, player, controls, nameLabel, grid].forEach(content.addSubview)
+        content.addSubview(previewSpinner)
         previewStatus.font = Tokens.font(.caption, weight: .regular)
         previewStatus.textColor = Theme.windowTextInactive
         previewStatus.alignment = .center
-        addSubview(previewStatus)
+        content.addSubview(previewStatus)
         poster.imageScaling = .scaleProportionallyUpOrDown
         poster.wantsLayer = true
         poster.layer?.backgroundColor = NSColor.black.cgColor
@@ -124,8 +132,9 @@ final class InformationPanel: NSView {
     override func layout() {
         super.layout()
         material.frame = bounds
-        let w = bounds.width
-        let side = min(w - 40, Self.maxPreviewSide)
+        contentScroll.frame = bounds
+        let w = contentScroll.contentSize.width
+        let side = max(0, min(w - 40, Self.maxPreviewSide, max(80, bounds.height * 0.38)))
         preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
         codePreview.frame = CGRect(x: 12, y: preview.frame.minY, width: max(0, w - 24), height: preview.frame.height)
         // Decided from the file type (never by loading the media on the main thread).
@@ -133,32 +142,36 @@ final class InformationPanel: NSView {
         previewStatus.frame = CGRect(x: preview.frame.minX, y: preview.frame.maxY - 26, width: preview.frame.width, height: 24)
         player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
         // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
-        controls.frame =
-            playerIsAudio
-            ? player.frame
-            : CGRect(
-                x: player.frame.minX + 8, y: player.frame.maxY - 38,
-                width: player.frame.width - 16, height: 30)
+        if playerIsAudio {
+            controls.frame = player.frame
+        } else if side < 180 {
+            // A short inspector shrinks the picture, not the playback controls into an unusable overlay.
+            controls.frame = CGRect(x: 12, y: preview.frame.maxY + 8, width: max(0, w - 24), height: 30)
+        } else {
+            controls.frame = CGRect(x: player.frame.minX + 8, y: player.frame.maxY - 38, width: player.frame.width - 16, height: 30)
+        }
         updateTrackingAreas()
         updateControls()
-        let ny = (controls.isHidden || !playerIsAudio ? preview.frame.maxY : controls.frame.maxY) + 10
+        let ny = (controls.isHidden ? preview.frame.maxY : max(preview.frame.maxY, controls.frame.maxY)) + 10
         let nh = nameLabel.sizeThatFits(CGSize(width: w - 24, height: 200)).height
         nameLabel.frame = CGRect(x: 12, y: ny, width: w - 24, height: nh)
-        grid.frame = CGRect(x: 12, y: nameLabel.frame.maxY + 12, width: w - 24, height: max(0, bounds.height - nameLabel.frame.maxY - 20))
         // Values wrap to the panel's current width (it can be resized after they were added).
         for case let row as NSStackView in grid.arrangedSubviews {
             if let v = row.arrangedSubviews.last as? NSTextField { v.preferredMaxLayoutWidth = valueWidth }
         }
+        grid.frame = CGRect(x: 12, y: nameLabel.frame.maxY + 16, width: max(0, w - 24), height: grid.fittingSize.height)
+        content.frame = CGRect(x: 0, y: 0, width: w, height: max(bounds.height, grid.frame.maxY + 20))
     }
 
-    private var valueWidth: CGFloat { max(80, bounds.width - 140) }
+    private var valueWidth: CGFloat { max(40, contentScroll.contentSize.width - 140) }
 
     // MARK: Player controls
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let a = hoverArea { removeTrackingArea(a) }
-        let a = NSTrackingArea(rect: player.frame, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self, userInfo: nil)
+        let a = NSTrackingArea(
+            rect: convert(player.frame, from: content), options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self, userInfo: nil)
         addTrackingArea(a)
         hoverArea = a
     }
@@ -166,16 +179,37 @@ final class InformationPanel: NSView {
     override func mouseEntered(with event: NSEvent) { overVideo = true; updateControls() }
     override func mouseExited(with event: NSEvent) { overVideo = false; updateControls() }
 
-    /// Songs always show the bar; videos while the pointer is over them or they're paused.
+    /// Stable playback controls remain available independently of pointer hover.
     private func updateControls() {
         let active = player.player != nil
-        let show = active && (playerIsAudio || overVideo || !controls.isPlaying)
+        // Stable controls remain reachable for keyboard and VoiceOver while media plays.
+        let show = active
         guard controls.isHidden == show else { return }
         controls.isHidden = !show
+        needsLayout = true
         if !playerIsAudio {
             controls.alphaValue = show ? 0 : 1
             Animator.fade(controls, to: show ? 1 : 0)
         }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49, player.player != nil { controls.togglePlay(); return }
+        if [125, 126, 116, 121].contains(Int(event.keyCode)) {
+            let amount: CGFloat = [116, 121].contains(Int(event.keyCode)) ? max(40, bounds.height - 40) : 40
+            let delta = [125, 121].contains(Int(event.keyCode)) ? amount : -amount
+            let clip = contentScroll.contentView
+            clip.scroll(to: CGPoint(x: 0, y: min(max(0, content.frame.height - clip.bounds.height), max(0, clip.bounds.minY + delta))))
+            contentScroll.reflectScrolledClipView(clip)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    /// Keep the inspector's reading/scrolling stop, then expose its live native playback controls.
+    var keyboardControls: [NSView] {
+        guard KeyboardAccess.isFull(), window != nil, !controls.isHidden else { return [] }
+        return controls.keyboardControls
     }
 
     // MARK: Visibility
@@ -277,6 +311,11 @@ final class InformationPanel: NSView {
     }
 
     private func update(_ urls: [URL]) {
+        if urls != scrollSelection {
+            scrollSelection = urls
+            contentScroll.contentView.scroll(to: .zero)
+            contentScroll.reflectScrolledClipView(contentScroll.contentView)
+        }
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
         observeThumbnail(nil)
         clearCodePreview()

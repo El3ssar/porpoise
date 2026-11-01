@@ -73,7 +73,7 @@ import Testing
         try provider.rename(url("/sdcard/old.txt"), to: "new it's.txt")
         #expect(
             shellScripts == [
-                "if [ -e '/sdcard/new it'\\''s.txt' ]; then echo __PORPOISE_EXISTS__; "
+                "if [ -e '/sdcard/new it'\\''s.txt' ] || [ -L '/sdcard/new it'\\''s.txt' ]; then echo __PORPOISE_EXISTS__; "
                     + "else mv '/sdcard/old.txt' '/sdcard/new it'\\''s.txt'; fi"
             ])
         // Older adb doesn't pass exit codes on: the marker in the output is what tells.
@@ -81,6 +81,22 @@ import Testing
         #expect { try provider.rename(url("/sdcard/old.txt"), to: "taken.txt") } throws: {
             $0.localizedDescription.contains("already exists")
         }
+    }
+
+    @Test func renamePreservesADanglingDestinationLink() throws {
+        let scratch = try Scratch()
+        let source = try scratch.file("original", "keep")
+        let target = scratch.path("dangling")
+        try FileManager.default.createSymbolicLink(atPath: target.path, withDestinationPath: "missing")
+        var remote = URLComponents(); remote.scheme = "adb"; remote.host = "R58N123"; remote.path = source.path
+        try adb.reply("")
+        try provider.rename(try #require(remote.url), to: "dangling")
+        let script = try #require(shellScripts.last)
+        // Execute the emitted POSIX shell against scratch paths, with no actual device involved.
+        let result = try Shell.run("/bin/sh", ["-c", script])
+        #expect(String(decoding: result.out, as: UTF8.self).contains("__PORPOISE_EXISTS__"))
+        #expect(scratch.read("original") == "keep")
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: target.path) == "missing")
     }
 
     @Test func refusesTopFoldersAndUnsafeNamesWithoutRunningAnything() {

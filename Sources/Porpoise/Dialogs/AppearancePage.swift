@@ -7,70 +7,10 @@ import UniformTypeIdentifiers
 enum AppearancePage {
     static func build(_ f: FormBuilder) {
         let s = Settings.shared
-        let themes = [AppearanceTheme.systemName, "Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
-        f.section("Theme")
-        f.themeCards(
-            themes, selected: { s.appearancePreferences.themeName },
-            theme: { i in
-                if let theme = AppearanceTheme.builtIns.first(where: { $0.name == themes[i] }) { return theme }
-                if themes[i] == AppearanceTheme.systemName { return Tokens.palette(dark: Theme.isDark) }
-                return s.appearancePreferences.theme(dark: Theme.isDark)
-            }
-        ) { i in
-            s.updateAppearance { p in
-                if themes[i] == "Custom", p.customTheme == nil { p.customTheme = Theme.palette(dark: Theme.isDark) }
-                p.themeName = themes[i]
-            }
-        }
-        let names = AppearanceTheme.builtIns.map(\.name)
-        f.popup("System light theme:", names, names.firstIndex(of: s.appearancePreferences.lightThemeName) ?? 0) { i in
-            s.updateAppearance { $0.lightThemeName = names[i] }
-        }
-        // Only "Follow system" uses these two; under any other theme they would only confuse.
-        let followsSystem = { s.appearancePreferences.themeName == "Follow system" }
-        f.visibleWhen(followsSystem)
-        f.popup("System dark theme:", names, names.firstIndex(of: s.appearancePreferences.darkThemeName) ?? 1) { i in
-            s.updateAppearance { $0.darkThemeName = names[i] }
-        }
-        f.visibleWhen(followsSystem)
+        f.section("Appearance")
         f.popup("Appearance:", AppearanceChoice.allCases.map(\.title), AppearanceChoice.allCases.firstIndex(of: s.appearance) ?? 0) {
             s.appearance = AppearanceChoice.allCases[$0]
         }
-        f.popup("Code theme:", CodeTheme.allCases.map(\.title), CodeTheme.allCases.firstIndex(of: s.appearancePreferences.codeTheme) ?? 0) { i in
-            s.updateAppearance { $0.codeTheme = CodeTheme.allCases[i] }
-        }
-        f.button("Import Theme…") {
-            readFile(extensions: ["json", "colors"]) { url, data in
-                let theme =
-                    try url.pathExtension.lowercased() == "colors"
-                    ? AppearanceTheme.kde(String(decoding: data, as: UTF8.self), name: url.deletingPathExtension().lastPathComponent)
-                    : AppearanceTheme.decode(data)
-                s.updateAppearance {
-                    $0.customTheme = theme; $0.themeName = "Custom"
-                }
-            }
-        }
-        f.button("Export Theme…") { writeFile(name: "Porpoise-theme.json") { try Theme.palette(dark: Theme.isDark).encoded() } }
-        f.section("Colors")
-        f.note("Changing a color creates a custom theme. Changes preview immediately in open windows.")
-        f.colorGrid(
-            ThemeRole.allCases.map(\.title),
-            values: { index in
-                let role = ThemeRole.allCases[index]
-                let c = Theme.palette(dark: Theme.isDark)[role]
-                return NSColor(rgb: c.red, c.green, c.blue)
-            },
-            set: { index, color in
-                let role = ThemeRole.allCases[index]
-                guard let c = color.usingColorSpace(.sRGB) else { return }
-                s.updateAppearance { p in
-                    if role == .folderTint { p.folderVariant = "default" }
-                    var theme = Theme.palette(dark: Theme.isDark)
-                    theme[role] = ThemeColor(
-                        Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
-                    theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
-                }
-            })
         f.section("Icons")
         let icons =
             ["Native macOS", Icons.nativeColourTheme, "Tela-circle"] + IconTheme.bundledThemes
@@ -114,6 +54,67 @@ enum AppearancePage {
                 s.applyAppearanceIconSizes()
             }
         }
+        let themes = [AppearanceTheme.systemName, "Follow system"] + AppearanceTheme.builtIns.map(\.name) + ["Custom"]
+        f.section("Theme")
+        f.themeCards(
+            themes, selected: { s.appearancePreferences.themeName },
+            theme: { i in
+                if let theme = AppearanceTheme.builtIns.first(where: { $0.name == themes[i] }) { return theme }
+                if themes[i] == AppearanceTheme.systemName { return Tokens.palette(dark: Theme.isDark) }
+                return s.appearancePreferences.theme(dark: Theme.isDark)
+            }
+        ) { i in
+            s.updateAppearance { p in
+                if themes[i] == "Custom", p.customTheme == nil { p.customTheme = Theme.palette(dark: Theme.isDark) }
+                p.themeName = themes[i]
+            }
+        }
+        let names = AppearanceTheme.builtIns.map(\.name)
+        f.popup("System light theme:", names, names.firstIndex(of: s.appearancePreferences.lightThemeName) ?? 0) { i in
+            s.updateAppearance { $0.lightThemeName = names[i] }
+        }
+        // Only "Follow system" uses these two; under any other theme they would only confuse.
+        let followsSystem = { s.appearancePreferences.themeName == "Follow system" }
+        f.visibleWhen(followsSystem)
+        f.popup("System dark theme:", names, names.firstIndex(of: s.appearancePreferences.darkThemeName) ?? 1) { i in
+            s.updateAppearance { $0.darkThemeName = names[i] }
+        }
+        f.visibleWhen(followsSystem)
+        f.popup("Code theme:", CodeTheme.allCases.map(\.title), CodeTheme.allCases.firstIndex(of: s.appearancePreferences.codeTheme) ?? 0) { i in
+            s.updateAppearance { $0.codeTheme = CodeTheme.allCases[i] }
+        }
+        f.button("Import Theme…") {
+            readFile(extensions: ["json", "colors"]) { url, data in
+                let theme =
+                    try url.pathExtension.lowercased() == "colors"
+                    ? AppearanceTheme.kde(String(decoding: data, as: UTF8.self), name: url.deletingPathExtension().lastPathComponent)
+                    : AppearanceTheme.decode(data)
+                s.updateAppearance {
+                    $0.customTheme = theme; $0.themeName = "Custom"
+                }
+            }
+        }
+        f.button("Export Theme…") { writeFile(name: "Porpoise-theme.json") { try Theme.palette(dark: Theme.isDark).encoded() } }
+        f.section("Colors")
+        f.note("Changing a color creates a custom theme. Changes preview immediately in open windows.")
+        f.colorGrid(
+            ThemeRole.allCases.map(\.title),
+            values: { index in
+                let role = ThemeRole.allCases[index]
+                let c = Theme.palette(dark: Theme.isDark)[role]
+                return NSColor(rgb: c.red, c.green, c.blue)
+            },
+            set: { index, color in
+                let role = ThemeRole.allCases[index]
+                guard let c = color.usingColorSpace(.sRGB) else { return }
+                s.updateAppearance { p in
+                    if role == .folderTint { p.folderVariant = "default" }
+                    var theme = Theme.palette(dark: Theme.isDark)
+                    theme[role] = ThemeColor(
+                        Int((c.redComponent * 255).rounded()), Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+                    theme.name = "Custom"; p.customTheme = theme; p.themeName = "Custom"
+                }
+            })
         f.section("Share all appearance settings")
         f.button("Export Appearance…") { writeFile(name: "Porpoise-appearance.json") { try s.exportAppearance() } }
         f.button("Import Appearance…") {

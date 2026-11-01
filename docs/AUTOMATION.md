@@ -1,6 +1,6 @@
 # Automation
 
-Custom tools are created in Settings → Custom Tools. Only tools saved there can run: folders you browse cannot supply commands. The Shortcuts tool picker stores a tool's stable ID; deleting a tool disables existing shortcuts that used it. A prompt value is an argument, never shell code. Tools run against a captured active-pane selection, with confirmation above 100 selected items. Output and exit status appear in Activity.
+Custom tools are created in Settings → Keyboard → Custom Tools. Only tools saved there can run: folders you browse cannot supply commands. The Shortcuts tool picker stores a tool's stable ID; deleting a tool disables existing shortcuts that used it. A prompt value is an argument, never shell code. Tools run against a captured active-pane selection, with confirmation above 100 selected items. Output and exit status appear in Activity.
 
 ## Terminal
 
@@ -8,17 +8,36 @@ Enable **Allow command-line control** in Settings → Advanced to allow programs
 
 Settings → Advanced → Install Command-line Tool creates `~/.local/bin/porpoise`, pointing to the CLI inside this copy of the app. It refuses to replace unrelated files or links. Add `~/.local/bin` to your shell's PATH yourself, or use its full path. Moving or deleting the app breaks this link; move the previous link aside before reinstalling from Settings in the new copy.
 
-The app must already be running. The CLI never launches another app or contacts a network service.
+App commands normally require Porpoise to be running. Add **`--launch`** to start the app that owns this installed tool in the background. It never enables command-line control, changes PATH/privacy settings, or launches an app downloaded from a request. Without `--launch`, an unavailable app fails immediately. Help, version, completions and explicit-path transfer dry runs work without the app or a socket. The CLI does not contact a network service itself; app requests can open remote locations already present in the app.
 
 ```sh
-porpoise open "$HOME/Documents"
+porpoise --help
+porpoise help copy
+porpoise --version
+porpoise status --json
+porpoise pwd
+porpoise list --limit 50 --offset 0 --json
+porpoise open "$HOME/Documents" --launch
+porpoise .                           # open the current folder
+porpoise ./report.pdf                # reveal a file
 porpoise split "$HOME/Downloads" "$HOME/Documents"
 porpoise reveal "$HOME/Documents/report.pdf"
 porpoise selection --json
 porpoise selection --null
 porpoise copy "$HOME/Documents/report.pdf" --to "$HOME/Downloads"
 porpoise move --selection --to "$HOME/Documents"
+porpoise copy ./report.pdf --to ./Archive --dry-run --json
 ```
+
+`status` reports the active location, window/tab counts, displayed/selected counts and loading state. `pwd` (alias `location`) prints the active location. `list` (alias `ls`) returns **the current pane’s loaded rows**, in display order, including its filters/search and expanded rows. It does not independently scan a folder or wait for a slow listing to finish. List defaults to 100 paths and accepts `--limit 1…10000` and a nonnegative `--offset`. Its JSON response contains `paths`, `total`, optional `nextOffset`, and `context.loading`; absence of `nextOffset` means this snapshot has no more rows. A changing view can change later pages; this is a view snapshot, not a durable cursor.
+
+Every command supports `--help` and `help COMMAND`. `help --json` describes the command surface. `--json` produces machine-readable output with no ANSI styling. Selection and pwd retain path-array output; list and status use response objects. Other successful commands return the versioned response object, including transfer `state: "awaitingApproval"`. Without JSON, paths are one per line, and errors go to stderr. With JSON, failures write one `{ "ok": false, "error": { "code": "…", "message": "…" } }` object on stdout. Exit codes are **0** success, **1** app refusal/execution error, **2** usage/request error, **3** connection unavailable, **4** deadline, and **5** unsafe endpoint/protocol. Existing commands remain compatible on success; failures now have distinct nonzero codes rather than always 1.
+
+`--timeout SECONDS` bounds a response wait from 1 to 120 seconds. Defaults remain 10 seconds for browsing/inspection and 120 seconds for copy/move preparation. The app also has its own server deadlines. `--launch` waits at most 10 seconds for a read-only readiness probe, then submits a mutation exactly once; it does not retry transfers.
+
+`copy/move --dry-run` describes the sources and destination and **submits no transfer**. Explicit paths are a lexical plan, not a proof of existence/permissions or a reservation against concurrent changes. `--selection --dry-run` reads the current selection but still creates no Activity or approval request. The JSON plan explicitly has `submitted: false` and `requiresApproval: true`.
+
+Shell completions are opt-in output only: `porpoise completions bash`, `porpoise completions zsh`, or `porpoise completions fish`. Review/save that output using your shell’s normal completion setup. Porpoise does not edit shell startup files.
 
 Explicit paths are local filesystem paths, relative to the Terminal working directory when needed. Use `--` before an operand beginning with `-`; for a transfer, put `--to DESTINATION` before that separator. Names containing quotes, spaces, Unicode, newlines or shell metacharacters are passed literally. `selection --null` and `--json` preserve embedded newlines; the default prints one path per line. A remote selection is returned as URLs. Transfers using `--selection` go through Porpoise's existing local/remote transfer engine; explicit source and destination paths are local.
 
@@ -39,3 +58,7 @@ The CLI uses a Unix socket in the current user’s private temporary folder, own
 This is a same-user automation interface, not a security boundary against software already running as the user. It accepts no executable or shell command, and cannot install tools. After explicit native approval, file operations use Porpoise’s access and conflict handling, but never its administrator retry. Symlinks follow the existing file-operation semantics; they cannot bypass the per-transfer confirmation. Stale requests are checked after preparation before any UI navigation or file-job enqueue.
 
 `scripts/make-app.sh` builds the CLI and extracts `Metadata.appintents` using the installed Apple toolchain. Release packaging fails if metadata for any action is absent. Local packaging with Command Line Tools alone warns and skips Shortcuts metadata; full Xcode is needed to use those actions. The release check requires the CLI and metadata and checks the CLI's debugging entitlement alongside the app and privileged helper.
+
+## CLI verification
+
+`python3 Tests/CLI/check_cli.py --cli /absolute/path/to/PorpoiseCLI` checks help, version, completions, JSON/errors, literal unusual paths and offline transfer previews against the compiled executable. It never launches or contacts an app. The Swift `AutomationCLITests`, `AutomationSocketTests`, `AutomationPathTests` and `AutomationAppTests` cover parsing, endpoint security/deadlines, local-path semantics and app dispatch/approval. Run app-connected checks only against an isolated defaults suite.

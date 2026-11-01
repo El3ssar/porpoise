@@ -47,6 +47,30 @@ import Testing
         #expect(Set(selection.paths) == Set(paths.map(\.path)))
     }
 
+    @Test func inspectionCommandsReportTheLoadedViewWithoutChangingIt() async throws {
+        let scratch = try Scratch()
+        let files = [try scratch.file("a.txt"), try scratch.file("b.txt"), try scratch.file("c.txt")]
+        let wc = MainWindowController(urls: [scratch.url])
+        defer { wc.window?.close() }
+        #expect(await eventually { !wc.view.model.isLoading && wc.view.model.rows.count == 3 })
+        wc.view.model.selection = [files[0]]
+        let app = AppAutomation(windowProvider: { wc })
+        let status = await app.handle(.init(action: .status))
+        #expect(status.error == nil)
+        #expect(status.context?.location == scratch.url.path)
+        #expect(status.context?.displayedItems == 3 && status.context?.selectedItems == 1)
+        let location = await app.handle(.init(action: .location))
+        #expect(location.paths == [scratch.url.path])
+        let page = await app.handle(.init(action: .list, limit: 1, offset: 1))
+        #expect(page.paths == [files[1].path] && page.total == 3 && page.nextOffset == 2)
+        let end = await app.handle(.init(action: .list, limit: 1, offset: Int.max))
+        #expect(end.paths.isEmpty && end.nextOffset == nil && end.total == 3)
+        #expect(wc.tabs.count == 1 && wc.view.model.selection == [files[0]])
+        let missing = AppAutomation(windowProvider: { nil })
+        #expect(await missing.handle(.init(action: .status)).context?.location == nil)
+        #expect(await missing.handle(.init(action: .location)).error != nil)
+    }
+
     @Test func queuedTransfersUseActivityAndExpiredRequestsDoNothing() async throws {
         let scratch = try Scratch()
         let source = try scratch.file("$(touch INJECTED) 'quote\n.txt")
@@ -59,7 +83,7 @@ import Testing
         #expect(expired.error != nil)
         #expect(FileOperationsController.shared.activities.count == before)
         let copy = await app.handle(.init(action: .copy, paths: [source.path], destination: copied.path))
-        #expect(copy.error == nil && copy.message == "Queued in Activity; awaiting approval in Porpoise.")
+        #expect(copy.error == nil && copy.message == "Queued in Activity; awaiting approval in Porpoise." && copy.state == .awaitingApproval)
         let copiedFile = copied.appendingPathComponent(source.lastPathComponent)
         #expect(await eventually { FileManager.default.fileExists(atPath: copiedFile.path) })
         #expect(FileOperationsController.shared.activities.contains { $0.sources == [source] && $0.destination?.path == copied.path })

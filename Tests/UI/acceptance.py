@@ -257,7 +257,7 @@ class Run:
         b.send("action", "goBack:")
         s = wait_until(lambda: (lambda s: s if not s["url"].endswith("/Photos") else None)(b.state()), self.args.step_timeout, "Back")
         self.check("browse: Back returns with the folder current", s["current"] == "Photos", s)
-        for mode in ["details", "compact", "icons"]:
+        for mode in ["details", "compact", "columns", "icons"]:
             b.send("mode", mode)
             wait_until(lambda: b.state()["mode"] == mode, self.args.step_timeout, f"{mode} view")
             if mode == "details":
@@ -309,8 +309,23 @@ class Run:
         b.send("settings", "0")
         wait_until(lambda: any("SettingsWindowController" in w for w in b.windows()), self.args.step_timeout, "Settings")
         dump = b.ask("settingsdump", timeout=20)
-        self.check("settings: every page has controls", dump.count("\n") > 20, dump[:200])
-        self.capture("50-settings", window="settings")
+        pages = []
+        sections = {}
+        for line in dump.splitlines():
+            if line.startswith("[") and "]" in line:
+                title = line[1:line.index("]")]
+                pages.append(title)
+                sections[title] = []
+            elif pages and line.startswith("  "):
+                sections[pages[-1]].append(line)
+        self.check("settings: every page has controls", bool(pages) and all(sections.values()), dump[:200])
+        for index, title in enumerate(pages):
+            b.send("settings", title)
+            wait_until(lambda: any(w.startswith(title + "|") and "SettingsWindowController" in w for w in b.windows()),
+                       self.args.step_timeout, f"the {title} settings page")
+            self.check(f"settings: {title} can be selected", True)
+            slug = "-".join(title.lower().replace("&", " ").split())
+            self.capture(f"{50 + index:02d}-settings-{slug}", window="settings")
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))

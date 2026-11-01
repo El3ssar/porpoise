@@ -29,6 +29,15 @@ import Testing
 
         """
 
+    @Test func newFileDoesNotFallBackToReplacingUpload() throws {
+        let root = URL(string: "ftp://h.invalid/pub/")!
+        let p = provider(root.absoluteString)
+        #expect { try p.createFile(root.appendingPathComponent("new.txt"), contents: Data()) } throws: {
+            $0.localizedDescription.contains("cannot safely create")
+        }
+        #expect(curl.calls.isEmpty)
+    }
+
     @Test func listsThroughCurlWithTheLoginOnStdinOnly() throws {
         try curl.reply(Self.listing)
         let items = try provider("ftp://me:s3cret@h.invalid/pub/").list(URL(string: "ftp://me:s3cret@h.invalid/pub/")!)

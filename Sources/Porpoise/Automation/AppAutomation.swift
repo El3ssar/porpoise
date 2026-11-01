@@ -101,12 +101,42 @@ import PorpoiseServices
                 let paths = await Task.detached { selection.map { $0.isFileURL ? $0.path : RemoteFS.withoutPassword($0).absoluteString } }.value
                 guard !commandLine || Settings.shared.allowCommandLineControl else { throw AutomationError.unavailable }
                 return AutomationResponse(id: request.id, paths: paths)
+            case .status, .location, .list:
+                let browser = window
+                let folder = browser?.view.url
+                let rows = browser?.view.model.rows ?? []
+                let context = AutomationContext(
+                    location: folder.map { $0.isFileURL ? $0.path : RemoteFS.withoutPassword($0).absoluteString },
+                    windows: AppDelegate.shared.windows.count, tabs: browser?.tabs.count ?? 0,
+                    displayedItems: rows.count, selectedItems: browser?.view.model.selection.count ?? 0,
+                    loading: browser?.view.model.isLoading ?? false)
+                if request.action == .status { return AutomationResponse(id: request.id, context: context) }
+                guard let location = context.location else {
+                    return AutomationResponse(id: request.id, error: "No browser window is open. Run porpoise open FOLDER first.")
+                }
+                if request.action == .location { return AutomationResponse(id: request.id, paths: [location], context: context) }
+                let start = min(request.offset ?? 0, rows.count)
+                let end = start + min(request.limit ?? 100, rows.count - start)
+                let paths = await Task.detached {
+                    rows[start..<end].map { row in
+                        row.item.url.isFileURL ? row.item.url.path : RemoteFS.withoutPassword(row.item.url).absoluteString
+                    }
+                }.value
+                guard deadline > Date(), !Task.isCancelled, !commandLine || Settings.shared.allowCommandLineControl else {
+                    throw AutomationError.timedOut
+                }
+                return AutomationResponse(id: request.id, paths: paths, context: context, total: rows.count, nextOffset: end < rows.count ? end : nil)
             case .copy, .move:
                 let sources = request.useSelection ? selection : urls
-                guard !sources.isEmpty else { throw AutomationError.invalidRequest }
+                guard !sources.isEmpty else {
+                    return AutomationResponse(
+                        id: request.id, error: "Nothing is selected. Select items in Porpoise or supply source paths, then retry.")
+                }
                 guard let destination else { throw AutomationError.invalidRequest }
                 guard pendingApprovals == 0 else {
-                    return AutomationResponse(id: request.id, error: "Porpoise is waiting for approval of another transfer.")
+                    return AutomationResponse(
+                        id: request.id,
+                        error: "Porpoise is waiting for approval of another transfer. Approve or cancel that request in Porpoise, then retry.")
                 }
                 if window == nil { AppDelegate.shared.newWindow(at: destination) }
                 guard window?.window?.attachedSheet == nil else {
@@ -126,13 +156,16 @@ import PorpoiseServices
                     operations.finishAutomationApproval(pending, approved: allowed)
                 }
                 ActivityWindowController.shared.show()
-                return AutomationResponse(id: request.id, message: "Queued in Activity; awaiting approval in Porpoise.")
+                return AutomationResponse(id: request.id, message: "Queued in Activity; awaiting approval in Porpoise.", state: .awaitingApproval)
             case .runTool: throw AutomationError.invalidRequest
             }
             return AutomationResponse(id: request.id)
         } catch {
             return AutomationResponse(
-                id: request.id, error: (error as? AutomationError)?.localizedDescription ?? "The requested location is unavailable.")
+                id: request.id,
+                error: (error as? AutomationError)?.localizedDescription
+                    ?? "The requested location is unavailable. Check that each path exists, folders are used where required, and Porpoise has permission to read it."
+            )
         }
     }
 

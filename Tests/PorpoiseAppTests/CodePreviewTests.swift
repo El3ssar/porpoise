@@ -9,6 +9,12 @@ import Testing
 @testable import Porpoise
 
 @Suite(.serialized, .isolatedSettings) @MainActor struct CodePreviewTests {
+    /// The inspector's preview may sit in a scroll document; its actual visibility matters, not view depth.
+    private static func hasVisibleImage(in view: NSView) -> Bool {
+        if let image = view as? NSImageView, image.image != nil, !image.isHiddenOrHasHiddenAncestor { return true }
+        return view.subviews.contains { hasVisibleImage(in: $0) }
+    }
+
     @Test func sharedViewHighlightsAndCancelsStaleLoads() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
@@ -231,11 +237,11 @@ import Testing
         panel.show(hovered: nil, container: wc.view)
         try #require(await poll { panel.codePreview.isHidden })
         #expect(panel.codePreview.document == nil)
-        #expect(panel.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
+        #expect(Self.hasVisibleImage(in: panel))
         let column = ColumnPreviewView(frame: .zero)
         column.show(binary, container: wc.view)
         try #require(await poll { column.information.codePreview.isHidden })
-        #expect(column.information.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
+        #expect(Self.hasVisibleImage(in: column.information))
     }
 
     @Test func informationUsesCodeEvenWhenTextThumbnailsAreOff() async throws {

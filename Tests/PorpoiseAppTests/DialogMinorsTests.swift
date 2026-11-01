@@ -112,13 +112,16 @@ import Testing
         let tmp = try s.file("contents", "<html>")
         let file = NewItemDialog.administratorCommands(
             .htmlFile, at: folder.appendingPathComponent("x.html"), in: folder, linkTarget: "", contents: tmp)
-        #expect(file.count == 3 && file[0].prefix(2) == ["/bin/cp", "--"] && file[1].prefix(3) == ["/bin/mv", "-n", "--"])
-        #expect(file[1].last == folder.appendingPathComponent("x.html").path && file[2] == ["/bin/rm", "-rf", "--", file[0].last!])
+        #expect(file.count == 2 && file[0].prefix(2) == ["/bin/cp", "--"] && file[1].prefix(3) == ["/bin/mv", "-n", "--"])
+        #expect(file[1].last == folder.appendingPathComponent("x.html").path)
         #expect(file.allSatisfy { HelperRequests.refusal($0) == nil }, "the helper takes them as they are")
-        // Run as the current user, the same way: an item that appeared meanwhile is kept, and nothing is left over.
+        // A skipped no-replace move preserves both the existing item and publication evidence.
         try s.file("Protected/x.html", "theirs")
         for c in file { _ = try Shell.run(c[0], Array(c.dropFirst())) }
         #expect(s.read("Protected/x.html") == "theirs")
+        let stage = try #require(file.first?.last)
+        #expect(FileManager.default.fileExists(atPath: stage))
+        try FileManager.default.removeItem(atPath: stage)  // the test owns this scratch copy
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted() == ["a", "x.html"])
     }
 
