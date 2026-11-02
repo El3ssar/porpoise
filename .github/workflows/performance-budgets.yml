@@ -14,23 +14,77 @@ on:
         type: string
 permissions:
   contents: read
+  actions: read
 jobs:
-  compare:
-    runs-on: macos-26
-    timeout-minutes: 30
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      effective_base: ${{ steps.scope.outputs.effective_base }}
+      reason: ${{ steps.scope.outputs.reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Performance policy and evidence regressions
+        run: |
+          python3 scripts/test-performance-budgets.py
+          python3 scripts/test-performance-inputs.py
+      - name: Resolve measured performance evidence
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ inputs.base_ref }}
+          FRESH: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          args=()
+          if [ "$FRESH" = true ]; then args+=(--force-measure); fi
+          python3 scripts/performance-inputs.py --base "$BASE_REF" --out build/performance-scope "${args[@]}"
+          cat build/performance-scope/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain evidence decision
+        if: ${{ !cancelled() && steps.scope.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: performance-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: build/performance-scope/
+  compare:
+    needs: scope
+    # Evidence-only decisions never allocate a macOS runner or launch the app.
+    runs-on: ${{ needs.scope.outputs.mode == 'measure' && 'macos-26' || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    steps:
+      - name: Record performance evidence
+        if: ${{ needs.scope.outputs.mode == 'reuse' }}
+        env:
+          REASON: ${{ needs.scope.outputs.reason }}
+        run: echo "$REASON. See the retained performance-scope artifact for the measured origin." >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce performance evidence
+        if: ${{ needs.scope.outputs.mode == 'blocked' }}
+        env:
+          REASON: ${{ needs.scope.outputs.reason }}
+        run: |
+          echo "$REASON" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Budget policy regressions
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         run: python3 scripts/test-performance-budgets.py
       - name: ffmpeg source identity
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         id: ffmpeg-source
         run: |
           echo "sha=$(scripts/build-ffmpeg.sh --source-sha)" >> "$GITHUB_OUTPUT"
           echo "identity=$(scripts/build-ffmpeg.sh --cache-key)" >> "$GITHUB_OUTPUT"
       - name: Restore ffmpeg
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
@@ -40,15 +94,18 @@ jobs:
             build/ffmpeg/COPYING.LGPLv2.1
           key: ffmpeg-verified-${{ runner.os }}-${{ runner.arch }}-${{ steps.ffmpeg-source.outputs.sha }}-${{ steps.ffmpeg-source.outputs.identity }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'scripts/bundled-tool-cache.py') }}
       - name: Verify or build ffmpeg
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         env:
           FFMPEG_JOBS: '2'
         run: scripts/build-ffmpeg.sh
       - name: Optimized compiler cache identity
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         id: compiler
         run: |
           identity=$( { swift --version; xcodebuild -version; sw_vers -productVersion; } | shasum -a 256 | cut -d ' ' -f 1)
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
       - name: Restore private optimized compiler cache
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         id: compiler-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -58,19 +115,20 @@ jobs:
           restore-keys: |
             budgets-swift-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/performance-budgets.py', 'scripts/make-app.sh') }}-
       - name: Compare identical optimized app workloads
+        if: ${{ needs.scope.outputs.mode == 'measure' }}
         timeout-minutes: 27
         env:
-          BASE_REF: ${{ inputs.base_ref }}
+          BASE_REF: ${{ needs.scope.outputs.effective_base }}
         run: python3 scripts/performance-budgets.py --reuse-compiler-cache --base "$BASE_REF" --out "$PWD/build/performance-budgets"
       - name: Save validated optimized compiler state
         # Retain successful source preparation even when the measurement verdict fails.
-        if: ${{ !cancelled() && steps.compiler-cache.outputs.cache-primary-key != '' && hashFiles('build/performance-budgets/preparation.json') != '' }}
+        if: ${{ needs.scope.outputs.mode == 'measure' && (!cancelled() && steps.compiler-cache.outputs.cache-primary-key != '' && hashFiles('build/performance-budgets/preparation.json') != '') }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build-budgets
           key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
       - name: Summary
-        if: always()
+        if: ${{ needs.scope.outputs.mode == 'measure' && (!cancelled()) }}
         run: |
           if [ -f build/performance-budgets/SUMMARY.md ]; then
             cat build/performance-budgets/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
@@ -78,10 +136,10 @@ jobs:
             echo 'Performance validation failed before a complete matched comparison. See retained logs.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Retain all measurements and failure logs
-        if: always()
+        if: ${{ needs.scope.outputs.mode == 'measure' && (!cancelled()) }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: performance-budgets-${{ github.run_id }}
+          name: performance-budgets-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30
           if-no-files-found: warn
           path: |
