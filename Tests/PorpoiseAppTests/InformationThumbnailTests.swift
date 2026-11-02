@@ -63,14 +63,61 @@ import Testing
         let preview = try #require(panel.subviews.compactMap { $0 as? PreviewImageView }.first)
         #expect(preview.image === small)
 
+        let producerThreads = Locked<[Bool]>([])
+        var mainDeliveries = 0
+        var expectedLarge: NSImage?
+        func pixels(_ image: NSImage?) -> Int { image?.representations.map(\.pixelsWide).max() ?? 0 }
+        func snapshot(_ phase: String) -> String {
+            let fields = Array(Mirror(reflecting: panel).children)
+            let shown = fields.first { $0.label == "shownURLs" }?.value as? [URL]
+            let observer = fields.first { $0.label == "thumbnailObserver" }.map { String(reflecting: $0.value) } ?? "missing"
+            let cache = Mirror(reflecting: thumbnails).children.first { $0.label == "cache" }?.value as? NSCache<NSString, NSImage>
+            let key = "\(item.url.path)|\(item.modificationDate?.timeIntervalSince1970 ?? 0)|256" as NSString
+            let cached = cache?.object(forKey: key)
+            let stamp = fields.first { $0.label == "shownStamp" }.map { String(reflecting: $0.value) } ?? "missing"
+            let selected = pane.model.selectedItems.map { "\($0.url.path):\($0.modificationDate?.timeIntervalSince1970 ?? 0)" }
+            return "\(phase): shown=\(String(describing: shown)), observer=\(observer), selected=\(selected), "
+                + "attached=\(panel.window === window), visible=\(window.isVisible), key=\(window.isKeyWindow), "
+                + "previewPixels=\(pixels(preview.image)), cachePixels=\(pixels(cached)), stamp=\(stamp), directDate=\(String(describing: item.modificationDate)), "
+                + "smallIdentity=\(preview.image === small), largeIdentity=\(preview.image === expectedLarge), cacheLargeIdentity=\(cached === expectedLarge), "
+                + "producerThreads=\(producerThreads.value), mainDeliveries=\(mainDeliveries), loading=\(pane.model.isLoading), "
+                + "settings=(preview:\(Settings.shared.infoShowPreview), images:\(Settings.shared.previewImages), maxMiB:\(Settings.shared.previewMaxSizeMiB))"
+        }
+        var deliveries = [snapshot("subscribed")]
+        let producerObserver = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: nil) { @Sendable n in
+            guard (n.object as? URL) == file else { return }
+            producerThreads.append(Thread.isMainThread)
+        }
+        defer { NotificationCenter.default.removeObserver(producerObserver) }
+        let observer = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { n in
+            MainActor.assumeIsolated {
+                guard (n.object as? URL) == file else { return }
+                mainDeliveries += 1
+                deliveries.append(snapshot("ready"))
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
         try #require(await poll { thumbnails.thumbnail(for: item, size: 256, exact: true) != nil })
         let large = try #require(thumbnails.thumbnail(for: item, size: 256, exact: true))
+        expectedLarge = large
         let smallPixels = small.representations.map(\.pixelsWide).max() ?? 0
         let largePixels = large.representations.map(\.pixelsWide).max() ?? 0
         #expect(largePixels > smallPixels)
         // Cache availability is not the panel's completion signal, and NSCache may replace that image.
         // Verify the visible result: the preview must reach the larger resolution after notification delivery.
-        #expect(await poll { (preview.image?.representations.map(\.pixelsWide).max() ?? 0) >= largePixels })
+        let updated = await poll { pixels(preview.image) >= largePixels }
+        if !updated {
+            let diagnostic =
+                (["Information thumbnail inColumn=\(inColumn), targetPixels=\(largePixels)"] + deliveries + [snapshot("failed")])
+                .joined(separator: "\n") + "\n"
+            FileHandle.standardError.write(Data(diagnostic.utf8))
+        }
+        #expect(updated)
+        #expect(producerThreads.value.allSatisfy { $0 })
+        #expect(panel.window === window)
+        #expect(Settings.shared.infoShowPreview && Settings.shared.previewImages)
+        #expect(pane.model.selectedItems.map(\.url) == [file])
         #expect(!window.isVisible && !window.isKeyWindow)
     }
 }
