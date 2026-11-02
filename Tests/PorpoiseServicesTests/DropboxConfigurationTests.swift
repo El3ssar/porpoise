@@ -42,7 +42,7 @@ struct DropboxConfigurationTests {
         #expect(DropboxConfiguration(appKey: "key").loopbackPorts == [61843, 61844, 61845])
     }
 
-    @Test(.isolatedSettings) func changingTheSettingsKeyUpdatesAvailabilityWithoutRestart() {
+    @Test(.isolatedSettings) @MainActor func changingTheSettingsKeyUpdatesAvailabilityWithoutRestart() {
         let hasExternalKey = DropboxConfiguration.selected(defaults: MemoryDefaults()).isConfigured
         if !hasExternalKey {
             #expect(!CloudProvider.dropbox.isAvailable)
