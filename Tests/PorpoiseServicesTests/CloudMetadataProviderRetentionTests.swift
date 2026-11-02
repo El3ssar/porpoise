@@ -83,8 +83,13 @@ import Testing
         #expect(provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == children)
         #expect(model.rows.contains { $0.depth == 1 })
         model.setExpanded(folder.url, false)
-        await client.metadataCache.settleRetention()
-        #expect(provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == nil)
+        // Collapse cancels child refreshes, but a response already being decoded can still store its listing.
+        // The retention barrier drains queued pruning, not those network tasks; wait for the final eviction.
+        await expectEventually {
+            await client.metadataCache.settleRetention()
+            return client.metadataCache.retentionStorageCounts.reads == 0
+                && provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == nil
+        }
         withExtendedLifetime(model) {}
     }
 
