@@ -20,8 +20,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
       - name: Toolchain identity
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
@@ -30,8 +28,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
       # The app bundles ffmpeg (cached with CI's and the release workflow's, always verified).
       - name: ffmpeg source identity
         id: ffmpeg-source
@@ -71,6 +71,9 @@ jobs:
           path: build/ui-acceptance/run
           retention-days: 30
           if-no-files-found: warn
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save UI compiler state even after a failed check
         if: ${{ !cancelled() && steps.ui-cache.outputs.cache-primary-key != '' && steps.ui-cache.outputs.cache-matched-key != steps.ui-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

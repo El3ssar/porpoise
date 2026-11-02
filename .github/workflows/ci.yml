@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Workflow integrity
-        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py && python3 scripts/test-pr-test-scope.py && python3 scripts/test-ci-profiles.py
+        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py && python3 scripts/test-pr-test-scope.py && python3 scripts/test-ci-profiles.py && python3 scripts/test-cache-source-times.py
       - name: Select relevant PR tests; full validation on main
         id: scope
         env:
@@ -59,11 +59,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0   # full history, so file times can be restored for incremental builds
-      # A fresh checkout stamps every file "now", which makes SwiftPM rebuild everything. Set each file's time to its
-      # last commit, then restore the previous run's .build: only what changed since is compiled again.
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
+          fetch-depth: 0   # history for exact tested inputs and source provenance
+      # Compiler state is restored first; input timestamps are reused only for matching content/modes.
       - name: Toolchain identity
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
@@ -72,8 +69,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
       - name: Bundled tool cache integrity
         run: python3 scripts/test-bundled-tools.py && python3 scripts/test-workflow-pins.py BundledToolTests
       - name: Crash symbol tooling
@@ -121,6 +120,9 @@ jobs:
       - name: Coverage of the logic layers
         if: needs.proof.outputs.profile == 'full'
         run: python3 scripts/coverage.py --min 92
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save test compiler state even after a failed check
         if: ${{ !cancelled() && steps.test-cache.outputs.cache-primary-key != '' && steps.test-cache.outputs.cache-matched-key != steps.test-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -138,8 +140,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
       - name: Toolchain identity
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
@@ -148,13 +148,18 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
       # Match make-app.sh's release compiler flags, including removal of build-machine paths.
       - name: Build shipping app
         run: |
           bin=$(swift build -c release --arch arm64 --show-bin-path)
           swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$bin/ModuleCache=$bin/ModuleCache" -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$bin/ModuleCache=$bin/ModuleCache" -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save shipping compiler state even after a failed build
         if: ${{ !cancelled() && steps.shipping-cache.outputs.cache-primary-key != '' && steps.shipping-cache.outputs.cache-matched-key != steps.shipping-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -231,8 +236,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
       - name: Toolchain identity
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
@@ -241,8 +244,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
       - name: ffmpeg source identity
         id: ffmpeg-source
         run: |
@@ -269,6 +274,9 @@ jobs:
           scripts/make-dmg.sh --no-build
       - name: Check disk image
         run: scripts/check-release.sh build/Porpoise-0.0.0.dmg
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save packaging compiler state even after a failed check
         if: ${{ !cancelled() && steps.benchmark-cache.outputs.cache-primary-key != '' && steps.benchmark-cache.outputs.cache-matched-key != steps.benchmark-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

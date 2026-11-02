@@ -98,8 +98,6 @@ jobs:
         if: inputs.dry_run == true
         run: echo 'Packaging dry run; this does not certify full UI or performance validation for a release.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
 
       - name: Toolchain identity
         id: toolchain
@@ -110,8 +108,10 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
 
       - name: ffmpeg source identity
         id: ffmpeg-source
@@ -280,6 +280,9 @@ jobs:
             "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml build/helper-cdhash.txt \
             --target "$(git rev-parse HEAD)" --title "Porpoise $V" --notes-file build/notes.md --latest
 
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save release compiler state even after a failed check
         if: ${{ !cancelled() && steps.release-cache.outputs.cache-primary-key != '' && steps.release-cache.outputs.cache-matched-key != steps.release-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

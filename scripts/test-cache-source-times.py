@@ -96,6 +96,15 @@ class SourceTimesTests(unittest.TestCase):
         times.restore(self.root, self.build)
         self.assertTrue(link.is_symlink())
         self.assertEqual(os.readlink(link), '/outside-do-not-read')
+        self.assertTrue((self.build / 'compiled.o').exists())
+
+    def test_regular_input_with_restrictive_permissions_keeps_its_cache(self):
+        self.source.chmod(0o600)
+        self.snapshot()
+        os.utime(self.source, None)
+        times.restore(self.root, self.build)
+        self.assertEqual(self.source.stat().st_mtime_ns, self.timestamp)
+        self.assertTrue((self.build / 'compiled.o').exists())
 
     def test_build_directory_must_not_escape_or_be_a_symlink(self):
         outside = self.root / 'other'

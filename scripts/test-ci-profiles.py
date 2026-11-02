@@ -65,6 +65,17 @@ class ProfileTests(unittest.TestCase):
         self.assertLess(RELEASE.index('- name: Find trusted CI proof'), RELEASE.index('- name: Require full CI before publication'))
         self.assertLess(RELEASE.index('- name: Require full CI before publication'), RELEASE.index('- name: Import signing identity'))
 
+    def test_every_normal_compiler_cache_checks_content(self):
+        workflows = [CI, RELEASE, (ROOT / '.github/workflows/ui-acceptance.yml').read_text()]
+        for workflow, jobs in zip(workflows, [3, 1, 1]):
+            self.assertNotIn('git-restore-mtime-action', workflow)
+            self.assertNotIn('spm-v2-', workflow)
+            self.assertEqual(workflow.count('cache-source-times.py restore'), jobs)
+            self.assertEqual(workflow.count('cache-source-times.py save'), jobs)
+            # Every .build restore must verify sources immediately after its cache settings.
+            for block in workflow.split('          restore-keys: spm-v3-')[1:]:
+                self.assertTrue(block.split('\n', 1)[1].startswith('      - name: Restore content-checked source timestamps\n'))
+
 
 class ReleaseWaitTests(unittest.TestCase):
     def run_wait(self, delayed=False, watch_status=0, missing=False, api_error=False):

@@ -48,7 +48,8 @@ def read_manifest(path):
         if (not isinstance(entry, dict) or set(entry) != {'sha256', 'mode', 'mtime_ns'}
                 or not isinstance(entry['sha256'], str) or len(entry['sha256']) != 64
                 or any(c not in '0123456789abcdef' for c in entry['sha256'])
-                or type(entry['mode']) is not int or entry['mode'] not in {0o100644, 0o100755, 0o120777}
+                or type(entry['mode']) is not int or not 0 <= entry['mode'] <= 0o177777
+                or stat.S_IFMT(entry['mode']) not in {stat.S_IFREG, stat.S_IFLNK}
                 or type(entry['mtime_ns']) is not int or not 0 <= entry['mtime_ns'] < 2**63):
             raise ValueError('Invalid source timestamp entry')
     return value['files']

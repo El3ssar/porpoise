@@ -149,7 +149,11 @@ overwrite their profiles. Use `scripts/ci-like.sh` for an explicit loaded reprod
 waiting for a timing-dependent failure on the hosted runner.
 
 Test and shipping SwiftPM caches are separate and keyed by OS, architecture, toolchain/OS version, manifest and
-lockfile, then commit, with compatible earlier commits as fallbacks. The release reuses the shipping cache with
+lockfile, then commit, with compatible earlier commits as fallbacks. Each cache records actual tracked-file hashes,
+modes and timestamps. A restore replays a timestamp only for identical content and mode; changed inputs get fresh
+timestamps. Missing or malformed manifests discard that compiler cache. The v3 namespace requires one fresh build
+instead of trusting legacy caches. Git author times are never used to certify compiler inputs, including merge
+resolutions. The release reuses the shipping cache with
 exactly the same compiler flags as CI. SwiftPM still validates its build graph; release signing, path stripping,
 DMG scans and Sparkle verification always run. CI and releases share the ffmpeg cache keyed by source SHA-256
 and build-script hash. Every restored binary is checked against its recorded SHA-256; a missing or mismatched
