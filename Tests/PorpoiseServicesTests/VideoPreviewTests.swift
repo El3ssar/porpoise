@@ -115,7 +115,8 @@ private let repoRoot = TestPaths.repo
 private let clips = TestPaths.fixtures.appendingPathComponent("Videos")
 
 /// Probing and streaming with a real ffmpeg on tiny generated videos. Streams go to a scratch folder.
-@Suite(.serialized, .enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))
+// The app's thumbnail fixtures replace the same process-wide ffmpeg path under this shared scope.
+@Suite(.serialized, .isolatedSettings, .enabled(if: testFFmpeg != nil, "needs ffmpeg: scripts/build-ffmpeg.sh, or one on PATH"))
 final class VideoPreviewStreamTests {
     let scratch: Scratch
     let streams: URL

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.0
+
+- **Run Quick Actions in Porpoise.** Right-click local files or folders to run compatible Automator Quick Actions already installed on your Mac, with their names and icons. Customize opens the macOS Quick Actions settings.
+- **More room for previews.** Text previews fill the Information panel's width, while file details scroll separately below. Image previews update when a larger thumbnail becomes available, including in Column view.
+- **More reliable Git discovery.** Browsing ordinary folders or the filesystem root no longer leaves Git discovery looping; repository status remains available when you return to a project.
+
 ## 0.17.0
 
 - **A compact transfer window.** Copies, moves and other file operations show their current filename, completed/total files and folders, progress, speed and remaining time in a small window. Details expands a speed-history graph instead of a file queue. Pause, Stop, Retry and failure details stay close to the operation. The toolbar progress icon and its popover are gone. Automatic progress never activates Porpoise or takes keyboard focus, and respects a window you closed.
