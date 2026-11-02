@@ -23,7 +23,8 @@ APP_GROUPS = {
     'Panels/InformationPanel.swift': ['InformationThumbnailTests', 'InformationPanelLayoutTests',
         'CodePreviewTests', 'PreviewPaneTests', 'SpacePreviewRemoteTests', 'MainThreadSweepTests',
         'KeyLoopTests', 'ViewMinorsTests', 'AppearanceLayoutTests'],
-    'Panels/FoldersPanel.swift': ['FoldersPanelTests', 'MainThreadSweepTests', 'AppearanceLayoutTests',
+    # FoldersPanelTests.swift extends AppearanceLayoutTests.
+    'Panels/FoldersPanel.swift': ['MainThreadSweepTests', 'AppearanceLayoutTests',
         'KeyLoopTests', 'SidebarTabsTests'],
     'FileOperations/TransferProgressView.swift': ['ActivityRowsTests', 'ActivityAppearanceTests',
         'AppearanceLayoutTests', 'ViewMinorsTests'],

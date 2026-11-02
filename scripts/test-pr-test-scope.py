@@ -64,6 +64,12 @@ class ScopeTests(unittest.TestCase):
     def test_package_contract_matches_repository(self):
         self.assertEqual(self.git('hash-object', 'Package.swift'), scope.PACKAGE_BLOB)
 
+    def test_reviewed_ui_suites_exist_in_repository_not_only_synthetic_fixtures(self):
+        for group in scope.APP_GROUPS.values():
+            for name in group:
+                text = (HERE.parent / f'Tests/PorpoiseAppTests/{name}.swift').read_text()
+                self.assertRegex(text, rf'\b(?:struct|class|extension)\s+{name}\b')
+
     def test_direct_tests_select_declared_and_extended_suites_not_file_stem(self):
         self.write('Tests/PorpoiseAppTests/UnrelatedFilename.swift',
                    '@Suite struct RealTests {}\nextension OtherTests {}\nclass Legacy: XCTestCase {}')
