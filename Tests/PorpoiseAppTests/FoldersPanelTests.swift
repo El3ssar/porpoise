@@ -11,6 +11,31 @@ import Testing
 // with no key) rebuilt the panel's tree mid-test and listed the root again, so the request counts below were off.
 // The time limits leave room for the 60 s waits on CI's runner.
 extension AppearanceLayoutTests {
+    @Test @MainActor func invalidatedExpandabilityProbeCannotFinishANewerProbe() {
+        let node = FoldersPanel.Node(URL(fileURLWithPath: "/probe-fixture"))
+        let obsolete = node.beginProbe()
+        node.invalidate()
+        let current = node.beginProbe()
+        // The first request saw an empty folder before invalidation. Its late result is obsolete.
+        #expect(!node.finishProbe(obsolete, false))
+        #expect(node.probing)
+        #expect(node.knownExpandable == nil)
+        #expect(node.finishProbe(current, true))
+        #expect(node.knownExpandable == true)
+    }
+
+    @Test @MainActor func aFullFolderListingSupersedesAnExpandabilityProbe() {
+        let node = FoldersPanel.Node(URL(fileURLWithPath: "/probe-fixture"))
+        let obsolete = node.beginProbe()
+        let listing = node.beginListing()
+        #expect(!node.finishProbe(obsolete, false))
+        #expect(node.isLoading && !node.probing)
+        #expect(node.finishListing(listing, ["deep"]))
+        #expect(node.knownExpandable == true && node.children?.map(\.name) == ["deep"])
+        #expect(!node.finishProbe(obsolete, false))
+        #expect(node.knownExpandable == true)
+    }
+
     @Test(.isolatedSettings, .timeLimit(.minutes(5))) @MainActor func foldersPanelExpandsNetworkNodesLazilyAndFollowsNavigation() async throws {
         _ = NSApplication.shared
         let previous = Settings.isTesting
