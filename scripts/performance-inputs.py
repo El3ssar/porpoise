@@ -189,7 +189,8 @@ def decide(base, candidate, repository, caller, api, budget, tree=inputs, load_r
         # No observed failed comparison exists, so preserve the existing measurement path rather than invent evidence.
         return dict(result, reason='No trusted measured main evidence for identical inputs')
     except (OSError, KeyError, TypeError, ValueError, TimeoutError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
-        return dict(result, mode='blocked', reason='Cannot verify matching main performance evidence: ' + type(error).__name__)
+        detail = (str(error).splitlines() or [type(error).__name__])[0][:200] if isinstance(error, ValueError) else type(error).__name__
+        return dict(result, mode='blocked', reason='Cannot verify matching main performance evidence: ' + detail)
 
 
 def main():
