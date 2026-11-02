@@ -9,6 +9,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, ViewCont
     var localFileOpening = LocalFileOpening()
     var itemRenaming = ItemRenaming()
     var fileOperations = FileOperationsController.shared
+    var quickActions = FinderQuickActions()
     let customToolAvailability = CustomToolAvailabilityCache()
     var spacePreview: SpacePreviewPanel?
     let root = RootView()
