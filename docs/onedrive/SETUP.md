@@ -1,5 +1,8 @@
 # Register OneDrive for a Porpoise build
 
+> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
+> source/docs review did not inspect provider consoles or authenticate real accounts. Recheck provider requirements before changing registration.
+
 For the Porpoise maintainer/operator. Register one Microsoft Entra application for the distributed build; ordinary users
 authorize it in their browser with a personal Microsoft account or a work or school account. Porpoise is a **public
 client**: authorization code with PKCE S256, no client secret, and a loopback callback on this Mac. No hosted callback
@@ -50,7 +53,7 @@ outside this repository.
 Porpoise resolves the first nonblank value in this order:
 
 1. `PORPOISE_ONEDRIVE_CLIENT_ID` in the app process environment (test instances only).
-2. **Porpoise Settings → Accounts → Sign-in configuration → OneDrive application (client) ID**.
+2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → OneDrive application (client) ID**.
 3. `OneDriveClientID` in the app's Info.plist.
 
 Values are trimmed. Without a resolved ID the OneDrive tile stays **Coming soon**. To embed the ID in a local build,

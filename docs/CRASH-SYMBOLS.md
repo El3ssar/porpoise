@@ -15,23 +15,18 @@ records before it expires; CI artifact retention is not permanent storage.
 The manifest's commit is the actual checked-out release source, even when an
 existing version tag differs from the workflow's triggering commit.
 
-## Current helper gap
+## Helper symbols
 
-The unchanged committed helper has arm64 UUID
-`9A44A217-72B9-382D-BF5A-CF39F543500B`. Its original build did not retain DWARF;
-the cached SwiftPM helper's different UUID cannot substitute for it. Current
-archives explicitly record that helper symbols are unavailable. App symbols are
-retained now; helper source-line symbolication remains unavailable for this one
-legacy binary. This does not justify a helper rebuild and another user approval.
+The current helper has committed matching symbols under
+`Resources/HelperSymbols/PorpoiseHelper.dSYM`. `scripts/build-helper.sh --check`
+verifies input freshness and the symbol UUID/line-table contract without rebuilding
+or installing it. Every necessary helper rebuild must retain that directory alongside
+`Resources/Helper`; the dSYM stays outside the packaged helper bundle.
 
-The next **necessary** helper rebuild via `scripts/build-helper.sh` enables debug
-information, captures and checks its dSYM before stripping, and keeps it in
-`Resources/HelperSymbols/PorpoiseHelper.dSYM`. Commit that directory alongside
-`Resources/Helper` after the real rebuild. It is outside the packaged helper
-directory. `--check` rejects a missing dSYM for any new helper, and rejects
-mismatched UUIDs or empty line tables. The release archive includes it when present.
-The symbol-tooling-only change refreshed the script entry in `inputs.sha256`;
-the current helper binary, source inputs and code hash were not changed.
+The symbol tooling retains a narrowly identified legacy-helper exception for the old
+arm64 UUID `9A44A217-72B9-382D-BF5A-CF39F543500B`, which was built without retained
+DWARF. That exception is historical, not the state of the current helper. A cached
+SwiftPM helper or a different release's dSYM cannot substitute for the matching build.
 
 ## Verify and symbolicate
 

@@ -35,7 +35,7 @@ Every command supports `--help` and `help COMMAND`. `help --json` describes the 
 
 `--timeout SECONDS` bounds a response wait from 1 to 120 seconds. Defaults remain 10 seconds for browsing/inspection and 120 seconds for copy/move preparation. The app also has its own server deadlines. `--launch` waits at most 10 seconds for a read-only readiness probe, then submits a mutation exactly once; it does not retry transfers.
 
-`copy/move --dry-run` describes the sources and destination and **submits no transfer**. Explicit paths are a lexical plan, not a proof of existence/permissions or a reservation against concurrent changes. `--selection --dry-run` reads the current selection but still creates no Activity or approval request. The JSON plan explicitly has `submitted: false` and `requiresApproval: true`.
+`copy/move --dry-run` describes the sources and destination and **submits no transfer**. Explicit paths are a lexical plan, not a proof of existence/permissions or a reservation against concurrent changes. `--selection --dry-run` reads the current selection but still creates no operation or approval request. The JSON plan explicitly has `submitted: false` and `requiresApproval: true`.
 
 Shell completions are opt-in output only: `porpoise completions bash`, `porpoise completions zsh`, or `porpoise completions fish`. Review/save that output using your shell’s normal completion setup. Porpoise does not edit shell startup files.
 

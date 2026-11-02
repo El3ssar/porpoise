@@ -1,6 +1,8 @@
 # Architecture
 
-Porpoise separates shared contracts, local filesystem IO, helper security and app orchestration into four logic targets.
+Porpoise separates shared contracts, local filesystem IO, helper security and services into four logic targets, with app orchestration in the executable.
+
+Source inventory reviewed 2026-11-02 against 0.18.0 (`efd41202`); [Package.swift](../Package.swift) is the dependency authority.
 
 ```mermaid
 graph TD
@@ -42,16 +44,17 @@ never AppKit or SwiftUI.
 | `FileOperations` | `FileOperationsController`: jobs, undo/redo, Trash origins and Put Back, clipboard bookkeeping, remote transfers, the administrator retry; `FileOperationsUI` and `FileClipboard` |
 | `Locations` | `DirectoryModel` (what a view shows), `PlacesModel`, recent locations, search (bundled fd/ripgrep in folders, Spotlight everywhere) and queries, tags, comments, cloud state, archives, the app library, Trash info, icon names (`IconTheme`), path completion |
 | `Remote` | `RemoteFS` and the SSH/FTP/ADB providers, Keychain, Android tools, network mounts and browsing, `RemoteOpener` |
-| `Cloud` | `CloudAccounts` (connected cloud accounts as the app shows them: labels, sidebar rows, pictures, sections) over a `CloudBackend`: `DriveCloudBackend` for Google Drive, `DemoCloudBackend` for tests and test instances (`PORPOISE_CLOUD_DEMO`) |
-| `Drive` | Google Drive: OAuth (PKCE, loopback), the Drive v3 client, `DriveAccountStore` and the read-only `DriveProvider` |
+| `Cloud` | Shared account lifecycle, OAuth, metadata/range caches, offline copies, previews, edits and transfer contracts; `CompositeCloudBackend` routes Drive, Dropbox, OneDrive and Box adapters. `DemoCloudBackend` supplies isolated fixtures. |
+| `Drive`, `Dropbox`, `OneDrive`, `Box` | Provider OAuth/account stores, HTTP clients, content sources and mutations. `DriveProvider` is a blocking compatibility adapter; new Drive listing uses client pages. |
+| `Index`, `Git`, `Diagnostics` | Incremental search indexing; read-only Git status/diff; bounded local events and projected MetricKit crash/hang summaries. |
 | `Media` | `VideoPreview` (ffmpeg to HLS) and its local HTTP server |
 | `System` | `Shell`, `PrivilegedHelper` (install, XPC, ownership), `PrivacyAccess` (TCC), Local Network access, `StatusCenter`, Finder sounds |
 
 **Porpoise** (`Sources/Porpoise`). AppKit only where it draws or asks: `App` (delegate, `ServicesSetup`, system
 integration, updates, test bridge), `Window`, `Views`, `Panels`, `Bars`, `Navigator`, `Menus`, `Dialogs`, `Theme`,
-and `FileOperations` (the drop menu, jobs panel, conflict dialog and `FileOperationsDialogs`).
+and `FileOperations` (compact Transfers, conflicts, transfer errors and `FileOperationsDialogs`).
 
-**PorpoiseCLI** (`Sources/PorpoiseCLI`). The bundled `porpoise` command parses typed requests in Core and uses the local Unix transport in Services. It never performs file jobs itself; the app owns approval and Activity.
+**PorpoiseCLI** (`Sources/PorpoiseCLI`). The bundled `porpoise` command parses typed requests in Core and uses the local Unix transport in Services. It never performs file jobs itself; the app owns approval and Transfers.
 
 **PorpoiseHelper** (`Sources/PorpoiseHelper`). The launchd daemon, run as root. It only accepts Porpoise's signature
 and hands every request to `HelperRequests` in PorpoiseHelperKit. Its binary is committed in `Resources/Helper`; see
@@ -73,20 +76,26 @@ CONTRIBUTING.md before changing anything it uses.
 
 ## A file operation, end to end
 
-File › Move to Trash (⌘⌫):
+File → Move to Trash (⌘⌫):
 
-1. **Menu → action.** The menu item targets the first responder; `MainWindowController.moveToTrash(_:)`
-   (`Window/MainWindowActions.swift`) calls `FileOperationsController.shared.trash(selectedURLs, window: window)`.
-2. **Service.** `trash` sorts remote items (deleted after a `Confirmation`), apps on the system volume (a notice) and
-   local items, asks if Settings say so, then `run(.trash, …)`. Every question goes to `ui.confirm`, which
-   `FileOperationsDialogs` shows as an alert; the window is passed through untouched.
-3. **Job.** `run` creates a `FileJob` (FileSystem), reports it to `ui.jobStarted` (the jobs panel), and runs it on a
-   background queue. Progress goes to `ui.jobProgressed`; a name conflict blocks the job while the main thread asks
-   `ui.resolveConflict` (the conflict dialog).
-4. **Results.** On the main queue: `notifyChanged` posts `foldersChanged` (views reload), the undo record is pushed and
-   Trash origins recorded, Finder's sound plays, errors go to `ui.showErrors`.
-5. **Not allowed?** Items the job couldn't touch go to `retryDenied`: items you own are unlocked and retried; for the
-   rest `administratorCommands` builds `mv`/`cp`/`rm`/`chflags` commands and `authorize` sends them through
-   `PrivilegedHelper` (installing it first if needed; test instances use the AppleScript password prompt instead).
-6. **Helper.** Over XPC, the helper checks each command with `HelperRequests.refusal` (only `allowedTools`) and runs it;
-   trashed items are handed back to the user with `takeOwnership` (`HelperRequests.ownershipCommand`).
+1. **Menu → action.** The responder-chain action in `Window/MainWindowActions.swift`
+   passes the captured selection and window to `FileOperationsController`.
+2. **Routing and questions.** `FileOperationsController+Trash.swift` separates local,
+   remote and cloud behavior and any application-cleanup review. `FileOperationsUI` is the
+   boundary for questions; the app implements it in `FileOperationsDialogs`.
+3. **Execution and progress.** Local work runs through FileSystem's `FileJob` on a worker
+   queue. `JobControl` owns pause/cancel/policy checkpoints. Job events update `Activity`
+   records; app callbacks and `activityChanged` drive compact Transfers. The internal
+   `Activity` type name does not imply a separate Activity/history window.
+4. **Results.** Completion publishes folder changes, records the appropriate Undo and
+   Trash-origin state, and presents errors through the supplied UI hooks. Recovery and
+   operation records are engine state, distinct from the progress window's contents.
+5. **Permission denial.** `FileOperationsController+Authorization.swift` retries permitted
+   user-owned unlocks or builds a restricted administrator plan. Automated copy/move
+   requests disable elevation, including retry/recovery. Tests must not install the helper
+   or exercise a real administrator prompt.
+6. **Helper.** The installed XPC helper verifies the caller's signature/admin identity and
+   `HelperRequests.perform` validates the request, classifies its paths and asks the person
+   for the required standard/protected right. Descriptor-based operations act on checked
+   objects; the legacy tool/argument arrays are operation identifiers, not executed shell
+   commands. See [HELPER-SECURITY.md](HELPER-SECURITY.md) for the separate fallback and recovery limits.

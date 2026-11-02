@@ -1,5 +1,8 @@
 # Register Dropbox for a Porpoise build
 
+> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
+> source/docs review did not inspect provider consoles or authenticate real accounts. Recheck provider requirements before changing registration.
+
 For the Porpoise maintainer/operator. Register one app for the distributed build; ordinary users authorize that app in their browser. Dropbox’s getting-started guide allows a [free Dropbox account](https://docs.dropboxapi.com/dropbox-api/docs/get-started/tutorial/overview). These steps use the App Console and Porpoise’s local callback; no hosted callback service is needed.
 
 ## Create and configure the app
@@ -35,7 +38,7 @@ For the Porpoise maintainer/operator. Register one app for the distributed build
 Porpoise resolves the first nonblank value in this order:
 
 1. `PORPOISE_DROPBOX_APP_KEY` in the app process environment.
-2. **Porpoise Settings → Accounts → Sign-in configuration → Dropbox app key**.
+2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → Dropbox app key**.
 3. `DropboxAppKey` in the app’s Info.plist.
 
 Values are trimmed. Blank environment/Settings values allow the next source. Reopen Connect after changing the Settings field; no app restart is needed. Without a resolved key, the Dropbox tile stays **Coming soon** and cannot start sign-in. Its Settings field remains present so it can be configured.

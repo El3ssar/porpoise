@@ -1,5 +1,8 @@
 # Register Box for a Porpoise build
 
+> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
+> source/docs review did not inspect provider consoles or authenticate real accounts. Recheck provider requirements before changing registration.
+
 For the Porpoise maintainer/operator. Register one Box OAuth 2.0 application for the distributed build; ordinary users
 authorize it in their browser with their own Box account. A free Box account can create the application and nothing is
 paid for. Porpoise signs in with the authorization code flow, a loopback callback on this Mac and PKCE S256. No hosted
@@ -43,7 +46,7 @@ Porpoise resolves the first source that has a client ID and takes both values fr
 paired with another application's secret:
 
 1. `PORPOISE_BOX_CLIENT_ID` and `PORPOISE_BOX_CLIENT_SECRET` in the app process environment (test instances only).
-2. **Porpoise Settings → Accounts → Sign-in configuration → Box client ID** and **Box client secret** (a person's own
+2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → Box client ID** and **Box client secret** (a person's own
    application).
 3. `BoxClientID` and `BoxClientSecret` in the app's Info.plist.
 

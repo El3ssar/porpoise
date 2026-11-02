@@ -1,10 +1,27 @@
 # Checksums, disk usage and duplicate review
 
+> Implementation contract with historical verification notes. Test totals, captures and measurements below
+> are receipts for their original checkpoints, not new verification of this checkout. Current work is tracked in [ROADMAP.md](../../ROADMAP.md).
+
 Tools exposes three independent native windows. Selection is the input; without selection, the current local folder is used. Each window owns a cancellation token and releases its worker when closed. Data/filesystem work runs on utility queues; AppKit receives throttled progress and immutable results. No utility runs a deletion automatically.
 
 ## Shared physical inventory
 
 `PhysicalTreeScanner` reads directory metadata using `getattrlistbulk` (64 KiB batches). It validates record lengths, returned-attribute masks, name references and fixed fields before decoding. Filesystems without usable bulk attributes fall back to `readdir`/`lstat`. Up to four partitions per selected root run through a bounded operation queue; a flat folder does not allocate one operation per file. Directory handles close before recursion. Bulk batches and traversal check cancellation.
+
+Aggregate-only callers (`retainEntries: false`), including Get Info through `TreeMeasure`,
+consume metadata batches as they arrive rather than waiting for a whole directory's
+`DiskEntry` array. They count files while reading the directory, queue its subfolders and
+close that directory before descending. The single-worker aggregate path also streams the
+selected root. This preserves bounded open-descriptor use in deep trees; retained-inventory
+consumers keep their existing traversal order. Fallback suppresses names already delivered
+by earlier bulk batches. Pending directories, delivered-name and identity sets still consume
+memory; streaming metadata is not a claim of constant whole-scan memory.
+
+Get Info publishes incremental counts, checks selection/cancellation before accepting results,
+and labels a completed scan with unreadable descendants as **At least … (some items couldn’t
+be read)**. Recalculate requests a fresh scan. These changes do not add a persistent cache,
+change parallelism or establish a measured speedup for every filesystem.
 
 The inventory records URL, device/inode identity, type, logical size, allocated size and nanosecond mtime. It never follows symlink leaves or enters a different device by default. Nested selected roots on the same device are deduplicated; a separately selected volume is scanned explicitly. Directory identities prevent loops. Hidden files are included. Permission failures are retained as visible scan errors; partial totals are not presented as an error-free complete scan.
 

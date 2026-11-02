@@ -1,11 +1,11 @@
 # Dependencies and review policy
 
-Reviewed 2026-10-23. Owners: Porpoise maintainers; the release maintainer approves
+Source inventory refreshed 2026-11-02 against 0.18.0; this is not a fresh advisory or upstream-version review. Owners: Porpoise maintainers; the release maintainer approves
 pin, license, source and packaging changes. A version pin is not an advisory scan.
 
 | Component | Pin / provenance | License and update source |
 |---|---|---|
-| SwiftTerm | Vendored v1.20.0, upstream `5d14406844143538cd8f8851d2d8a67c1fe443e5`; import base `b2ab7347`, warning patch `d494c687`. Full differences and unresolved historical download details: [SOURCE.txt](../Vendor/SwiftTerm/SOURCE.txt). | [MIT](https://github.com/migueldeicaza/SwiftTerm/blob/5d14406844143538cd8f8851d2d8a67c1fe443e5/LICENSE); [releases](https://github.com/migueldeicaza/SwiftTerm/releases). |
+| SwiftTerm | Vendored v1.20.0, upstream `5d14406844143538cd8f8851d2d8a67c1fe443e5`; import base `b2ab7347`, warning patch `d494c687`, coverage-plugin output path and package-local build-info fixes. Full differences and unresolved historical download details: [SOURCE.txt](../Vendor/SwiftTerm/SOURCE.txt). | [MIT](https://github.com/migueldeicaza/SwiftTerm/blob/5d14406844143538cd8f8851d2d8a67c1fe443e5/LICENSE); [releases](https://github.com/migueldeicaza/SwiftTerm/releases). |
 | Sparkle | `Package.swift` exact 2.10.0; `Package.resolved` revision `eef1a539a373c1f1a320624b1130fc5de7b2e100`. SwiftPM verifies the resolved checkout; packaged framework is signed with the app. | [MIT and third-party notices](https://github.com/sparkle-project/Sparkle/blob/eef1a539a373c1f1a320624b1130fc5de7b2e100/LICENSE); [releases](https://github.com/sparkle-project/Sparkle/releases). |
 | FFmpeg | 8.0 source archive SHA-256 `b2751fccb6cc4c77708113cd78b561059b6fa904b24162fa0be2d60273d27b8e`. Built locally by `scripts/build-ffmpeg.sh`; static arm64, minimum macOS 15, no network/devices/autodetected external libraries. Exact configure list lives in that script. | [LGPL-2.1-or-later](https://ffmpeg.org/legal.html); [source releases](https://ffmpeg.org/releases/), [security](https://ffmpeg.org/security.html). |
 | fd | Official 10.5.0 `aarch64-apple-darwin` tarball SHA-256 `b67e1836c468e42e411984b56e52fa7abec08c2bd22c867398e7cc134aac5e12`. `scripts/fetch-search-tools.sh`. | [MIT or Apache-2.0](https://github.com/sharkdp/fd/tree/v10.5.0); [releases](https://github.com/sharkdp/fd/releases). MIT text shipped. |
@@ -58,7 +58,7 @@ commits/archive hashes and licenses, review local patches, and note unresolved
 provenance. Cover vendored SwiftTerm, FFmpeg, fd/rg, optional Android tools, assets
 and pinned Actions manually: GitHub dependency graph coverage is incomplete for
 these. No current vulnerability-free claim is made. GitHub dependency review
-requires a supported public repository or the relevant private-repository license;
+requires Dependency Graph to be enabled on a supported public repository (or the relevant private-repository license);
 an unavailable API on an actual dependency change fails the PR action and
 requires maintainer resolution. A source-only skip is not an advisory scan.
 
