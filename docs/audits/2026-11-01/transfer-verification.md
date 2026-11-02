@@ -1,5 +1,10 @@
 # Compact Transfers verification
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 The Transfers window replaces the toolbar progress button/popover and large primary Activity table. [The UX contract](../../TRANSFER-PROGRESS.md) describes counts, sampling, pause/retry behavior and quiet presentation. [Finder integration limits](../../FINDER-INTEGRATION.md) distinguish reveal handling from system Open/Save panels.
 
 ## Local checks

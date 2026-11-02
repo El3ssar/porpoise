@@ -1,5 +1,10 @@
 # Porpoise performance and architecture audit — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Scope: read-only source review of the directory/list/render/search/index/thumbnail/preview/watcher pipelines, supporting tests and budgets. No build or benchmark was run by this reviewer. Root supplied a three-second sample of the already-running installed application. Findings below distinguish control-flow defects from unmeasured performance risks.
 
 ## Highest-priority findings

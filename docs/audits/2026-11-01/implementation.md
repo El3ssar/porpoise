@@ -1,5 +1,10 @@
 # Porpoise polish, performance, safety and CLI implementation
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Implementation branch: `codex/porpoise-finish-and-cli`, based on `25c5fa7caae671e90d8eeca3d52308560c29869f`. This follows the [baseline audit](overview.md); that document describes the old revision. This is local implementation, not a published release or proof of literal complete Finder replacement.
 
 ## Changes

@@ -1,5 +1,9 @@
 # Google Drive M1 integration API
 
+> Historical M1 handoff (2026-10-16), retained without updating its old signatures, read-only scope or fixture assumptions.
+> Drive now supports mutations, offline copies and editing. Use [cloud provider contracts](../design/CLOUD_PROVIDERS.md),
+> [provider capabilities](../validation/PROVIDER-PARITY.md) and [current architecture](../ARCHITECTURE.md).
+
 Contract for porpoise-driveui (2026-10-16). Types live in PorpoiseCore; services in PorpoiseServices. M1 is online and read-only.
 
 ## Account lifecycle

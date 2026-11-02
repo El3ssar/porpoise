@@ -1,5 +1,8 @@
 # Architecture review — 2026-11-01
 
+> Historical proposal against the baseline below. Later implementation may have changed these paths;
+> this is not an approved current refactor backlog. Use [ARCHITECTURE.md](ARCHITECTURE.md) and [ROADMAP.md](../ROADMAP.md).
+
 Baseline: `25c5fa7caae671e90d8eeca3d52308560c29869f`. Survey and proposals only. No production refactoring was performed. See the [end-to-end audit](audits/2026-11-01/overview.md) for prioritized bug fixes; those take precedence over structural cleanup.
 
 The current Core → FileSystem/HelperKit → Services → App dependency direction is useful and should remain. The CLI and helper already have appropriately narrow dependency sets. AppKit rendering is not itself an architectural defect.

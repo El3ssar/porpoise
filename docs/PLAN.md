@@ -1,5 +1,8 @@
 # Plan: a Dolphin-like file manager for macOS
 
+> Historical plan. Its dates, estimates, file layout, defaults and verification counts describe the original build,
+> not the current app. Use [ROADMAP.md](../ROADMAP.md), [ARCHITECTURE.md](ARCHITECTURE.md) and [CONTRIBUTING.md](../CONTRIBUTING.md) now.
+
 > The original design plan, kept for history. The current source layout and workflow are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Goal

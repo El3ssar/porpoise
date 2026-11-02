@@ -1,5 +1,10 @@
 # Porpoise end-to-end audit — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Audit baseline: `25c5fa7caae671e90d8eeca3d52308560c29869f`. This is an audit and proposed backlog, not an implementation or release certification. Product source, installed app settings, default file-browser integration, accounts and helper installation were not changed. Local builds and isolated test instances are used for verification.
 
 ## Assessment

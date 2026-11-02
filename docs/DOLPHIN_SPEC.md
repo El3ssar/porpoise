@@ -1,9 +1,12 @@
 # Dolphin reference spec
 
+> Reference snapshot, read 2026-10-07. This describes Dolphin, not current Porpoise acceptance criteria.
+> Current product decisions are in [ROADMAP.md](../ROADMAP.md); shipped behavior is in [CHANGELOG.md](../CHANGELOG.md).
+
 What we are copying. Taken from Dolphin's source code (invent.kde.org, master = 26.11.70, read 2026-10-07)
 plus the KDE libraries Dolphin uses (KIO, KConfig, Breeze, plasma-integration).
 Items marked **UNVERIFIED** were not confirmed in source. Shortcuts are the Linux defaults. Porpoise uses Finder's
-keys by default and offers this map (Ctrl → ⌘) as the "Dolphin" key set in Settings › Shortcuts; see docs/DESIGN.md
+keys by default and offers this map (Ctrl → ⌘) as the "Dolphin" key set in Settings › Keyboard; see docs/DESIGN.md
 and the README's shortcut table.
 
 ---

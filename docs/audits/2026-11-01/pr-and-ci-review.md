@@ -1,5 +1,10 @@
 # Contributor PR and CI review
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Reviewed against main `4c8f1798e1a5fa8824aa56b177ddd4d2f7c0815c`. The four contributor PRs remain unmerged. Reviews used exact head diffs, current source and hosted logs; no contributor code was run against real accounts or devices, and no local application window was opened.
 
 ## PR verdicts

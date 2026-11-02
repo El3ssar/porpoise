@@ -1,5 +1,11 @@
 # Google OAuth verification: checklist for Porpoise (W-74)
 
+> Historical preparation/checklist from the W-74 review. Its provider policies, console status, source line numbers,
+> security findings and proposed fixes were not revalidated by the 2026-11-02 documentation refresh. Do not treat
+> “pending” or “today” below as a current verdict. Use [SECURITY.md](../../SECURITY.md), [helper security](../HELPER-SECURITY.md),
+> [dependencies](../DEPENDENCIES.md), the published [privacy policy](../site/privacy/index.html) and the [roadmap](../../ROADMAP.md).
+> Current OAuth approval/registration status needs operator verification; check current provider requirements before a submission.
+
 Porpoise asks for `openid email profile https://www.googleapis.com/auth/drive`
 (`Sources/PorpoiseServices/Drive/DriveOAuth.swift:116`). `drive` is a **restricted** scope
 (https://developers.google.com/workspace/drive/api/guides/api-specific-auth), so the app needs brand verification and

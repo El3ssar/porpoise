@@ -1,5 +1,10 @@
 # Porpoise UI finish gate — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 ## Decision: HOLD against the requested “shining daily Finder replacement” standard
 
 Product lens: Porpoise serves people who repeatedly locate, inspect, select, rename and transfer real files, often between two locations. The first-read objects are the active location and selection; the next action must operate on those exact files. Dense file information is useful here. Secondary tooling earns space only when it preserves that browsing loop. Its AppKit/custom-rendered file views, native theme tokens, split panes and persistent sessions are existing constraints to preserve. This is a finish gate for the user's stated quality ambition, not a claim that every current release is unusable.

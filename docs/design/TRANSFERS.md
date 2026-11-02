@@ -1,5 +1,9 @@
 # Copy & move: design spec
 
+> Superseded design proposal. The toolbar ring, popover, Activity/history surface and completion behavior below
+> are not the current contract. Use [Compact transfer progress](../TRANSFER-PROGRESS.md). Retained for design history;
+> conflict/recovery details below also require a source check before reuse.
+
 How Porpoise shows a copy or move while it runs, what it asks when names clash, and how it reports the end.
 Uses the app's native typography, spacing and theme colors.
 

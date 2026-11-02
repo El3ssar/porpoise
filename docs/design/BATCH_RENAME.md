@@ -1,5 +1,8 @@
 # Batch rename
 
+> Implementation contract with historical verification notes. Test totals, captures and measurements below
+> are receipts for their original checkpoints, not new verification of this checkout. Current work is tracked in [ROADMAP.md](../../ROADMAP.md).
+
 Core's `BatchRename` transforms one entry at a time through an ordered, Codable rule pipeline. Metadata and filesystem
 policy arrive as values, so the planner does no I/O. Rules operate on the stem unless Include extension in rules is
 selected; folders never lose their suffix to extension handling. Positions use Swift Character indices, preserving

@@ -1,5 +1,8 @@
 # Appearance
 
+> Implementation contract with historical verification notes. Test totals, captures and measurements below
+> are receipts for their original checkpoints, not new verification of this checkout. Current work is tracked in [ROADMAP.md](../../ROADMAP.md).
+
 `PorpoiseCore/AppearanceTheme.swift` defines a portable, validated sRGB palette. Colours encode as `#RRGGBB` strings.
 A theme JSON has `name`, `isDark`, `colors` (keys are every `ThemeRole.rawValue`) and a 16-element `terminalPalette`.
 Unknown colour keys are preserved for forward compatibility. Missing required roles, malformed colour strings or

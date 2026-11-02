@@ -1,5 +1,10 @@
 # UI implementation and finish ledger — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 This ledger records implemented changes and source review. Runtime/build results belong to the coordinating verification record. No normal app or system preferences were changed by the UI worker. Existing theme tokens, native AppKit structure, file-first density, split-pane model and custom efficient file view were preserved.
 
 ## Implemented audit fixes
