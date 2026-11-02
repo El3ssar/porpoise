@@ -1,6 +1,7 @@
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
+import os
 
 /// A job that didn't finish last time (Porpoise quit, crashed or the Mac lost power), checked against the disk as it
 /// is now: what can be resumed, what changed meanwhile.
@@ -236,11 +237,24 @@ extension FileOperationsController {
             if activity?.state != .interrupted { journals.remove(id) }
             return
         }
-        var token: NSObjectProtocol?
-        token = NotificationCenter.default.addObserver(forName: Self.activityChanged, object: self, queue: .main) { [weak self] _ in
-            guard activity.state.isEnded else { return }
+        let retire: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard activity.state.isEnded else { return false }
             if activity.state != .interrupted { self?.journals.remove(id) }
-            if let token { NotificationCenter.default.removeObserver(token) }
+            return true
+        }
+        let observation = OSAllocatedUnfairLock<NSObjectProtocol?>(initialState: nil)
+        observation.withLock { token in
+            token = NotificationCenter.default.addObserver(forName: Self.activityChanged, object: self, queue: .main) { _ in
+                MainActor.assumeIsolated {
+                    guard retire() else { return }
+                    let token = observation.withLock { token in
+                        let previous = token
+                        token = nil
+                        return previous
+                    }
+                    if let token { NotificationCenter.default.removeObserver(token) }
+                }
+            }
         }
     }
 

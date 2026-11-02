@@ -16,8 +16,19 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Workflow action pins
-        run: python3 scripts/check-workflow-pins.py
+        run: python3 scripts/check-workflow-pins.py && python3 scripts/test-dependency-inputs.py
+      - name: Identify dependency changes
+        id: inputs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/dependency-inputs.py --base "$BASE_SHA" --head "$HEAD_SHA" --output "$GITHUB_OUTPUT"
+      - name: No graph-covered dependency changes
+        if: github.event_name == 'pull_request' && steps.inputs.outputs.graph_required == 'false'
+        run: echo 'Swift package manifests/lockfiles and action pins are unchanged. Graph review is not applicable; this is not an advisory scan.' >> "$GITHUB_STEP_SUMMARY"
       - name: Propose dependency maintenance review
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -35,7 +46,7 @@ jobs:
           path: dependency-proposal.md
           retention-days: 90
       - name: Review dependency graph changes
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.inputs.outputs.graph_required == 'true'
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: low

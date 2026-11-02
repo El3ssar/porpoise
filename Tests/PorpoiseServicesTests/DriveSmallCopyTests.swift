@@ -41,9 +41,10 @@ struct DriveSmallCopyTests {
         let control = FileJob(kind: .copy, sources: sources, destinationFolder: destination)
         let job = RemoteTransferJob(kind: .copy, sources: sources, destination: destination, control: control.control, rule: .ask, options: .init())
         try await awaitCallback { continuation in
-            Thread {
-                job.run(); continuation.resume()
-            }.start()
+            Task {
+                await offThePool { job.run() }
+                continuation.resume()
+            }
         }
         #expect(job.errors.isEmpty && job.results.count == 12 && job.completed.count == 12 && control.hasEnded)
         #expect(job.progress.doneBytes == 12 * 4096 && job.progress.doneFiles == 12)

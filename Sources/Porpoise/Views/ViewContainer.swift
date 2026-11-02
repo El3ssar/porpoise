@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
-protocol ViewContainerDelegate: AnyObject {
+@MainActor protocol ViewContainerDelegate: AnyObject {
     func containerDidBecomeActive(_ c: ViewContainer)
     func containerDidChangeURL(_ c: ViewContainer)
     func containerSelectionChanged(_ c: ViewContainer)

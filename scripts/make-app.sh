@@ -6,7 +6,12 @@ cd "$(dirname "$0")/.."
 # Use the Command Line Tools if Xcode is installed but its license isn't accepted yet.
 if ! xcodebuild -version >/dev/null 2>&1; then export DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi
 CONFIG=${CONFIG:-release}
-FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=.")
+BIN=$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)
+MODULE_CACHE="$BIN/ModuleCache"
+# Keep only Clang's module-cache references absolute so automatic dsymutil invocations can find the PCMs.
+# Specific maps must precede the source-prefix maps; all source and runtime file paths remain private.
+FLAGS=(-Xswiftc -file-prefix-map -Xswiftc "$MODULE_CACHE=$MODULE_CACHE" -Xcc "-ffile-prefix-map=$MODULE_CACHE=$MODULE_CACHE"
+       -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=.")
 INTENT_PROTOCOLS="$(dirname "$(xcrun --find swiftc)")/../share/swift/SwiftConstantValues/AppIntents.json"
 INTENTS_AVAILABLE=0
 if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 && [ -r "$INTENT_PROTOCOLS" ]; then
@@ -28,13 +33,16 @@ fi
 # Only what ships: the test support targets don't build in release.
 swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product Porpoise
 swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product PorpoiseCLI
-BIN=$(swift build -c "$CONFIG" --arch arm64 "${FLAGS[@]}" --show-bin-path)
 APP=build/Porpoise.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
 mkdir -p "$APP/Contents/Helpers"
 cp "$BIN/PorpoiseCLI" "$APP/Contents/Helpers/porpoise"
+# Swift's linker adds ad-hoc signatures. Remove them only from the package copies before mutating them;
+# the original linked products stay intact for symbol capture, and final inside-out signing remains mandatory.
+codesign --remove-signature "$APP/Contents/Helpers/porpoise"
+codesign --remove-signature "$APP/Contents/MacOS/Porpoise"
 strip -S "$APP/Contents/Helpers/porpoise"
 if [ "$INTENTS_AVAILABLE" = 1 ]; then
   python3 scripts/build-app-intents.py --configuration "$CONFIG" --output "$APP/Contents/Resources"
@@ -44,6 +52,7 @@ fi
 if [ "$CONFIG" = release ]; then
   mkdir -p build/symbols
   rm -rf build/symbols/Porpoise.dSYM
+  # Cache references are already absolute. An inverse "." map corrupts their .build path components.
   xcrun dsymutil --num-threads 2 "$BIN/Porpoise" -o build/symbols/Porpoise.dSYM
   python3 scripts/check-symbols.py verify "$BIN/Porpoise" build/symbols/Porpoise.dSYM
 fi
@@ -201,6 +210,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 codesign -dvvv "$HELPER_APP" 2>&1 | sed -n 's/^CDHash=//p' > build/helper-cdhash.txt
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
 "${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
+codesign --verify --deep --strict "$APP"
 if [ "$CONFIG" = release ]; then
   python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/Porpoise" build/symbols/Porpoise.dSYM
 fi

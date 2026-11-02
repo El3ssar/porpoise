@@ -29,12 +29,12 @@ import Testing
         _ = first
         let calls = Counter()
         for _ in 0..<100 {
-            var events: IndexEvents? = IndexEvents(roots: [root.path], since: 0) { _, _, _ in calls.add() }
-            #expect(events?.available == true)
+            let events = Locked<IndexEvents?>(IndexEvents(roots: [root.path], since: 0) { _, _, _ in calls.add() })
+            #expect(events.value?.available == true)
             // Freed on another thread, as SearchIndex does on its own queue, while callbacks may be running.
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                 DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(Int.random(in: 0...30))) {
-                    events = nil
+                    events.change { $0 = nil }
                     c.resume()
                 }
             }

@@ -19,24 +19,27 @@ extension FileOperationsController {
         ui?.jobStarted(activity)
         activityDidChange()
         defer { control.finish(); remoteCancel.removeValue(forKey: activity.id); ui?.jobFinished(activity) }
+        let batchID = activity.id
+        let reportProgress: @MainActor @Sendable (JobProgress) -> Void = { [weak self, weak activity] snapshot in
+            guard let self, let activity, !activity.state.isEnded else { return }
+            self.progressed(activity, snapshot)
+            self.ui?.jobProgressed(activity, snapshot)
+        }
+        let reportNotice: @MainActor @Sendable (String?) -> Void = { [weak self, weak activity] notice in
+            activity?.notice = notice; self?.activityDidChange()
+        }
         do {
             let prepared = try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<PreparedSharingItems, Error>) in
                     DispatchQueue(label: "porpoise.sharing-preparation", qos: .userInitiated).async {
                         do {
                             let result = try SharingPreparation.prepare(
-                                urls, control: control, batchID: activity.id,
-                                progress: { [weak self, weak activity] snapshot in
-                                    DispatchQueue.main.async {
-                                        guard let self, let activity, !activity.state.isEnded else { return }
-                                        self.progressed(activity, snapshot)
-                                        self.ui?.jobProgressed(activity, snapshot)
-                                    }
+                                urls, control: control, batchID: batchID,
+                                progress: { snapshot in
+                                    DispatchQueue.main.async { reportProgress(snapshot) }
                                 },
-                                notice: { [weak self, weak activity] notice in
-                                    DispatchQueue.main.async {
-                                        activity?.notice = notice; self?.activityDidChange()
-                                    }
+                                notice: { notice in
+                                    DispatchQueue.main.async { reportNotice(notice) }
                                 })
                             continuation.resume(returning: result)
                         } catch { continuation.resume(throwing: error) }

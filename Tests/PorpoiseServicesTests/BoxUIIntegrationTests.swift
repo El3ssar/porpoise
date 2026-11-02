@@ -249,9 +249,10 @@ import Testing
         #expect(try Data(contentsOf: output.appendingPathComponent("payload.txt")) == Data("payload".utf8))
         func run(_ job: RemoteTransferJob) async throws -> RemoteTransferJob {
             try await awaitCallback { continuation in
-                Thread {
-                    job.run(); continuation.resume()
-                }.start()
+                Task {
+                    await offThePool { job.run() }
+                    continuation.resume()
+                }
             }
             return job
         }

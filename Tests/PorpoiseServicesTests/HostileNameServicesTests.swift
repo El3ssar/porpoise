@@ -27,7 +27,6 @@ import Testing
             : "missing \(w.subtracting(g).map(\.debugDescription)), extra \(g.subtracting(w).map(\.debugDescription)), \(got.count) vs \(want.count)"
     }
 
-    @discardableResult
     /// SSHProvider's listing script, run the way ssh runs it (the login shell reads `sh -c QUOTED`), on a folder of
     /// hostile names, and parsed back. Plain macOS tools, so this is the BSD `stat` branch a macOS server takes.
     @Test func sshListingScriptRoundTrips() throws {
@@ -58,7 +57,7 @@ import Testing
 
     /// Paths under the remote home ("/~/…") become `"$HOME"/'…'`.
     @Test func homeRelativeShellPaths() throws {
-        try scratch.populate("home/in home")
+        _ = try scratch.populate("home/in home")
         let ssh = SSHProvider(url: remote("/"))
         let script = SSHProvider.listScript(ssh.shellPath(remote("/~/in home")))
         let r = try runTool("/bin/sh", ["-c", script], env: ["PATH": "/usr/bin:/bin", "HOME": scratch.path("home").path])

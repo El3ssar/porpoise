@@ -15,11 +15,14 @@ struct SwiftTermBuildInfoPlugin: BuildToolPlugin {
             "SWIFTTERM_BUILD_DIRTY"
         ]
         let processEnvironment = ProcessInfo.processInfo.environment
-        let fallbackEnvironment = fallbackVariableNames.reduce(into: [String: String]()) { result, name in
+        var fallbackEnvironment = fallbackVariableNames.reduce(into: [String: String]()) { result, name in
             if let value = processEnvironment[name] {
                 result[name] = value
             }
         }
+        // Coverage also instruments this build tool. Its sandbox permits writes in the plugin work
+        // directory, not the package root. This affects the generator only, never app/test profiles.
+        fallbackEnvironment["LLVM_PROFILE_FILE"] = context.pluginWorkDirectoryURL.appendingPathComponent("build-info.profraw").path
 
         try FileManager.default.createDirectory(
             at: context.pluginWorkDirectoryURL,

@@ -252,9 +252,17 @@ extension DebugBridge {
         let menu = w.contextMenu(for: row.map { w.view.model.rows[$0].item }, in: w.view)
         let at = row.map { CGPoint(x: list.iconRect($0).midX, y: list.iconRect($0).midY) } ?? CGPoint(x: list.bounds.midX, y: 300)
         // The menu runs its own tracking loop: the capture is a timer in the common modes, which that loop serves.
+        // The actor-owned handle keeps the non-Sendable AppKit menu confined to its tracking run loop.
+        @MainActor final class MenuCapture {
+            let menu: NSMenu
+            init(_ menu: NSMenu) { self.menu = menu }
+        }
+        let capture = MenuCapture(menu)
         let timer = Timer(timeInterval: 0.7, repeats: false) { _ in
-            WindowCapture.write(WindowCapture.ownWindowIDs(), to: f[1])
-            menu.cancelTracking()
+            MainActor.assumeIsolated {
+                WindowCapture.write(WindowCapture.ownWindowIDs(), to: f[1])
+                capture.menu.cancelTracking()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         DispatchQueue.main.async { menu.popUp(positioning: nil, at: at, in: list) }

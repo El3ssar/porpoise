@@ -2,7 +2,7 @@ name: CI
 on:
   push:
     branches: [main, 'ci/**']
-    paths-ignore: ['CHANGELOG.md', 'CONTRIBUTING.md', 'README.md', 'docs/**']
+    paths-ignore: ['CHANGELOG.md', 'CONTRIBUTING.md', 'docs/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -17,8 +17,28 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  tests:
+  proof:
     if: ${{ !inputs.release_benchmark }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      passed: ${{ steps.proof.outputs.passed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reuse verification only for identical tested inputs
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-proof.py
+  tests:
+    needs: proof
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
     runs-on: macos-26
     timeout-minutes: 40
     steps:
@@ -33,7 +53,8 @@ jobs:
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: test-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
@@ -72,10 +93,17 @@ jobs:
         run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers
         run: python3 scripts/coverage.py --min 92
+      - name: Save test compiler state even after a failed check
+        if: ${{ !cancelled() && steps.test-cache.outputs.cache-primary-key != '' && steps.test-cache.outputs.cache-matched-key != steps.test-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.test-cache.outputs.cache-primary-key }}
 
   # The optimized shipping compile and the entire instrumented test suite use independent runners.
   shipping-build:
-    if: ${{ !inputs.release_benchmark }}
+    needs: proof
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
     runs-on: macos-26
     timeout-minutes: 25
     steps:
@@ -88,17 +116,27 @@ jobs:
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore shipping build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: shipping-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
           restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
       # Match make-app.sh's release compiler flags, including removal of build-machine paths.
       - name: Build shipping app
-        run: swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
+        run: |
+          bin=$(swift build -c release --arch arm64 --show-bin-path)
+          swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$bin/ModuleCache=$bin/ModuleCache" -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$bin/ModuleCache=$bin/ModuleCache" -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
+      - name: Save shipping compiler state even after a failed build
+        if: ${{ !cancelled() && steps.shipping-cache.outputs.cache-primary-key != '' && steps.shipping-cache.outputs.cache-matched-key != steps.shipping-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.shipping-cache.outputs.cache-primary-key }}
 
   performance-budgets:
-    if: ${{ !inputs.release_benchmark }}
+    needs: proof
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
     uses: ./.github/workflows/performance-budgets.yml
     with:
       base_ref: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || format('{0}^', github.sha) }}
@@ -106,23 +144,43 @@ jobs:
   # UI state/byte acceptance runs for normal CI, including ordinary UI source changes.
   # Captures remain review artifacts; absent screen access is never mislabeled a visual pass.
   ui-acceptance:
-    if: ${{ !inputs.release_benchmark }}
+    needs: proof
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
     uses: ./.github/workflows/ui-acceptance.yml
 
   # Preserve the existing required-check name: it must cover every required job.
   build-and-test:
     if: always() && !inputs.release_benchmark
-    needs: [tests, shipping-build, performance-budgets, ui-acceptance]
+    needs: [proof, tests, shipping-build, performance-budgets, ui-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Require every CI gate
         env:
           TESTS: ${{ needs.tests.result }}
           SHIPPING: ${{ needs.shipping-build.result }}
           PERFORMANCE: ${{ needs.performance-budgets.result }}
           UI: ${{ needs.ui-acceptance.result }}
-        run: test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success && test "$UI" = success
+          PROOF: ${{ needs.proof.outputs.passed }}
+          PROOF_STATUS: ${{ needs.proof.result }}
+        run: |
+          { test "$PROOF" = true && test "$PROOF_STATUS" = success; } || {
+            test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success && test "$UI" = success
+          }
+      - name: Attest the tested source tree
+        if: needs.proof.outputs.passed != 'true'
+        env:
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-proof.py --attest ci-proof.json
+      - name: Retain trusted CI evidence
+        if: needs.proof.outputs.passed != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-proof.json
+          if-no-files-found: error
+          retention-days: 30
 
   # Explicitly requested timing probe: production build flags and DMG scans, without publishing or credentials.
   release-benchmark:
@@ -139,7 +197,8 @@ jobs:
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore shipping build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: benchmark-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
@@ -170,3 +229,9 @@ jobs:
           scripts/make-dmg.sh --no-build
       - name: Check disk image
         run: scripts/check-release.sh build/Porpoise-0.0.0.dmg
+      - name: Save packaging compiler state even after a failed check
+        if: ${{ !cancelled() && steps.benchmark-cache.outputs.cache-primary-key != '' && steps.benchmark-cache.outputs.cache-matched-key != steps.benchmark-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.benchmark-cache.outputs.cache-primary-key }}

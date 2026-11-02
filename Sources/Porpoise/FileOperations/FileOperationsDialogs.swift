@@ -243,8 +243,9 @@ final class FileOperationsDialogs: FileOperationsUI {
             else { return }
             let owner = (activity.originWindow as? NSWindow)?.windowController as? MainWindowController
             owner?.view.statusBar.showMessage(ActivityPresentation.summary(activity), duration: 4)
+            guard let announcementTarget = owner?.window ?? NSApp else { return }
             NSAccessibility.post(
-                element: owner?.window ?? NSApp, notification: .announcementRequested,
+                element: announcementTarget, notification: .announcementRequested,
                 userInfo: [.announcement: activity.title + ". " + activity.statusText, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         }
     }

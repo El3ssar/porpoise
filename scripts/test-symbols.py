@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Real Mach-O/DWARF regression checks; no app/helper rebuild or account access."""
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,44 @@ def working_directory(path):
         os.chdir(previous)
 
 
+class PackagingSymbolTests(unittest.TestCase):
+    """Compile disposable Foundation fixtures and inspect them; never execute a binary."""
+
+    def run_tool(self, arguments, root):
+        result = subprocess.run(arguments, cwd=root, check=True, capture_output=True, text=True)
+        output = result.stdout + result.stderr
+        self.assertNotIn('warning:', output, output)
+        return output
+
+    def test_module_cache_maps_preserve_symbols_and_clean_package_mutations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            cache = root / '.build/arm64-apple-macosx/release/ModuleCache'
+            (root / 'main.swift').write_text(
+                'import Foundation\n'
+                '@inline(never) func packagingValue() -> Int { NSNumber(value: 42).intValue }\n'
+                'print(#filePath, packagingValue())\n')
+            # The specific cache exception must come first. Reversing these produces missing-PCM warnings.
+            compiler = ['xcrun', 'swiftc', '-g', '-O', '-module-cache-path', str(cache),
+                        '-file-prefix-map', f'{cache}={cache}', '-file-prefix-map', f'{root}=.',
+                        '-Xcc', f'-ffile-prefix-map={cache}={cache}', '-Xcc', f'-ffile-prefix-map={root}=.']
+            self.run_tool(compiler + ['-c', 'main.swift', '-o', 'main.o'], root)
+            self.run_tool(['xcrun', 'swiftc', 'main.o', '-o', 'original'], root)
+            # Plain dsymutil handles both automatic and explicit capture. An inverse "." map corrupts this .build path.
+            self.run_tool(['xcrun', 'dsymutil', 'original', '-o', 'original.dSYM'], root)
+            original, dsym, packaged = root / 'original', root / 'original.dSYM', root / 'packaged'
+            original_bytes = original.read_bytes()
+            shutil.copy2(original, packaged)
+            self.run_tool(['codesign', '--remove-signature', str(packaged)], root)
+            self.run_tool(['strip', '-S', str(packaged)], root)
+            self.run_tool(['install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(packaged)], root)
+            self.run_tool(['codesign', '--force', '--sign', '-', str(packaged)], root)
+            self.run_tool(['codesign', '--verify', '--strict', str(packaged)], root)
+            self.assertTrue(symbols.verify(packaged, dsym))
+            self.assertEqual(original.read_bytes(), original_bytes, 'Packaging must mutate copies only')
+            self.assertNotIn(str(root).encode(), packaged.read_bytes())
+
+
 class SymbolTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -49,6 +88,7 @@ class SymbolTests(unittest.TestCase):
         subprocess.run(['xcrun', 'dsymutil', str(cls.binary), '-o', str(cls.dsym)], check=True)
         cls.stripped = cls.root / 'stripped'
         shutil.copy2(cls.binary, cls.stripped)
+        subprocess.run(['codesign', '--remove-signature', str(cls.stripped)], check=True)
         subprocess.run(['strip', '-S', str(cls.stripped)], check=True)
 
     @classmethod
@@ -88,6 +128,7 @@ class SymbolTests(unittest.TestCase):
             dsym = root / 'synthetic-helper.dSYM'
             subprocess.run(compiler + [str(root / 'main.o'), str(root / 'kit.o'), '-o', str(binary)], check=True)
             subprocess.run(['xcrun', 'dsymutil', '--num-threads', '2', str(binary), '-o', str(dsym)], check=True)
+            subprocess.run(['codesign', '--remove-signature', str(binary)], check=True)
             subprocess.run(['strip', '-S', str(binary)], check=True)
             self.assertTrue(symbols.verify(binary, dsym))
 
@@ -136,10 +177,12 @@ class SymbolTests(unittest.TestCase):
             subprocess.run(['codesign', '-f', '-s', '-', str(helper)], check=True, capture_output=True)
             args = SimpleNamespace(app=app, app_dsym=self.dsym, helper_dsym=root / 'missing.dSYM',
                                    output=root / 'symbols.zip', version='0.0.0', revision='a' * 40)
+            diagnostics = io.StringIO()
             with working_directory(root), \
                     mock.patch.object(symbols, 'LEGACY_HELPER_UUID', legacy_uuid), \
-                    mock.patch.object(symbols, 'LEGACY_HELPER_SHA256', legacy_sha):
+                    mock.patch.object(symbols, 'LEGACY_HELPER_SHA256', legacy_sha), redirect_stdout(diagnostics):
                 symbols.archive(args)
+            self.assertIn('::warning::Legacy helper has no matching symbols', diagnostics.getvalue())
             with zipfile.ZipFile(args.output) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
                 self.assertEqual(manifest['binaries']['app']['symbols'], 'included')

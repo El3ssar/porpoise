@@ -48,9 +48,10 @@ struct DriveTransferSpeedTests {
                     kind: .copy, sources: urls, destination: destination,
                     control: JobControl(), rule: .ask, options: .init())
                 try await awaitCallback { continuation in
-                    Thread {
-                        job.run(); continuation.resume()
-                    }.start()
+                    Task {
+                        await offThePool { job.run() }
+                        continuation.resume()
+                    }
                 }
                 #expect(job.errors.isEmpty && job.results.count == 200)
                 let json = try await server.stats()
