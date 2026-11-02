@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Self-tests for Tests/UI/acceptance.py's bounds, without the app: waits end at their deadline, failed steps are kept
 and capped, only the runner's own process is stopped, and the summary keeps structural, visual and attended apart."""
+import gc
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import warnings
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -130,11 +133,11 @@ class AcceptanceRunnerTests(unittest.TestCase):
             # What the app showed is kept for each failed step (here: that it didn't answer).
             self.assertTrue(os.path.exists(os.path.join(out, "failures", "light-step0-error.txt")))
             run.write_summary()
-            summary = open(os.path.join(out, "SUMMARY.md")).read()
+            summary = Path(out, "SUMMARY.md").read_text(encoding="utf-8")
             for part in ["## Structural checks", "## Visual review", "## Attended checks"]:
                 self.assertIn(part, summary)
             self.assertIn("FAIL [light] always fails: on purpose", summary)
-            self.assertEqual(json.load(open(os.path.join(out, "results.json")))["run"], "selftest")
+            self.assertEqual(json.loads(Path(out, "results.json").read_text(encoding="utf-8"))["run"], "selftest")
 
     def test_a_wait_that_times_out_fails_the_run(self):
         with tempfile.TemporaryDirectory() as out:
@@ -177,8 +180,12 @@ class AcceptanceRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             run = make_run(out)
             run.dbg = "/usr/bin/true"
-            self.assertEqual(run.run(), 1)
-            results = json.load(open(os.path.join(out, "results.json")))["results"]
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always", ResourceWarning)
+                self.assertEqual(run.run(), 1)
+                gc.collect()
+            self.assertFalse([warning for warning in captured if issubclass(warning.category, ResourceWarning)])
+            results = json.loads(Path(out, "results.json").read_text(encoding="utf-8"))["results"]
             self.assertEqual([(r["check"], r["ok"]) for r in results], [("launch", False)])
             # Its defaults suite is gone again.
             self.assertFalse(os.path.exists(os.path.expanduser("~/Library/Preferences/app.porpoise.acceptance.selftest-light.plist")))
