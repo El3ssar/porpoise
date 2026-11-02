@@ -14,6 +14,7 @@ final class ColumnPreviewView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         information.showsMaterial = false
+        information.onPreviewLayoutChange = { [weak self] in self?.needsLayout = true }
         addSubview(information)
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -23,13 +24,12 @@ final class ColumnPreviewView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The preview, name and details stay one block of this width at most, centred in the column (Finder): in a
-    /// wide window the column takes the rest of the strip, and the details would sit far from the picture.
+    /// Pictures use a narrow panel. Text previews use the full column width.
     static let contentWidth: CGFloat = 420
 
     override func layout() {
         super.layout()
-        let w = min(bounds.width, Self.contentWidth)
+        let w = information.codePreview.isHidden ? min(bounds.width, Self.contentWidth) : bounds.width
         information.frame = CGRect(x: floor((bounds.width - w) / 2), y: 0, width: w, height: bounds.height)
     }
 
