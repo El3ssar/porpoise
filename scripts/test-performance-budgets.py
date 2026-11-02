@@ -146,6 +146,15 @@ class BudgetTests(unittest.TestCase):
         for name in ['listing_100k', 'search_input', 'idle_cpu']:
             self.assertEqual(results[name], dict(frozen[name], calibration_attempt=0) if name != 'idle_cpu' else frozen[name])
         self.assertEqual(value['comparison'], candidate)
+        bad = copy.deepcopy(value)
+        for pair in bad['comparison']:
+            pair['b']['listing_100k'] = 2
+        with self.assertRaisesRegex(ValueError, 'Recalibration after a valid verdict'):
+            budgets.evaluate(bad, CURRENT_POLICY)
+        bad = copy.deepcopy(value)
+        for pair in bad['recalibrations'][0]:
+            pair['b']['cold_launch'] = 1.6
+        self.assertEqual(budgets.evaluate(bad, CURRENT_POLICY)['cold_launch']['status'], 'calibration_failed')
         # A new A/A band still cannot clear a measured regression or an unresolved second metric.
         for other in ['listing_100k', 'search_input']:
             bad = copy.deepcopy(value)
