@@ -135,7 +135,8 @@ watched() {
 
 status=0
 if ((alone)); then
-    PORPOISE_TESTS_ALONE=1 watched "$@" --filter "BusyPoolTests|MemoryBudgetTests|ScannerStarvationTests" || status=$?
+    # Each suite takes process-wide resources; they must also be isolated from one another.
+    PORPOISE_TESTS_ALONE=1 watched "$@" --filter "BusyPoolTests|MemoryBudgetTests|ScannerStarvationTests" --no-parallel || status=$?
 fi
 # The whole run last (also after a failure above): its coverage is the one scripts/coverage.py reads.
 watched "$@" || status=$?
