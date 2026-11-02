@@ -59,6 +59,10 @@ class WorkflowTests(unittest.TestCase):
                 path.write_text('uses: ' + ref + ' # v1\n')
                 self.assertTrue(pins.check(root), ref)
 
+
+class BundledToolTests(unittest.TestCase):
+    """Exercise the macOS zsh build entry point; run separately from portable pin checks."""
+
     def test_legacy_digest_alone_cannot_authorize_reuse(self):
         with tempfile.TemporaryDirectory() as folder:
             root = pathlib.Path(folder)
