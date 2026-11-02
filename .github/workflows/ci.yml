@@ -94,7 +94,7 @@ jobs:
       - name: Coverage of the logic layers
         run: python3 scripts/coverage.py --min 92
       - name: Save test compiler state even after a failed check
-        if: ${{ !cancelled() && steps.test-cache.outputs.cache-primary-key != '' && steps.test-cache.outputs.cache-matched-key != steps.test-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        if: ${{ !cancelled() && steps.test-cache.outputs.cache-primary-key != '' && steps.test-cache.outputs.cache-matched-key != steps.test-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
@@ -128,7 +128,7 @@ jobs:
           bin=$(swift build -c release --arch arm64 --show-bin-path)
           swift build -c release --arch arm64 -Xswiftc -file-prefix-map -Xswiftc "$bin/ModuleCache=$bin/ModuleCache" -Xswiftc -file-prefix-map -Xswiftc "$PWD=." -Xcc "-ffile-prefix-map=$bin/ModuleCache=$bin/ModuleCache" -Xcc "-ffile-prefix-map=$PWD=." --product Porpoise
       - name: Save shipping compiler state even after a failed build
-        if: ${{ !cancelled() && steps.shipping-cache.outputs.cache-primary-key != '' && steps.shipping-cache.outputs.cache-matched-key != steps.shipping-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        if: ${{ !cancelled() && steps.shipping-cache.outputs.cache-primary-key != '' && steps.shipping-cache.outputs.cache-matched-key != steps.shipping-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
@@ -230,7 +230,7 @@ jobs:
       - name: Check disk image
         run: scripts/check-release.sh build/Porpoise-0.0.0.dmg
       - name: Save packaging compiler state even after a failed check
-        if: ${{ !cancelled() && steps.benchmark-cache.outputs.cache-primary-key != '' && steps.benchmark-cache.outputs.cache-matched-key != steps.benchmark-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        if: ${{ !cancelled() && steps.benchmark-cache.outputs.cache-primary-key != '' && steps.benchmark-cache.outputs.cache-matched-key != steps.benchmark-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build

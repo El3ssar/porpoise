@@ -72,7 +72,7 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
       - name: Save UI compiler state even after a failed check
-        if: ${{ !cancelled() && steps.ui-cache.outputs.cache-primary-key != '' && steps.ui-cache.outputs.cache-matched-key != steps.ui-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json') != '' }}
+        if: ${{ !cancelled() && steps.ui-cache.outputs.cache-primary-key != '' && steps.ui-cache.outputs.cache-matched-key != steps.ui-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
