@@ -45,7 +45,7 @@ jobs:
           cat build/performance-scope/SUMMARY.md >> "$GITHUB_STEP_SUMMARY"
       - name: Retain evidence decision
         if: ${{ !cancelled() && steps.scope.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: performance-scope-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30
@@ -85,7 +85,7 @@ jobs:
           echo "identity=$(scripts/build-ffmpeg.sh --cache-key)" >> "$GITHUB_OUTPUT"
       - name: Restore ffmpeg
         if: ${{ needs.scope.outputs.mode == 'measure' }}
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/ffmpeg/ffmpeg
@@ -107,12 +107,16 @@ jobs:
       - name: Restore private optimized compiler cache
         if: ${{ needs.scope.outputs.mode == 'measure' }}
         id: compiler-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Only SwiftPM build state and content-checked source timestamps. Staged apps/results stay fresh.
           path: .build-budgets
-          key: budgets-swift-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/performance-budgets.py', 'scripts/make-app.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Split compile inputs from the measurement runner: trial-only Python edits can reuse
+          # compiler state. Bump this namespace if preparation/instrumentation/cache layout changes.
+          key: budgets-swift-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/make-app.sh') }}-${{ hashFiles('scripts/performance-budgets.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            budgets-swift-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/make-app.sh') }}-${{ hashFiles('scripts/performance-budgets.py') }}-
+            budgets-swift-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/make-app.sh') }}-
             budgets-swift-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.identity }}-${{ hashFiles('Package.swift', 'Package.resolved', 'Benchmarks/PerformanceBudgets/**', 'scripts/performance-budgets.py', 'scripts/make-app.sh') }}-
       - name: Compare identical optimized app workloads
         if: ${{ needs.scope.outputs.mode == 'measure' }}
@@ -123,7 +127,7 @@ jobs:
       - name: Save validated optimized compiler state
         # Retain successful source preparation even when the measurement verdict fails.
         if: ${{ needs.scope.outputs.mode == 'measure' && (!cancelled() && steps.compiler-cache.outputs.cache-primary-key != '' && hashFiles('build/performance-budgets/preparation.json') != '') }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build-budgets
           key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
@@ -137,7 +141,7 @@ jobs:
           fi
       - name: Retain all measurements and failure logs
         if: ${{ needs.scope.outputs.mode == 'measure' && (!cancelled()) }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: performance-budgets-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 30

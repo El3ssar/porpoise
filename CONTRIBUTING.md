@@ -100,6 +100,11 @@ experiments without pushing main. For a nonpublishing release packaging probe, r
 This probe uses production compile flags, ad hoc signing and the DMG scan, with no release credentials.
 Pull requests always run CI so required checks are reported.
 
+Dependency review requires Settings → Advanced Security → Dependency Graph to be enabled on the repository.
+Without it, GitHub's comparison API returns 403 even with the correct read permission. Dependency changes must
+pass the real graph review; source-only changes report that no graph-covered dependency changed. An unavailable
+scan is not a clean advisory result.
+
 Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, or `docs/**` skip CI; the website has its own workflow.
 Before release, `scripts/ci-proof.py` searches a bounded history of successful main pushes and maintainer-merged PRs.
 It binds paths, modes and object IDs for every build, test and security input, ignoring only that documentation
@@ -149,6 +154,14 @@ exactly the same compiler flags as CI. SwiftPM still validates its build graph; 
 DMG scans and Sparkle verification always run. CI and releases share the ffmpeg cache keyed by source SHA-256
 and build-script hash. Every restored binary is checked against its recorded SHA-256; a missing or mismatched
 digest rebuilds from checksum-verified source. `scripts/build-ffmpeg.sh --force` remains available for a fresh build.
+
+Vendored SwiftTerm does not embed the outer Porpoise repository's changing Git metadata. Its generated source
+therefore stays stable across unrelated commits, preserving downstream compiler reuse. The standalone-package
+metadata reader and explicit overrides still work; `scripts/test-swiftterm-build-info.py` checks both cases.
+The private benchmark compiler cache separately keys compile inputs and measurement-runner code. Trial-only
+runner edits can restore compiler state with the same toolchain, package, build script and workload harness.
+Both apps are still built and staged afresh, source mtimes are restored only for identical content, and no old
+measurement or staged app is reused. Bump the cache namespace if preparation or instrumentation contracts change.
 
 Measured on 2026-10-18 with identical application/test sources on `ci/ciperf`:
 
