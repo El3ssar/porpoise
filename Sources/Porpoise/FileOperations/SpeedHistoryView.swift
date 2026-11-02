@@ -3,6 +3,8 @@ import PorpoiseCore
 
 /// A bounded, static rendering of the transfer's measured samples. No sampling timer or per-file list lives here.
 final class SpeedHistoryView: NSView {
+    var currentSpeed: Double?
+    var averageSpeed: Double?
     var samples: [TransferSpeedSample] = [] { didSet { needsDisplay = true; describe() } }
     private let empty = NSTextField(labelWithString: "Collecting transfer speed…")
     override var isFlipped: Bool { true }
@@ -43,7 +45,7 @@ final class SpeedHistoryView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let plot = bounds.insetBy(dx: 8, dy: 20)
+        let plot = bounds.insetBy(dx: 0, dy: 24)
         guard plot.width > 0, plot.height > 0 else { return }
         Theme.separator.withAlphaComponent(0.5).setStroke()
         let grid = NSBezierPath()
@@ -56,12 +58,14 @@ final class SpeedHistoryView: NSView {
         guard values.count >= 2, let last = values.last else { return }
         let duration = max(1, last.elapsed)
         let peak = max(1, values.map(\.bytesPerSecond).max() ?? 1)
+        let magnitude = pow(10, floor(log10(peak)))
+        let scale = ([1.0, 2, 5, 10].first { $0 * magnitude >= peak * 1.05 } ?? 10) * magnitude
         let segments = Dictionary(grouping: values, by: \.segment).values.sorted { ($0.first?.elapsed ?? 0) < ($1.first?.elapsed ?? 0) }
         for segment in segments {
             let points = segment.map { value in
                 CGPoint(
                     x: plot.minX + min(1, max(0, value.elapsed / duration)) * plot.width,
-                    y: plot.maxY - min(1, max(0, value.bytesPerSecond / peak)) * plot.height)
+                    y: plot.maxY - min(1, max(0, value.bytesPerSecond / scale)) * plot.height)
             }
             guard let start = points.first, let end = points.last else { continue }
             let line = NSBezierPath(); line.move(to: start)
@@ -72,7 +76,17 @@ final class SpeedHistoryView: NSView {
             Theme.activeText.setStroke(); line.lineWidth = 1.5; line.lineJoinStyle = .round; line.stroke()
         }
         let style: [NSAttributedString.Key: Any] = [.font: Tokens.font(.footnote), .foregroundColor: Theme.windowTextInactive]
-        (FileFormat.speed(peak) as NSString).draw(at: CGPoint(x: plot.minX, y: 0), withAttributes: style)
+        (FileFormat.speed(scale) as NSString).draw(at: CGPoint(x: plot.minX, y: 0), withAttributes: style)
+        if let currentSpeed {
+            let text = "Now " + FileFormat.speed(currentSpeed)
+            let width = (text as NSString).size(withAttributes: style).width
+            (text as NSString).draw(at: CGPoint(x: plot.maxX - width, y: 0), withAttributes: style)
+        }
+        if let averageSpeed {
+            let text = "Average " + FileFormat.speed(averageSpeed)
+            let width = (text as NSString).size(withAttributes: style).width
+            (text as NSString).draw(at: CGPoint(x: plot.maxX - width, y: bounds.height - 16), withAttributes: style)
+        }
         (Self.elapsedLabel(duration) as NSString).draw(at: CGPoint(x: plot.minX, y: bounds.height - 16), withAttributes: style)
     }
 }

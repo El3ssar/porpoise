@@ -30,11 +30,11 @@ import Testing
             #expect(card.accessibilityLabel()?.contains(activity.title) == true)
             #expect(descendants(card, as: NSTableView.self).isEmpty)
             let buttons = descendants(card, as: NSButton.self).map(\.title)
-            if state == .running { #expect(buttons.contains("Pause") && buttons.contains("Stop")) }
-            if state == .paused { #expect(buttons.contains("Resume") && buttons.contains("Stop")) }
+            if state == .running { #expect(buttons.contains("Pause") && buttons.contains("Cancel")) }
+            if state == .paused { #expect(buttons.contains("Resume") && buttons.contains("Cancel")) }
             if state == .failed {
                 #expect(buttons.contains("Retry"))
-                #expect(descendants(card, as: NSPopUpButton.self).contains { $0.itemTitles.contains("Show failures") })
+                #expect(buttons.contains("Show Errors") && buttons.contains("Dismiss"))
             }
             if !state.isEnded { #expect(labels.contains("photo.jpg")) }
             #expect(card.subviews.allSatisfy { $0.frame.width.isFinite && $0.frame.height.isFinite })
@@ -52,9 +52,10 @@ import Testing
         let card = TransferProgressView(window: nil)
         card.update(activity)
         #expect(!card.isExpanded && card.preferredHeight < 180 && card.speedHistory.isHidden)
-        let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Show Speed" })
+        let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
         disclosure.performClick(nil)
-        #expect(card.isExpanded && card.preferredHeight == 278 && !card.speedHistory.isHidden)
+        #expect(card.isExpanded && card.preferredHeight == 268 && !card.speedHistory.isHidden)
+        #expect(descendants(card, as: ThinProgressView.self).allSatisfy(\.isHidden))
         #expect(card.speedHistory.samples == activity.transferSummary.speedSamples)
         #expect(Set(card.speedHistory.samples.map(\.segment)).count == 2)
         #expect(descendants(card, as: NSTableView.self).isEmpty)
@@ -66,7 +67,7 @@ import Testing
         let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
         activity.state = .running
         let card = TransferProgressView(window: nil); card.update(activity)
-        let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Show Speed" })
+        let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
         disclosure.performClick(nil)
         #expect(card.isExpanded)
         activity.state = .completed; card.update(activity)
@@ -89,14 +90,14 @@ import Testing
         let labels = descendants(card, as: NSTextField.self).map(\.stringValue)
         #expect(labels.contains("Moved · contents not counted"))
     }
-    @Test(.isolatedSettings) func activeProgressPrecedesEditDecisionsAndRecentCompletions() {
+    @Test(.isolatedSettings) func activeProgressPrecedesEditDecisionsWithoutRecentCompletions() {
         let source = URL(fileURLWithPath: "/fixture/source")
         let running = Activity(kind: .copy, sources: [source], destination: nil, job: nil)
         let queued = Activity(kind: .copy, sources: [source], destination: nil, job: nil)
         let ended = Activity(kind: .copy, sources: [source], destination: nil, job: nil)
         running.state = .running; queued.state = .queued; ended.state = .completed
         let edit = UUID()
-        #expect(ActivityWindowController.progressOrder([running, queued, ended], editIDs: [edit]) == [running.id, queued.id, edit, ended.id])
+        #expect(ActivityWindowController.progressOrder([running, queued, ended], editIDs: [edit]) == [running.id, queued.id, edit])
     }
 
     @Test func speedHistoryElapsedLabelUsesSingularUnits() {
@@ -141,7 +142,7 @@ import Testing
             defer { window.close() }
             for expanded in [false, true] {
                 if expanded {
-                    let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Show Speed" })
+                    let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
                     disclosure.performClick(nil)
                 }
                 root.frame.size.height = card.preferredHeight + 24
@@ -150,7 +151,7 @@ import Testing
                 window.effectiveAppearance.performAsCurrentDrawingAppearance {
                     root.layer?.backgroundColor = Theme.windowBackground.cgColor
                     root.layoutSubtreeIfNeeded()
-                    #expect(card.layer?.backgroundColor == Theme.viewBackground.cgColor)
+                    #expect(card.layer?.backgroundColor == Theme.windowBackground.cgColor)
                 }
                 #expect(window.effectiveAppearance.isDark == (look == .dark))
                 #expect(!window.isVisible)

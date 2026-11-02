@@ -1,10 +1,10 @@
 import AppKit
-import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
 
 @testable import Porpoise
+@testable import PorpoiseServices
 
 /// Offscreen layout and theme contracts. These tests never order, activate or make a window key.
 @MainActor @Suite(.serialized, .isolatedSettings) struct ActivityAppearanceTests {
@@ -19,8 +19,6 @@ import Testing
         let window = try #require(controller.window)
         defer { window.close() }
         let content = try #require(window.contentView)
-        let tools = try #require(descendants(content, as: CustomToolActivityView.self).first)
-        let navigation = try #require(descendants(content, as: NSPopUpButton.self).first { $0.itemTitles == ["Transfers", "History", "Tools"] })
         #expect(window.title == "Transfers")
         #expect(!window.isVisible)
         content.layoutSubtreeIfNeeded()
@@ -28,39 +26,78 @@ import Testing
         #expect(window.contentLayoutRect.height < 300)
         #expect(operations.activities.isEmpty && cloudEditing.entries.isEmpty)
         #expect(descendants(content, as: TransferProgressView.self).isEmpty)
-        #expect(descendants(content, as: NSSegmentedControl.self).isEmpty)
-        let empty = controller.emptyState
-        #expect(empty.state == ActivityWindowController.emptyListState)
-        empty.show(nil); empty.show(ActivityWindowController.emptyListState)
-        let labels = descendants(empty, as: NSTextField.self).filter { !$0.isHidden && !$0.stringValue.isEmpty }
-        let title = try #require(labels.first { $0.stringValue == "No activity" })
-        let message = try #require(labels.first { $0.stringValue == "Copies and moves show up here." })
-        #expect((message.font?.pointSize ?? 99) < (title.font?.pointSize ?? 0))
-        #expect(message.textColor == title.textColor)
-        for appearance in [AppearanceChoice.light, .dark, .light] {
+        #expect(descendants(content, as: CustomToolActivityView.self).isEmpty)
+        #expect(descendants(content, as: NSTableView.self).isEmpty)
+        #expect(descendants(content, as: NSPopUpButton.self).isEmpty)
+        #expect(controller.emptyState.state == ActivityWindowController.emptyListState)
+        for appearance in [AppearanceChoice.light, .dark] {
             Settings.shared.appearance = appearance; app.appearance = Theme.appearance; Theme.lookChanged()
             try #require(await eventually { window.effectiveAppearance.isDark == (appearance == .dark) })
-            for section in 0..<navigation.numberOfItems {
-                navigation.selectItem(at: section)
-                navigation.sendAction(navigation.action, to: navigation.target)
-                content.layoutSubtreeIfNeeded()
-                #expect(!window.isVisible)
-                #expect(navigation.convert(navigation.bounds, to: content).minX >= 0)
-                #expect(navigation.frame.width >= navigation.intrinsicContentSize.width)
-                if section == 2 {
-                    #expect(!tools.isHidden)
-                    window.effectiveAppearance.performAsCurrentDrawingAppearance {
-                        #expect(tools.table.backgroundColor.usingColorSpace(.sRGB) == Theme.viewBackground.usingColorSpace(.sRGB))
-                        #expect(tools.output.textColor?.usingColorSpace(.sRGB) == Theme.viewText.usingColorSpace(.sRGB))
-                    }
-                }
-                if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
-                    try captureOffscreen(
-                        window, to: URL(fileURLWithPath: folder).appendingPathComponent("transfers-\(section)-\(appearance.rawValue).png"))
-                }
+            content.layoutSubtreeIfNeeded()
+            #expect(!window.isVisible)
+            if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
+                try captureOffscreen(window, to: URL(fileURLWithPath: folder).appendingPathComponent("transfers-empty-\(appearance.rawValue).png"))
             }
         }
-        navigation.selectItem(at: 0); navigation.sendAction(navigation.action, to: navigation.target)
+    }
+
+    @Test func onlyLiveJobsAndActionableFailuresRemainWithoutClearingBackendHistory() throws {
+        _ = NSApplication.shared
+        let operations = FileOperationsController(), cloudEditing = CloudEditing()
+        let controller = ActivityWindowController(controller: operations, cloudEditing: cloudEditing)
+        let window = try #require(controller.window)
+        defer { window.close() }
+        let content = try #require(window.contentView)
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        operations.activities = [activity]
+        for state: Activity.State in [.queued, .running, .paused, .waiting, .verifying, .failed, .interrupted] {
+            activity.state = state
+            controller.reload()
+            #expect(descendants(content, as: TransferProgressView.self).count == 1)
+            #expect(!window.isVisible && !window.isKeyWindow)
+        }
+        for state: Activity.State in [.completed, .cancelled] {
+            activity.state = state
+            controller.reload()
+            #expect(descendants(content, as: TransferProgressView.self).isEmpty)
+            #expect(operations.activities.first === activity)
+            #expect(!window.isVisible && !window.isKeyWindow)
+        }
+        activity.state = .completed; activity.errors = ["Could not copy one item"]
+        controller.reload()
+        let card = try #require(descendants(content, as: TransferProgressView.self).first)
+        let dismiss = try #require(descendants(card, as: NSButton.self).first { $0.title == "Dismiss" })
+        dismiss.performClick(nil)
+        #expect(descendants(content, as: TransferProgressView.self).isEmpty)
+        #expect(operations.activities.first === activity)
+        #expect(activity.errors == ["Could not copy one item"])
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
+    @Test func explicitlyOpenedProgressHidesAfterSuccessButKeepsFailuresActionable() throws {
+        _ = NSApplication.shared
+        let operations = FileOperationsController(), cloudEditing = CloudEditing()
+        let window = RecordingTransferWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 480, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let controller = ActivityWindowController(controller: operations, cloudEditing: cloudEditing, progressWindow: window)
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running; operations.activities = [activity]
+        controller.show()
+        #expect(window.presentations == 1)
+        let hides = window.hides
+        activity.state = .failed; activity.errors = ["Read failed"]
+        controller.reload()
+        #expect(window.hides == hides)
+        #expect(descendants(try #require(window.contentView), as: TransferProgressView.self).count == 1)
+        activity.state = .completed; activity.errors = []
+        controller.reload()
+        #expect(window.hides == hides + 1)
+        // The test double records presentation requests but never orders a native window.
+        #expect(!window.isVisible && !window.isKeyWindow)
+        controller.show()
+        #expect(window.presentations == 1)
     }
 
     private func descendants<T: NSView>(_ view: NSView, as type: T.Type) -> [T] {
@@ -74,4 +111,12 @@ import Testing
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
     }
+}
+
+/// Exercises the actual show/finish call path without ever ordering or activating a native window.
+@MainActor private final class RecordingTransferWindow: NSWindow {
+    var presentations = 0
+    var hides = 0
+    override func orderFront(_ sender: Any?) { presentations += 1 }
+    override func orderOut(_ sender: Any?) { hides += 1 }
 }
