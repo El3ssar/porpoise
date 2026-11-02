@@ -46,7 +46,9 @@ class ProofTests(unittest.TestCase):
 
     def run_record(self, **changes):
         record = dict(head_sha=self.base, event='push', head_branch='main',
-                      head_repository={'full_name': self.repository}, status='completed', conclusion='success')
+                      head_repository={'full_name': self.repository}, status='completed', conclusion='success',
+                      run_attempt=1, created_at='2026-11-02T10:00:00Z',
+                      updated_at='2026-11-02T10:00:00Z', run_started_at='2026-11-02T10:00:00Z')
         record.update(changes)
         return record
 
@@ -116,6 +118,41 @@ class ProofTests(unittest.TestCase):
     def test_newest_attempt_blocks_older_success(self):
         for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None)]:
             self.assertIsNone(proof.find_proof([self.run_record(**state), self.run_record()], self.repository))
+
+    def test_run_order_uses_rerun_clock_not_api_creation_order_or_attempt_number(self):
+        green = self.run_record(id=2, created_at='2026-11-02T10:45:00Z',
+                                updated_at='2026-11-02T10:55:00Z', run_started_at='2026-11-02T10:46:00Z')
+        for state in [dict(status='completed', conclusion='failure'),
+                      dict(status='in_progress', conclusion=None),
+                      dict(status='queued', conclusion=None, run_started_at=None)]:
+            late = self.run_record(id=1, run_attempt=2, created_at='2026-11-02T10:37:32Z',
+                                   updated_at='2026-11-02T11:07:29Z', run_started_at='2026-11-02T10:57:19Z')
+            late.update(state)
+            for rows in [[green, late], [late, green]]:
+                with self.subTest(state=state, rows=rows):
+                    self.assertIsNone(proof.find_proof(rows, self.repository))
+        ancient = self.run_record(id=1, run_attempt=99, conclusion='failure')
+        for rows in [[ancient, green], [green, ancient]]:
+            self.assertEqual(proof.find_proof(rows, self.repository), green)
+
+    def test_equal_clocks_resolve_failed_or_incomplete_evidence_before_green(self):
+        green = self.run_record(id=2)
+        for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None),
+                      dict(status='queued', conclusion=None, run_started_at=None)]:
+            other = self.run_record(id=1, **state)
+            for rows in [[green, other], [other, green]]:
+                self.assertIsNone(proof.find_proof(rows, self.repository))
+
+    def test_malformed_clock_or_attempt_cannot_fall_back_to_green(self):
+        green = self.run_record(id=2)
+        for field, value in [('created_at', None), ('updated_at', 'garbage'),
+                             ('run_started_at', None), ('updated_at', '2026-02-30T10:00:00Z'),
+                             ('updated_at', '2026-11-02T10:00:00+01:00'),
+                             ('run_attempt', 0), ('run_attempt', True), ('run_attempt', '2')]:
+            with self.subTest(field=field, value=value):
+                invalid = self.run_record(id=1, **{field: value})
+                self.assertIsNone(proof.find_proof([green, invalid], self.repository))
+        self.assertIsNone(proof.find_proof([green] * 101, self.repository))
 
     def merged_fixture(self, changed_controls=False, style='merge', multiple_commits=False):
         branch = self.git('branch', '--show-current')

@@ -4,6 +4,7 @@
 No proof (including API failures) means the release must run every check itself.
 """
 import argparse
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -152,7 +153,28 @@ def failed_matching_inputs(run, repository, target, load_pr):
     return relevant and application_tree(checkout) == application_tree(target)
 
 
+def evidence_order(run):
+    """GitHub lists runs by creation, but re-runs update the same run much later."""
+    if type(run.get('run_attempt')) is not int or run['run_attempt'] < 1:
+        raise ValueError('Missing positive run attempt')
+    timestamps = []
+    for field in ['created_at', 'updated_at', 'run_started_at']:
+        value = run.get(field)
+        if field == 'run_started_at' and value is None and run.get('status') == 'queued':
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+            raise ValueError('Missing UTC run timestamp')
+        timestamps.append(datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ'))
+    # An ambiguous tie cannot allow green evidence to hide a failed or unfinished check.
+    failed = run.get('status') != 'completed' or run.get('conclusion') != 'success'
+    return max(timestamps), failed
+
+
 def _find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=None, load_jobs=None, caller_run_id=None):
+    if not isinstance(runs, list) or len(runs) > 100:
+        raise ValueError('Expected bounded GitHub run evidence')
+    runs = [run for run in runs if caller_run_id is None or run.get('id') != caller_run_id]
+    runs = sorted(runs, key=evidence_order, reverse=True)
     seen = set()
     for run in runs:
         if caller_run_id is not None and run.get('id') == caller_run_id:
