@@ -11,6 +11,9 @@ public protocol RemoteProvider: AnyObject {
     func download(_ remote: URL, into localFolder: URL) throws -> URL
     /// Copies a local file or folder into a remote folder (replacing an item of the same name).
     func upload(_ local: URL, into remoteFolder: URL) throws
+    /// Creates a regular file atomically only if its name is unused. Never implement with replacing upload.
+    func createFolder(_ remote: URL) throws
+    func createFile(_ remote: URL, contents: Data) throws
     func delete(_ remote: [URL]) throws
     func makeFolder(_ remote: URL) throws
     /// rmdir semantics: a newly arrived or skipped child must never be recursively removed.
@@ -30,6 +33,14 @@ public struct RemoteListing {
 }
 
 extension RemoteProvider {
+    public func createFolder(_ remote: URL) throws {
+        throw RemoteError.unsupported("This connection cannot safely create a folder without reusing an existing item.")
+    }
+    public func createFile(_ remote: URL, contents: Data) throws {
+        throw RemoteError.unsupported(
+            "This connection cannot safely create a new file without replacing an existing item. Create it locally and copy it with conflict review instead."
+        )
+    }
     public func listWithNotice(_ folder: URL) throws -> RemoteListing { RemoteListing(items: try list(folder)) }
     public func removeEmptyFolder(_ remote: URL) throws {
         throw RemoteError.unsupported("This provider cannot remove an empty moved folder safely.")

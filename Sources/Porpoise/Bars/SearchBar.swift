@@ -18,6 +18,7 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     private let namesButton = FlatButton(icon: "edit-rename", title: "Names")
     private let contentsButton = FlatButton(icon: "document-preview", title: "+ Contents")
     private let closeButton = FlatButton(icon: "dialog-close", tooltip: "Quit Searching")
+    private let optionsButton = FlatButton(icon: "view-filter", tooltip: "Search Options")
     /// The whole home folder (Spotlight), or the folder shown.
     var everywhere = false { didSet { if everywhere != oldValue { updateButtons(); updatePlaceholder(); fire() } } }
     /// Names and contents (+ Contents), or names only.
@@ -54,6 +55,9 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
             contentsButton.toolTip = "Also find files by the text inside them (\(service) searches their contents)"
             return
         }
+        everywhereButton.toolTip = "Search your whole home folder (Spotlight)"
+        namesButton.toolTip = "Find names. Indexed search supports ext:pdf, path:work, size:>10mb, dm:today, folder:, file:, regex:pattern"
+        contentsButton.toolTip = "Also find files by the text inside them (shown as Content matches)"
         hereButton.toolTip = "Limit the search to “\(scopeFolder?.lastPathComponent ?? "")” and its subfolders"
     }
 
@@ -95,7 +99,9 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
             self?.updatePlaceholder()
         }
         closeButton.onClick = { [weak self] in self.map { $0.delegate?.searchBarClosed($0) } }
-        for v in [field, hereButton, everywhereButton, namesButton, contentsButton, closeButton] as [NSView] { addSubview(v) }
+        optionsButton.showsMenuIndicator = true
+        optionsButton.menuProvider = { [weak self] in self?.optionsMenu() }
+        for v in [field, hereButton, everywhereButton, namesButton, contentsButton, closeButton, optionsButton] as [NSView] { addSubview(v) }
         updateButtons()
         updateTooltips()
     }
@@ -119,7 +125,18 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
     override func layout() {
         super.layout()
         let h = bounds.height
+        let buttons = [hereButton, everywhereButton, namesButton, contentsButton]
+        let required = buttons.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + 220
+        let compact = bounds.width < required
+        buttons.forEach { $0.isHidden = compact }
+        optionsButton.isHidden = !compact
         closeButton.frame = CGRect(x: bounds.width - 34, y: (h - 28) / 2, width: 28, height: 28)
+        if compact {
+            optionsButton.frame = CGRect(x: closeButton.frame.minX - 36, y: (h - 28) / 2, width: 32, height: 28)
+            field.frame = CGRect(x: 8, y: (h - 24) / 2, width: max(24, optionsButton.frame.minX - 16), height: 24)
+            needsDisplay = true
+            return
+        }
         var x = closeButton.frame.minX - 6
         for b in [contentsButton, namesButton, nil, everywhereButton, hereButton] {
             guard let b else {
@@ -140,14 +157,33 @@ final class SearchBar: NSView, NSSearchFieldDelegate {
         Theme.windowBackground.setFill(); bounds.fill()
         // Each pair (where, what) on one track, so it reads as a segmented control: one choice of two.
         for pair in [(hereButton, everywhereButton), (namesButton, contentsButton)] {
+            guard !pair.0.isHidden else { continue }
             let track = pair.0.frame.union(pair.1.frame).insetBy(dx: -2, dy: -2)
             Theme.windowText.withAlphaComponent(0.06).setFill()
             NSBezierPath(roundedRect: track, xRadius: Tokens.Radius.row + 2, yRadius: Tokens.Radius.row + 2).fill()
         }
         Theme.separator.setFill()
-        CGRect(x: dividerX - 0.5, y: bounds.midY - 9, width: 1, height: 18).fill()
+        if optionsButton.isHidden { CGRect(x: dividerX - 0.5, y: bounds.midY - 9, width: 1, height: 18).fill() }
         let l = NSBezierPath(); l.move(to: CGPoint(x: 0, y: bounds.height - 0.5)); l.line(to: CGPoint(x: bounds.width, y: bounds.height - 0.5))
         Theme.separator.setStroke(); l.stroke()
+    }
+
+    private func optionsMenu() -> NSMenu {
+        let menu = NSMenu()
+        for (title, tag, selected) in [
+            ("This Folder", 0, !everywhere), ("Everywhere", 1, everywhere), ("Names Only", 2, !contents), ("Names and Contents", 3, contents),
+        ] {
+            if tag == 2 { menu.addItem(.separator()) }
+            let item = NSMenuItem(title: title, action: #selector(chooseOption(_:)), keyEquivalent: "")
+            item.target = self; item.tag = tag; item.state = selected ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func chooseOption(_ item: NSMenuItem) {
+        if item.tag < 2 { everywhere = item.tag == 1 } else { contents = item.tag == 3 }
+        field.window?.makeFirstResponder(field)
     }
 
     func controlTextDidChange(_ obj: Notification) {

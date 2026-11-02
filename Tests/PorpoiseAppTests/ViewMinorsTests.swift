@@ -283,7 +283,11 @@ import Testing
         let s = try Scratch("folders-follow")
         try s.folder("Here/Old")
         let here = s.path("Here")
+        // Watch this fixture, not every parallel test's activity in the shared temporary directory's ancestry.
+        Settings.shared.homeURL = s.url
+        Settings.shared.foldersLimitToHome = true
         let panel = FoldersPanel(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
+        #expect(panel.window == nil)
         let outline = try #require((panel.subviews.first as? NSScrollView)?.documentView as? NSOutlineView)
         panel.currentURL = here
         func node(_ url: URL) -> FoldersPanel.Node? {
@@ -292,12 +296,17 @@ import Testing
         }
         try #require(await eventually { node(here) != nil })
         let hereNode = try #require(node(here))
+        #expect(outline.parent(forItem: hereNode) == nil)
+        #expect(outline.numberOfRows == 1)
         outline.expandItem(hereNode)
         try #require(await eventually { node(s.path("Here/Old")) != nil })
+        #expect((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FoldersPanel.Node)?.url.lastPathComponent } == ["Here", "Old"])
         try FileManager.default.createDirectory(at: s.path("Here/New"), withIntermediateDirectories: false)
         #expect(await eventually { node(s.path("Here/New")) != nil })
         try FileManager.default.removeItem(at: s.path("Here/Old"))
         #expect(await eventually { node(s.path("Here/Old")) == nil })
+        #expect((0..<outline.numberOfRows).compactMap { (outline.item(atRow: $0) as? FoldersPanel.Node)?.url.lastPathComponent } == ["Here", "New"])
+        #expect(panel.window == nil)
     }
 
     /// #15: a double-click on one of several selected items opens them all (Finder); one click on it, left alone,
@@ -379,7 +388,7 @@ import Testing
         let list = ItemListView(model: model)
         let element = ItemAccessibilityElement(list: list, index: 0)
         let value = try #require(element.accessibilityValue() as? String)
-        #expect(value.contains(try #require(CloudState.cloudOnly.help)), "\(value)")
+        #expect(value.contains(CloudState.cloudOnly.help), "\(value)")
         var downloaded: [URL] = []
         ItemListView.downloadForTesting = { downloaded.append($0.url) }
         let action = try #require(element.accessibilityCustomActions()?.first)

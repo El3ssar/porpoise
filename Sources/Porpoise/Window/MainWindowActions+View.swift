@@ -25,6 +25,12 @@ extension MainWindowController {
         syncToActiveView()
     }
 
+    @objc func showApplicationLibrary(_ sender: Any?) {
+        guard AppLibrary.isActive(for: view.url) else { return }
+        view.showApplicationLibrary()
+        syncToActiveView()
+    }
+
     func cycleViewMode() {
         let all = ViewMode.allCases
         let i = all.firstIndex(of: view.model.props.mode) ?? 0

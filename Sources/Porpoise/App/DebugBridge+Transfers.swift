@@ -69,8 +69,8 @@ extension DebugBridge {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .floating
         window.orderFrontRegardless()
-        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -130,7 +130,7 @@ extension DebugBridge {
 
     func transferpopoverCommand(_ arg: String) {
         guard Settings.isTesting else { return }
-        wc?.toolbar.transfers.showTransfers()
+        ActivityWindowController.shared.show()
     }
 
     func activitypreviewCommand(_ arg: String) {

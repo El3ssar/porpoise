@@ -25,10 +25,11 @@ struct ScannerStarvationTests {
         let group = DispatchGroup()
         let lock = NSLock()
         var counts: [Int] = []
+        let root = s.path("root")
         for _ in 0..<callers {
             group.enter()
             DispatchQueue.global().async {
-                let n = PhysicalTreeScanner.scan([s.path("root")]).entries.count
+                let n = PhysicalTreeScanner.scan([root]).entries.count
                 lock.withLock { counts.append(n) }
                 group.leave()
             }

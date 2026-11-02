@@ -64,7 +64,7 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
         func aToolThatCannotStartFallsBackToTheWalk() async throws {
             let s = try Scratch()
             try s.file("plan.md", "ask about the budget")
-            let tools = try #require(searchTools)
+            _ = try #require(searchTools)
             let (_, names, marked) = try await finish { update in
                 let r = SearchRunner(text: "budget", scope: s.url, contents: true, update: update)
                 r.folderTools = FolderSearch.Tools(fd: s.path("no-such-fd").path)
@@ -246,9 +246,12 @@ private let systemApps = URL(fileURLWithPath: "/System/Applications")
             #expect(await eventually { finished(log) })
             guard log.events.last == "gathered" else { return }  // Spotlight is off here: no updates to report
             // What NSMetadataQuery posts on its queue when an item changes.
+            // Transfer the reference through the test's synchronized holder; all SDK-query access still
+            // happens on Spotlight's existing serial operation queue, never concurrently on this actor.
+            let query = Locked(q.query)
             SpotlightQuery.queue.addOperation {
                 NotificationCenter.default.post(
-                    name: .NSMetadataQueryDidUpdate, object: q.query, userInfo: [NSMetadataQueryUpdateChangedItemsKey: []])
+                    name: .NSMetadataQueryDidUpdate, object: query.value, userInfo: [NSMetadataQueryUpdateChangedItemsKey: []])
             }
             #expect(await eventually { log.events.last == "updated" })
         }

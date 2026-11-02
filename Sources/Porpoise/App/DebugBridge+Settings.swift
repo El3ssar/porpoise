@@ -84,7 +84,10 @@ extension DebugBridge {
         if let y = Double(arg), let tabs = settingsWindow?.contentViewController as? NSTabViewController,
             let scroll = tabs.tabViewItems[safe: tabs.selectedTabViewItemIndex]?.viewController?.view as? NSScrollView
         {
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
+            let clip = scroll.contentView
+            let requested = NSRect(origin: NSPoint(x: 0, y: y), size: clip.bounds.size)
+            clip.scroll(to: clip.constrainBoundsRect(requested).origin)
+            scroll.reflectScrolledClipView(clip)
         }
     }
 

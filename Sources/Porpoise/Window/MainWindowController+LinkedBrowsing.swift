@@ -98,7 +98,9 @@ extension MainWindowController {
             DispatchQueue.main.async {
                 guard let self, let selectedTab else { return }
                 switch result {
-                case .success:
+                case .success(let undo):
+                    FileOperationsController.shared.pushUndo(undo)
+                    FileOperationsController.notifyChanged([url])
                     selectedTab.missingCounterpart?.removeFromSuperview(); selectedTab.missingCounterpart = nil;
                     selectedTab.containers.forEach { $0.reload() }
                 case .failure(let error): self.view.messageBar.show(error.localizedDescription, error: true)

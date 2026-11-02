@@ -21,7 +21,12 @@ import Testing
         func items(_ m: NSMenu) -> [NSMenuItem] { m.items.flatMap { [$0] + ($0.submenu.map(items) ?? []) } }
         let all = items(menu)
         func shortcut(_ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags) throws -> NSMenuItem {
-            try #require(all.first { $0.action == action && $0.keyEquivalent == key && $0.keyEquivalentModifierMask == mods })
+            guard let match = all.first(where: { $0.action == action && $0.keyEquivalent == key && $0.keyEquivalentModifierMask == mods }) else {
+                throw NSError(
+                    domain: "TypingShortcutTests", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Missing menu shortcut \(key) for \(NSStringFromSelector(action))"])
+            }
+            return match
         }
         typealias W = MainWindowController
         // ⌫ arrives as DEL; the menus spell it as backspace.

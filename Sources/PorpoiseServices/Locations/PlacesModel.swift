@@ -201,7 +201,7 @@ public final class PlacesModel {
         // The app's model polls phones once the app says it's in front (a test process never does: its adb runs
         // would land in the tests' recording adb).
         isActive = false
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [self] in
             self.refreshDetected()
             self.usedTagsQuery = UsedTagsQuery(tags: FinderTags.standard.map(\.name)) { [weak self] in self?.usedTags = $0 }
         }

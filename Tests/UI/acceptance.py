@@ -197,7 +197,9 @@ class Run:
             size = wait_until(lambda: png_size(path), 10, f"capture {name}")
         except StepFailed:
             size = None
-        note = "missing" if size is None else ("narrow (Stage Manager?)" if size[0] < 500 else "")
+        # Transfers is intentionally a 480pt window, unlike the main browser and Settings.
+        minimum_width = 400 if window == "Transfers" else 500
+        note = "missing" if size is None else ("narrow (Stage Manager?)" if size[0] < minimum_width else "")
         self.results.append({"look": self.look, "shot": os.path.relpath(path, self.out), "size": size, "note": note})
 
     def step(self, name, body):
@@ -257,7 +259,7 @@ class Run:
         b.send("action", "goBack:")
         s = wait_until(lambda: (lambda s: s if not s["url"].endswith("/Photos") else None)(b.state()), self.args.step_timeout, "Back")
         self.check("browse: Back returns with the folder current", s["current"] == "Photos", s)
-        for mode in ["details", "compact", "icons"]:
+        for mode in ["details", "compact", "columns", "icons"]:
             b.send("mode", mode)
             wait_until(lambda: b.state()["mode"] == mode, self.args.step_timeout, f"{mode} view")
             if mode == "details":
@@ -287,8 +289,8 @@ class Run:
             b.ask("transferstate", parse=json.loads)), self.args.step_timeout, "the copy to finish in Activity")
         self.check("copy: Activity shows it completed", jobs[-1]["state"] == "completed", jobs)
         b.send("action", "showActivity:")
-        wait_until(lambda: any(w.startswith("Activity") for w in b.windows()), self.args.step_timeout, "the Activity window")
-        self.capture("30-activity", window="Activity")
+        wait_until(lambda: any(w.startswith("Transfers") for w in b.windows()), self.args.step_timeout, "the Transfers window")
+        self.capture("30-activity", window="Transfers")
 
     def connect(self):
         b = self.bridge
@@ -309,8 +311,23 @@ class Run:
         b.send("settings", "0")
         wait_until(lambda: any("SettingsWindowController" in w for w in b.windows()), self.args.step_timeout, "Settings")
         dump = b.ask("settingsdump", timeout=20)
-        self.check("settings: every page has controls", dump.count("\n") > 20, dump[:200])
-        self.capture("50-settings", window="settings")
+        pages = []
+        sections = {}
+        for line in dump.splitlines():
+            if line.startswith("[") and "]" in line:
+                title = line[1:line.index("]")]
+                pages.append(title)
+                sections[title] = []
+            elif pages and line.startswith("  "):
+                sections[pages[-1]].append(line)
+        self.check("settings: every page has controls", bool(pages) and all(sections.values()), dump[:200])
+        for index, title in enumerate(pages):
+            b.send("settings", title)
+            wait_until(lambda: any(w.startswith(title + "|") and "SettingsWindowController" in w for w in b.windows()),
+                       self.args.step_timeout, f"the {title} settings page")
+            self.check(f"settings: {title} can be selected", True)
+            slug = "-".join(title.lower().replace("&", " ").split())
+            self.capture(f"{50 + index:02d}-settings-{slug}", window="settings")
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))

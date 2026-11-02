@@ -121,6 +121,27 @@ import Testing
     init() { Settings.isTesting = true }
 
     private final class State { var value: GitFolderStatus?; var deliveries = 0 }
+    @Test func ordinaryFoldersAndTheFilesystemRootFinishDiscovery() async throws {
+        let scratch = try Scratch()
+        for folder in [scratch.url, URL(fileURLWithPath: "/", isDirectory: true)] {
+            let state = State()
+            let token = GitStatusService.shared.observe(folder) {
+                state.value = $0; state.deliveries += 1
+            }
+            defer { token.cancel() }
+            try #require(await eventually(3) { state.deliveries == 1 })
+            #expect(state.value == nil)
+        }
+        // The next repository request must complete.
+        let fixture = try await Task.detached { try LocalGitFixture() }.value
+        let state = State()
+        let token = GitStatusService.shared.observe(fixture.url) {
+            state.value = $0; state.deliveries += 1
+        }
+        defer { token.cancel() }
+        try #require(await eventually(3) { state.value != nil })
+    }
+
     @Test func cachedStateRefreshesForDeepChangesAndGitEvents() async throws {
         let f = try await Task.detached {
             let f = try LocalGitFixture(); try f.scratch.file("deep/child/file", "before"); try f.record(); return f
@@ -143,7 +164,7 @@ import Testing
         try #require(await eventually(10) { state.value?.snapshot.files["deep/child/file"] == .modified })
         #expect(state.value?.snapshot.status(for: "deep", directory: true) == .changedFolder)
         try #require(await eventually { second.value?.snapshot.files["deep/child/file"] == .modified })
-        try await Task.detached { try f.git(["symbolic-ref", "HEAD", "refs/heads/other"]) }.value
+        _ = try await Task.detached { try f.git(["symbolic-ref", "HEAD", "refs/heads/other"]) }.value
         try #require(await eventually(10) { state.value?.snapshot.branch == "other" })
         token.cancel()
         let deliveries = state.deliveries

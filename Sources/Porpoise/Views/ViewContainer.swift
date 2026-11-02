@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
-protocol ViewContainerDelegate: AnyObject {
+@MainActor protocol ViewContainerDelegate: AnyObject {
     func containerDidBecomeActive(_ c: ViewContainer)
     func containerDidChangeURL(_ c: ViewContainer)
     func containerSelectionChanged(_ c: ViewContainer)
@@ -136,9 +136,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// The list is laid out again only when its scroll view changes size (layout() also runs for status bar text).
     private var laidOutScrollSize: NSSize?
     /// Free space of the shown volume, re-read at most every few seconds (`updateStatus` runs on every hover).
-    private var volumeSpace: (url: URL, read: Date, free: Int64, total: Int)?
-    /// The folder whose volume is being asked for its free space (in the background), if any.
-    private var readingSpaceOf: URL?
+    private var capacityCache = VolumeCapacityCache()
 
     var url: URL { model.location }
 
@@ -198,7 +196,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if let peer = delegate?.containerAirDropPeer(self), !peer.model.selection.isEmpty { return peer.model.selectedItems.map(\.url) }
         return previousAirDropSelection
     }
-    var showsApps: Bool { AppLibrary.isActive(for: url) && !model.isSearching }
+    var showsApps: Bool { model.appLibraryPresentationEnabled && AppLibrary.isActive(for: url) && !model.isSearching }
     /// What the zoom (slider, Cmd+= / Cmd+-, the View menu) acts on: the app library when it shows, else the list.
     var zoomView: ZoomableView { showsApps ? apps?.grid ?? list : list }
 
@@ -216,7 +214,6 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
         scroll.drawsBackground = true
         scroll.backgroundColor = Theme.viewBackground
         scroll.borderType = .noBorder
@@ -441,7 +438,11 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     required init?(coder: NSCoder) { fatalError() }
 
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+    deinit {
+        searchQuery?.stop()
+        cloudSearch?.stop()
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
 
     override var isFlipped: Bool { true }
 
@@ -477,8 +478,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             y += 40
         }
         if !messageBar.isHidden {
-            messageBar.frame = CGRect(x: 0, y: y, width: bounds.width, height: 38)
-            y += 38
+            let height = messageBar.preferredHeight(for: bounds.width)
+            messageBar.frame = CGRect(x: 0, y: y, width: bounds.width, height: height)
+            y += height
         }
         if selectionMode {
             selectionTop.frame = CGRect(x: 0, y: y, width: bounds.width, height: 38)
@@ -495,8 +497,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             bottom -= 40
         }
         if !filterBar.isHidden {
-            filterBar.frame = CGRect(x: 0, y: bottom - 38, width: bounds.width, height: 38)
-            bottom -= 38
+            let height = filterBar.preferredHeight
+            filterBar.frame = CGRect(x: 0, y: bottom - height, width: bounds.width, height: height)
+            bottom -= height
         }
         let airDropHadFocus =
             airDropPage.map { page in
@@ -524,7 +527,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             }
             layoutColumns(in: .zero)
             scroll.isHidden = true; header.isHidden = true; apps?.isHidden = true; listState.show(nil)
-            if !filterBar.isHidden { bottom += 38; filterBar.frame.origin.y = bounds.height }
+            if !filterBar.isHidden { bottom += filterBar.preferredHeight; filterBar.frame.origin.y = bounds.height }
             airDropPage?.isHidden = false
             airDropPage?.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
             list.focusRedirect = airDropPage?.chooseButton
@@ -539,6 +542,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             if apps == nil {
                 let a = AppsView(model: model)
                 a.host = self
+                a.onShowFiles = { [weak self] in self?.setMode(.details) }
                 a.grid.onZoomPreview = { [weak self] size in self?.statusBar.zoomLevel = ZoomLevels.continuousLevel(for: size) }
                 addSubview(a, positioned: .above, relativeTo: scroll)
                 apps = a
@@ -549,14 +553,14 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             apps?.isHidden = false
             scroll.isHidden = true
             header.isHidden = true
-            if !filterBar.isHidden { bottom += 38; filterBar.frame.origin.y = bounds.height }
+            if !filterBar.isHidden { bottom += filterBar.preferredHeight; filterBar.frame.origin.y = bounds.height }
             apps?.frame = CGRect(x: 0, y: y, width: bounds.width, height: max(0, bottom - y))
             list.focusRedirect = apps?.grid
             if listHadFocus || window?.firstResponder === list { window?.makeFirstResponder(apps?.grid) }
             layoutStatusBar(bottom: bottom, mode: statusMode)
             return
         }
-        let appsHadFocus = apps.map { a in window?.firstResponder.map { ($0 as? NSView)?.isDescendant(of: a) ?? false } ?? false } ?? false
+        let appsHadFocus = apps.map { a in MainWindowController.focusedView(window?.firstResponder)?.isDescendant(of: a) ?? false } ?? false
         apps?.isHidden = true
         scroll.isHidden = false
         list.focusRedirect = nil
@@ -852,12 +856,10 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     /// Free and total bytes of the shown volume; a statfs per hover would be wasted work, so it is kept for a few seconds.
     private func freeSpace() -> (free: Int64, total: Int)? {
         guard url.isFileURL else { return nil }
-        let known = volumeSpace.flatMap { $0.url == url ? ($0.free, $0.total) : nil }
-        if let v = volumeSpace, v.url == url, Date().timeIntervalSince(v.read) < 5 { return known }
+        let known = capacityCache.value(for: url)
         // Asking the volume can take tens of milliseconds (more on a network share): it's done in the background, and
         // what was known shows meanwhile.
-        if readingSpaceOf != url {
-            readingSpaceOf = url
+        if let generation = capacityCache.begin(url, at: Date()) {
             let folder = url
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 // URL copies share cached resource values; our five-second cache must not renew stale capacity.
@@ -868,13 +870,12 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 // Match Finder Get Info's Available figure, rather than adding reclaimable "important usage" space.
                 let v = try? freshFolder.resourceValues(forKeys: [.volumeAvailableCapacityKey, .volumeTotalCapacityKey])
                 DispatchQueue.main.async {
-                    guard let self, self.readingSpaceOf == folder else { return }
-                    self.readingSpaceOf = nil
-                    if let free = v?.volumeAvailableCapacity, let total = v?.volumeTotalCapacity, total > 0 {
-                        self.volumeSpace = (folder, Date(), Int64(free), total)
-                    } else {
-                        self.volumeSpace = nil
+                    guard let self else { return }
+                    let value: VolumeCapacityCache.Value? = v.flatMap { values in
+                        guard let free = values.volumeAvailableCapacity, let total = values.volumeTotalCapacity, total > 0 else { return nil }
+                        return (Int64(free), total)
                     }
+                    guard self.capacityCache.finish(folder, generation: generation, value: value, at: Date()) else { return }
                     if folder == self.url { self.updateStatus() }
                 }
             }
@@ -893,12 +894,31 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     var zoomLevel: Int { showsApps ? ZoomLevels.nearestLevel(for: zoomView.iconSize) : model.props.zoomLevel(for: model.props.mode) }
 
     func setMode(_ m: ViewMode) {
+        if AppLibrary.isActive(for: url), model.appLibraryPresentationEnabled {
+            resetPresentationFilter()
+            model.appLibraryPresentationEnabled = false
+        }
         // In a split, the mode chosen is the one a Columns style gives way to.
         if model.splitMode != nil, m != .columns { model.splitMode = m }
         var p = model.props
         p.mode = m
         model.props = p
         model.saveProps()
+        needsLayout = true
+    }
+
+    /// A presentation switch starts unfiltered: neither presentation may inherit an invisible search field.
+    private func resetPresentationFilter() {
+        if !searchBar.isHidden { closeSearch() }
+        filterBar.clear(notifying: false)
+        apps?.prepareForDisplay()
+        model.filter = NameFilter()
+    }
+
+    func showApplicationLibrary() {
+        guard AppLibrary.isActive(for: url) else { return }
+        resetPresentationFilter()
+        model.appLibraryPresentationEnabled = true
         needsLayout = true
     }
 

@@ -58,12 +58,31 @@ import Testing
 
     // MARK: Virtual locations
 
-    @Test(.isolatedSpotlight) func aTagNobodyUsesListsNothing() async throws {
+    private final class EmptyTagSource: LocationContentSource {
+        let location: URL
+        private(set) var loads = 0
+        init(location: URL) { self.location = location }
+        var traits: LocationTraits { LocationTraits() }
+        func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+            #expect(folder == location && expanded.isEmpty)
+            loads += 1
+            deliver(LocationListing())
+            return LocationLoad()
+        }
+    }
+
+    @Test func aTagNobodyUsesListsNothing() async throws {
         let m = DirectoryModel(location: FinderTags.url(for: "porpoise-coverage-\(UUID().uuidString)"))
-        try await awaitCallback { loaded in
+        let source = EmptyTagSource(location: m.location)
+        m.sourceFactory = { location, _ in
+            #expect(location == source.location)
+            return source
+        }
+        await withCheckedContinuation { loaded in
             m.onLoaded = { loaded.resume() }
             m.reload()
         }
+        #expect(source.loads == 1)
         #expect(!m.isLoading)
         #expect(m.kind.isVirtual)
         #expect(m.items.isEmpty)

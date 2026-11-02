@@ -32,15 +32,26 @@ rules each follows. Reports that break any of them are very welcome.
   anyone else gets "Porpoise's helper works only for administrators of this Mac." and nothing runs. So on a Mac with
   standard accounts, installing the helper gives those accounts nothing: Porpoise doesn't use it for them, and asks
   macOS for an administrator's name and password for each such action instead, as Finder does.
-- **What it will do.** Run one of `mv`, `cp`, `ln`, `mkdir`, `chmod`, `rm`, `chflags` directly (no shell, absolute paths
-  only, arguments never re-parsed). Nothing is created or changed in the system's own folders (`/System`, `/usr`,
-  `/private/etc`, `/Library/LaunchDaemons` and the like, checked on real paths), a destination is never an existing
-  symlink, and the system's configuration and secrets are never removed. Or it hands an item inside the requesting
-  user's own Trash to that user, never outside `~/.Trash` or `/Volumes/<volume>/.Trashes/<uid>`. That is done in the
-  helper itself, not by `chown` on a path the user could redirect meanwhile: the Trash folder is opened without
-  following a symlink and checked again as opened, and every item in it is opened (a symlink as itself, never its
-  target) and changed through that open file. Files with more than one name (hard links, whose other name could be
-  anywhere on the volume) are left as they are. Nothing else.
+- **What it will do.** Accept a fixed vocabulary of copy, move, link, create, remove, permission and lock-flag
+  requests. Legacy executable names in the protocol identify operations; the helper does **not** launch those
+  tools or interpret a shell. Its filesystem engine opens and validates directory/file descriptors, traverses
+  without following symlinks, captures destructive operands into private staging, and publishes with exclusive
+  renames. Permissions, ownership and flags change through opened objects, not unchecked original paths.
+- **Approval tiers.** The helper classifies the objects it actually opens. Standard requests require Touch ID or
+  a password with a five-minute authorization window. Protected requests—such as system configuration, startup
+  persistence, another user's files, ownership or setuid changes—require approval each time. SIP/sealed-system
+  mutations and replacing protected ancestor folders are refused. Configuration and startup directories are
+  therefore protected operations, not universally forbidden ones. The helper rechecks the required tier at
+  mutation boundaries; a changed path cannot inherit weaker approval from its former contents.
+- **Failure and recovery.** Cross-volume helper moves fail closed instead of falling back to unconditional
+  copy/delete. Publication and rollback collisions preserve captured data and report its recovery location.
+  Abrupt helper exits can leave private staging directories; automatic discovery/recovery of those orphan
+  stages is not implemented. An administrator must inspect their records before recovery. Recursive removal
+  can partially complete before an error; no filesystem-snapshot or installed-root power-loss guarantee is made.
+- **Trash ownership.** Ownership repair is restricted to the requesting user's own Trash, through opened,
+  no-follow-validated objects. Multiply linked files are left unchanged when their other names could lie outside
+  the permitted tree. The standard-user interactive administrator-password route is separate from the XPC helper.
+  See [the helper filesystem boundary](docs/HELPER-SECURITY.md) for descriptor, staging and residual-risk details.
 - **Why it needs Full Disk Access.** The Trash and other private folders are protected by macOS even from root; the
   helper gets its own switch in System Settings, next to Porpoise's.
 - **Removing it.** `sudo launchctl bootout system/app.porpoise.helper` and delete the two files above.

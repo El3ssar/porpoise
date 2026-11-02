@@ -176,7 +176,7 @@ extension BoxClient {
             record.revision == replacing?.etag, record.fingerprint == nil || record.fingerprint == fingerprint,
             record.hash == nil || record.hash == hash
         else { throw BoxError.sourceChanged }
-        if record.phase == "done", let result = record.result { return result }
+        if record.phase == "done", let result = record.result { context.nonTransferred(record.total); return result }
         if record.phase == "conflict" { throw BoxError.conflict }
         guard record.phase != "committing", record.phase != "uncertain" else { throw BoxError.uncertain }
         record.localURL = local; record.fingerprint = fingerprint; record.total = fingerprint.size; record.hash = hash
@@ -262,6 +262,7 @@ extension BoxClient {
                 record.phase = "prepared"; record.proposedOffset = nil; try journal.save(record)
             }
             let input = try FileHandle(forReadingFrom: local); defer { try? input.close() }
+            context.nonTransferred(record.offset)
             var expired = false
             while record.offset < record.total {
                 try await context.checkpoint()

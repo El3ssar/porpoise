@@ -2,6 +2,7 @@
 """Matched app ratio gates and an explicit absolute sustained-idle CPU ceiling."""
 import argparse
 import ctypes
+import fcntl
 import hashlib
 import json
 import math
@@ -297,7 +298,61 @@ def git_bytes(folder, *args):
     return subprocess.check_output(['git', '-C', str(folder), *args])
 
 
-def prepare(out, base, candidate):
+def compiler_cache(out):
+    """A private cache belongs to this checkout and one stable worktree path only."""
+    expected = ROOT / 'build/performance-budgets'
+    cache = ROOT / '.build-budgets'
+    if out.absolute() != expected.absolute():
+        raise ValueError('Compiler cache requires the owned performance-budgets output path')
+    for path in [ROOT / 'build', expected, expected / 'builds', expected / 'builds/working', cache]:
+        if path.is_symlink() or (path.exists() and path.resolve() != path.absolute()):
+            raise ValueError('Compiler cache requires owned paths without symlinks')
+    identity = dict(schema=1, checkout=str(ROOT.resolve()),
+                    git_common_dir=str(Path(git_bytes(ROOT, 'rev-parse', '--path-format=absolute',
+                                                     '--git-common-dir').decode().strip()).resolve()),
+                    workspace=str(expected / 'builds/working'))
+    cache.mkdir(exist_ok=True)
+    owner = cache / 'owner.json'
+    if owner.is_symlink() or (owner.exists() and json.loads(owner.read_text()) != identity):
+        raise ValueError('Foreign compiler cache ownership')
+    if not owner.exists():
+        if any(cache.iterdir()):
+            raise ValueError('Foreign compiler cache without ownership')
+        write_json(owner, identity)
+    for name in ['swiftpm', 'source-mtimes.json', 'lock']:
+        if (cache / name).is_symlink():
+            raise ValueError('Compiler cache paths cannot be symlinks')
+    return cache, identity
+
+
+def source_mtimes(folder, probe_name, previous=None):
+    """Restore timestamps only for byte-identical regular sources, including the fixed overlay."""
+    result = {}
+    names = git_bytes(folder, 'ls-files', '-z').decode().split('\0')
+    for name in [*filter(None, names), probe_name]:
+        path = folder / name
+        if path.is_symlink() or not path.is_file():
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        old = (previous or {}).get(name)
+        if (isinstance(old, dict) and old.get('sha256') == digest
+                and type(old.get('mtime_ns')) is int and 0 < old['mtime_ns'] <= time.time_ns()):
+            os.utime(path, ns=(path.stat().st_atime_ns, old['mtime_ns']))
+        result[name] = dict(sha256=digest, mtime_ns=path.stat().st_mtime_ns)
+    return result
+
+
+def prepare(out, base, candidate, *, reuse_compiler_cache=False):
+    if not reuse_compiler_cache:
+        return prepare_builds(out, base, candidate)
+    cache, identity = compiler_cache(out)
+    with (cache / 'lock').open('a') as lock:
+        # Sharing is confined to sequential builds of this one owned worktree.
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return prepare_builds(out, base, candidate, cache=cache, identity=identity)
+
+
+def prepare_builds(out, base, candidate, cache=None, identity=None):
     """Compile sequentially in one owned worktree; stage immutable, separately signed app snapshots."""
     builds, staged = out / 'builds', out / 'apps'
     builds.mkdir()
@@ -311,6 +366,8 @@ def prepare(out, base, candidate):
     anchor = 'stateCommands, captureCommands,'
     original = patched = None
     owned_probe = (HARNESS / 'BridgeProbe.swift').read_bytes()
+    mtimes = cache / 'source-mtimes.json' if cache else None
+    previous = json.loads(mtimes.read_text()) if mtimes and mtimes.exists() else {}
     for label, commit in [('base', base), ('candidate', candidate)]:
         started = time.monotonic()
         with (out / (label + '-build.log')).open('w') as log:
@@ -318,6 +375,16 @@ def prepare(out, base, candidate):
             log.flush()
             if label == 'base':
                 command(['git', '-C', str(ROOT), 'worktree', 'add', '--detach', str(folder), commit], log=log)
+                if cache:
+                    common = Path(git_bytes(folder, 'rev-parse', '--path-format=absolute',
+                                            '--git-common-dir').decode().strip()).resolve()
+                    top = Path(git_bytes(folder, 'rev-parse', '--show-toplevel').decode().strip()).resolve()
+                    if str(common) != identity['git_common_dir'] or top != folder.resolve():
+                        raise ValueError('Compiler cache source checkout identity mismatch')
+                    if (folder / '.build').exists() or (folder / '.build').is_symlink():
+                        raise ValueError('Owned worktree already contains a compiler cache')
+                    (cache / 'swiftpm').mkdir(exist_ok=True)
+                    (folder / '.build').symlink_to(cache / 'swiftpm', target_is_directory=True)
                 (folder / 'build').mkdir(exist_ok=True)
                 for name in ['ffmpeg', 'search-tools', 'ffmpeg-src']:
                     cached = ROOT / 'build' / name
@@ -351,6 +418,10 @@ def prepare(out, base, candidate):
                 probe.write_bytes(owned_probe)
             elif probe.read_bytes() != owned_probe:
                 raise ValueError('Unexpected probe change across source checkout')
+            if cache:
+                source_mtimes(folder, probe_name, previous)
+                # A failed/interrupted build must not leave timestamps claiming a valid cache snapshot.
+                mtimes.unlink(missing_ok=True)
             environment = dict(os.environ, PORPOISE_RELEASE='0', CONFIG='release', SWIFT_JOBS='2', FFMPEG_JOBS='2')
             command(['scripts/make-app.sh'], cwd=folder, log=log, env=environment)
             if bridge.read_bytes() != patched or probe.read_bytes() != owned_probe:
@@ -369,6 +440,9 @@ def prepare(out, base, candidate):
                                  executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
                                  bridge_sha256=hashlib.sha256(patched).hexdigest())
             write_json(out / 'preparation.json', stages)
+            if cache:
+                previous = source_mtimes(folder, probe_name)
+                write_json(mtimes, previous)
     # A later build must not have overwritten either staged source artifact.
     for label, executable in apps.items():
         if hashlib.sha256(Path(executable).read_bytes()).hexdigest() != stages[label]['executable_sha256']:
@@ -617,6 +691,8 @@ def main():
     parser.add_argument('--candidate', default='HEAD')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--measure-only', action='store_true')
+    parser.add_argument('--reuse-compiler-cache', action='store_true',
+                        help='reuse the private .build-budgets cache at the fixed CI output path')
     parser.add_argument('--trial-only', help=argparse.SUPPRESS)
     parser.add_argument('--label', default='trial', help=argparse.SUPPRESS)
     parser.add_argument('--trial-kind', choices=['latency', 'idle', 'combined'], help=argparse.SUPPRESS)
@@ -650,7 +726,7 @@ def main():
     policy = policy_at(HARNESS / 'policy.json')
     base, candidate = revision(args.base), revision(args.candidate)
     out.mkdir(parents=True, exist_ok=False)
-    apps = prepare(out, base, candidate)
+    apps = prepare(out, base, candidate, reuse_compiler_cache=args.reuse_compiler_cache)
     inputs = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in HARNESS.iterdir() if path.is_file()}
     write_json(out / 'prepared.json', dict(base=base, candidate=candidate, policy=policy, apps=apps, harness=inputs,
                                               runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()))

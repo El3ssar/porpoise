@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Find successful main-push CI for this app tree, ignoring only unshipped documentation.
+"""Find successful CI for this app tree, ignoring only unshipped documentation.
 
 No proof (including API failures) means the release must run every check itself.
 """
+import argparse
+import hashlib
+import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
+import zipfile
 
-DOC_FILES = {'CHANGELOG.md', 'CONTRIBUTING.md', 'README.md'}
+DOC_FILES = {'CHANGELOG.md', 'CONTRIBUTING.md'}
+GATES = {'tests', 'shipping-build', 'performance-budgets', 'ui-acceptance'}
+GATE_JOBS = {'tests', 'shipping-build', 'performance-budgets / compare', 'ui-acceptance / ui-acceptance', 'build-and-test'}
 
 
 def documentation(path):
@@ -17,11 +24,11 @@ def documentation(path):
 
 
 def git(*args):
-    return subprocess.run(['git', *args], check=True, capture_output=True).stdout
+    return subprocess.run(['git', *args], check=True, capture_output=True, timeout=45).stdout
 
 
 def equivalent(candidate, target='HEAD'):
-    # Ancestors only: no future, unrelated or pull-request trees can certify a release.
+    # Legacy main-push proof is ancestry-bound; PR proof separately verifies approval and the attested input tree.
     if subprocess.run(['git', 'merge-base', '--is-ancestor', candidate, target],
                       capture_output=True).returncode != 0:
         return False
@@ -29,20 +36,118 @@ def equivalent(candidate, target='HEAD'):
     return all(documentation(name) for name in names if name)
 
 
-def find_proof(runs, repository, target='HEAD'):
+def application_tree(revision='HEAD'):
+    """Bind paths, modes and object IDs for every build/test/security input, including submodules."""
+    records = git('ls-tree', '-r', '-z', revision).split(b'\0')
+    included = [row for row in records if row and not documentation(row.split(b'\t', 1)[1].decode('utf-8'))]
+    return hashlib.sha256(b'\0'.join(included)).hexdigest()
+
+
+def attest(path):
+    results = json.loads(os.environ['CI_RESULTS'])
+    if (set(results) not in [GATES, GATES | {'proof'}]
+            or any(row['result'] != 'success' for row in results.values())):
+        raise ValueError('Every product gate must succeed before attestation')
+    checkout = git('rev-parse', 'HEAD').decode().strip()
+    if checkout != os.environ['GITHUB_SHA']:
+        raise ValueError('Checkout does not match the workflow commit')
+    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+    pr = event.get('pull_request')
+    value = dict(schema=1, repository=os.environ['GITHUB_REPOSITORY'],
+                 run_id=int(os.environ['GITHUB_RUN_ID']), run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']),
+                 event=os.environ['GITHUB_EVENT_NAME'], checkout=checkout,
+                 application_tree=application_tree(), gates=sorted(GATES),
+                 head=pr['head']['sha'] if pr else checkout,
+                 base=pr['base']['sha'] if pr else None,
+                 pr=event['number'] if pr else None)
+    path.write_text(json.dumps(value, indent=2) + '\n')
+
+
+def ancestor(candidate, target):
+    return subprocess.run(['git', 'merge-base', '--is-ancestor', candidate, target], capture_output=True).returncode == 0
+
+
+def merged_pr_proof(run, repository, target, load_attestation, load_pr, load_jobs):
+    if not ancestor(run['head_sha'], target):
+        return False
+    value = load_attestation(run)
+    if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('repository') != repository
+            or value.get('run_id') != run['id'] or value.get('run_attempt') != run['run_attempt']
+            or value.get('event') != 'pull_request' or value.get('head') != run['head_sha']
+            or value.get('gates') != sorted(GATES) or type(value.get('pr')) is not int
+            or value.get('application_tree') != application_tree(target)):
+        return False
+    pr = load_pr(value['pr'])
+    approved = (pr.get('merged') is True and pr['base']['ref'] == 'main'
+            and pr['base']['repo']['full_name'] == repository
+            and pr['head']['repo']['full_name'] == run['head_repository']['full_name']
+            and pr['head']['sha'] == run['head_sha']
+            and ancestor(run['head_sha'], pr['merge_commit_sha'])
+            and ancestor(pr['merge_commit_sha'], target))
+    if not approved:
+        return False
+    # A PR must not certify changes to the machinery that produces/verifies its own evidence. This also
+    # permits fork contributions only after maintainer merge, using unchanged controls from trusted main.
+    parent = git('rev-parse', pr['merge_commit_sha'] + '^1').decode().strip()
+    if git('diff', '--name-only', '--no-renames', parent, target, '--', '.github/', 'scripts/').strip():
+        return False
+    checkout, base = value.get('checkout', ''), value.get('base', '')
+    if not all(isinstance(sha, str) and re.fullmatch('[0-9a-f]{40}', sha) for sha in [checkout, base]):
+        return False
+    if subprocess.run(['git', 'cat-file', '-e', checkout + '^{commit}'], capture_output=True).returncode != 0:
+        # Fetch only the immutable attested merge commit; no checkout or code execution follows.
+        git('fetch', '--no-tags', 'origin', checkout)
+    parents = git('show', '-s', '--format=%P', checkout).decode().split()
+    if (run['head_sha'] not in parents or base not in parents or not ancestor(base, parent)
+            or application_tree(checkout) != value['application_tree']):
+        return False
+    jobs = load_jobs(run)
+    return all(any(row.get('name') == name and row.get('status') == 'completed' and row.get('conclusion') == 'success'
+                   for row in jobs) for name in GATE_JOBS)
+
+
+def find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=None, load_jobs=None, caller_run_id=None):
     seen = set()
     for run in runs:
+        if caller_run_id is not None and run.get('id') == caller_run_id:
+            continue
         sha = run['head_sha']
+        if (run.get('status') != 'completed' or run.get('conclusion') != 'success'):
+            # Failure/incomplete evidence on the same approved inputs vetoes older green evidence, even
+            # across the PR-head/merge SHA boundary or documentation-only descendants.
+            if ancestor(sha, target) and application_tree(sha) == application_tree(target):
+                return None
         if sha in seen:
             continue
         seen.add(sha)  # the newest attempt wins, even if it failed or is still running
-        if (run.get('event') != 'push' or run.get('head_branch') != 'main'
-                or run.get('head_repository', {}).get('full_name') != repository
-                or run.get('status') != 'completed' or run.get('conclusion') != 'success'):
+        if run.get('status') != 'completed' or run.get('conclusion') != 'success':
             continue
-        if equivalent(sha, target):
+        if (run.get('event') == 'push' and run.get('head_branch') == 'main'
+                and run.get('head_repository', {}).get('full_name') == repository and equivalent(sha, target)):
+            return run
+        if (run.get('event') == 'pull_request' and load_attestation and load_pr and load_jobs
+                and merged_pr_proof(run, repository, target, load_attestation, load_pr, load_jobs)):
             return run
     return None
+
+
+def api(path):
+    return subprocess.check_output(['gh', 'api', path], timeout=30)
+
+
+def load_attestation(repository, run):
+    artifacts = json.loads(api(f'repos/{repository}/actions/runs/{run["id"]}/artifacts?per_page=100'))['artifacts']
+    name = f'ci-proof-{run["id"]}-{run["run_attempt"]}'
+    matches = [row for row in artifacts if row['name'] == name and not row['expired']]
+    if len(matches) != 1 or matches[0]['size_in_bytes'] > 65536:
+        return {}
+    archive = api(f'repos/{repository}/actions/artifacts/{matches[0]["id"]}/zip')
+    if len(archive) > 65536:
+        raise ValueError('Oversized CI attestation archive')
+    with zipfile.ZipFile(io.BytesIO(archive)) as files:
+        if files.namelist() != ['ci-proof.json'] or files.getinfo('ci-proof.json').file_size > 65536:
+            raise ValueError('Unexpected CI attestation archive contents')
+        return json.loads(files.read('ci-proof.json'))
 
 
 def main():
@@ -50,9 +155,16 @@ def main():
     # Include running/failed runs so a previous success cannot hide a newer failing attempt.
     result = subprocess.run(['gh', 'api', '--method', 'GET',
                              f'repos/{repository}/actions/workflows/ci.yml/runs',
-                             '-f', 'branch=main', '-f', 'event=push', '-f', 'per_page=100'],
-                            check=True, capture_output=True, text=True)
-    proof = find_proof(json.loads(result.stdout)['workflow_runs'], repository)
+                             '-f', 'per_page=100'],
+                            check=True, capture_output=True, text=True, timeout=30)
+    # An unmerged PR may reuse trusted main proof for unchanged inputs, but need not download historical
+    # PR artifacts. Attested PR reuse is for post-merge/release, where approval can actually be established.
+    approved_pr_lookup = os.environ.get('GITHUB_EVENT_NAME') != 'pull_request'
+    proof = find_proof(json.loads(result.stdout)['workflow_runs'], repository,
+                       load_attestation=(lambda run: load_attestation(repository, run)) if approved_pr_lookup else None,
+                       load_pr=(lambda number: json.loads(api(f'repos/{repository}/pulls/{number}'))) if approved_pr_lookup else None,
+                       load_jobs=(lambda run: json.loads(api(f'repos/{repository}/actions/runs/{run["id"]}/attempts/{run["run_attempt"]}/jobs?per_page=100'))['jobs']) if approved_pr_lookup else None,
+                       caller_run_id=int(os.environ['GITHUB_RUN_ID']) if os.environ.get('GITHUB_RUN_ID') else None)
     if proof:
         print(f"CI proof: {proof['html_url']} ({proof['head_sha']}); app tree matches HEAD")
     else:
@@ -63,9 +175,18 @@ def main():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--attest', type=Path, help='record the exact checkout after all product gates pass')
+    args = parser.parse_args()
     try:
-        main()
-    except (subprocess.CalledProcessError, KeyError, ValueError, OSError) as error:
+        if args.attest:
+            attest(args.attest)
+        else:
+            main()
+    except (subprocess.SubprocessError, KeyError, TypeError, ValueError, AttributeError, IndexError,
+            OSError, RuntimeError, zipfile.BadZipFile) as error:
+        if args.attest:
+            raise SystemExit(f'Cannot attest CI: {type(error).__name__}')
         print(f'CI proof unavailable ({type(error).__name__}); run all release checks', file=sys.stderr)
         if os.environ.get('GITHUB_OUTPUT'):
             with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:

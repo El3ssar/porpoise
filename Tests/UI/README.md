@@ -16,14 +16,14 @@ Three ways to drive the real app:
     - structural checks, asserted from the app's state;
     - captures for visual review, which aren't asserted;
     - attended checks (keyboard and VoiceOver by hand), which a script can't do.
-  - On CI it's `.github/workflows/ui-acceptance.yml`: run it from the Actions tab; it also runs weekly and on pull
-    requests that touch this folder. The screenshots are a workflow artifact.
+  - On CI it's `.github/workflows/ui-acceptance.yml`: normal CI calls it for pull requests and code pushes, and
+    the existing `build-and-test` aggregate requires its structural checks. It also runs weekly and from the Actions tab. The screenshots are a workflow artifact.
   - Window-server captures need the screen: under Stage Manager, run with the app frontmost (the captures activate it).
     A runner without screen recording gives no captures, which is noted, not failed.
 
   ```sh
   CONFIG=debug scripts/make-app.sh
-  python3 Tests/UI/acceptance.py              # light and dark
+  PORPOISE_ALLOW_FOCUS=1 python3 Tests/UI/acceptance.py # active-window light and dark captures
   python3 Tests/UI/acceptance.py --looks dark # one look
   python3 -I Tests/UI/test_acceptance.py      # the runner's own self-tests, no app
   ```

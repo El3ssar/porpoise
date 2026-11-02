@@ -19,7 +19,7 @@ struct FileJobPerformanceTests {
         #expect(preparing.count == 1)
         #expect(job.errors.isEmpty && job.results.map(\.path) == [s.path("dst/folder").path])
         #expect(s.read("dst/folder/sub/f49") == "bytes")
-        try FileActions.undo(undo)
+        _ = try FileActions.undo(undo)
         #expect(s.read("src/folder/sub/f49") == "bytes" && !FileJob.itemExists(at: s.path("dst/folder")))
     }
 

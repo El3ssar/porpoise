@@ -75,6 +75,7 @@ enum CloudStagedDownload {
         if record.stagedComplete {
             guard record.stagedURL == partial, JobJournal.Fingerprint(partial) == record.fingerprint else { throw CloudTransferError.sourceChanged }
             if let checksum, try !checksum.verify(partial) { throw CloudContentError.checksum }
+            context.nonTransferred(record.offset)
             return (partial, try await verify())
         }
         try await context.checkpoint()
@@ -124,6 +125,7 @@ enum CloudStagedDownload {
         try output.truncate(atOffset: UInt64(record.offset)); try output.seek(toOffset: UInt64(record.offset))
         let start = record.offset, ranged = total >= 8 << 20 || record.offset > 0
         var received = start, buffered = Data(), checkpointAt = Date(), progressAt = Date.distantPast
+        context.nonTransferred(start)
         context.progress(received, total)
         do {
             if received < total {

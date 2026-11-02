@@ -35,9 +35,10 @@ struct TransferControlTests {
             return retry
         }
         await withCheckedContinuation { done in
-            Thread {
-                transfer.run(); done.resume()
-            }.start()
+            Task {
+                await offThePool { transfer.run() }
+                done.resume()
+            }
         }
         #expect(prompts == 1)
         #expect(disposals == (retry ? 2 : 1))

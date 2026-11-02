@@ -4,12 +4,11 @@ name: UI acceptance
 # recording gives none, which is noted, not failed). Keyboard and VoiceOver checks need a person and aren't run here.
 on:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: '17 4 * * 1'   # Mondays
-  pull_request:
-    paths: ['Tests/UI/**', '.github/workflows/ui-acceptance.yml']
 concurrency:
-  group: ui-acceptance-${{ github.ref }}
+  group: ui-acceptance-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
@@ -27,7 +26,8 @@ jobs:
         id: toolchain
         run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: ui-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
           key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-ui-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
@@ -57,6 +57,8 @@ jobs:
       - name: Build the test app
         run: CONFIG=debug scripts/make-app.sh
       - name: Acceptance run (light and dark)
+        env:
+          PORPOISE_ALLOW_FOCUS: '1' # Own CI desktop: collect actual active-window appearance, not background thumbnails.
         run: python3 -I Tests/UI/acceptance.py --out build/ui-acceptance/run
       - name: Summary
         if: always()
@@ -69,3 +71,9 @@ jobs:
           path: build/ui-acceptance/run
           retention-days: 30
           if-no-files-found: warn
+      - name: Save UI compiler state even after a failed check
+        if: ${{ !cancelled() && steps.ui-cache.outputs.cache-primary-key != '' && steps.ui-cache.outputs.cache-matched-key != steps.ui-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .build
+          key: ${{ steps.ui-cache.outputs.cache-primary-key }}

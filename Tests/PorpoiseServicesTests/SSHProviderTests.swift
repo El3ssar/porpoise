@@ -139,6 +139,27 @@ struct SSHProviderTests {
         #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["tagged.txt"])  // no "._tagged.txt"
     }
 
+    @Test func exclusiveNewItemsKeepExistingBytesAndLinks() throws {
+        let dir = try server.folder()
+        let provider = server.provider()
+        let file = dir.appendingPathComponent("new it's.html")
+        let remote = server.url(file)
+        let template = Data("<!DOCTYPE html>\n<html></html>\n".utf8)
+        try provider.createFile(remote, contents: template)
+        #expect(try Data(contentsOf: file) == template)
+        #expect(throws: (any Error).self) { try provider.createFile(remote, contents: Data()) }
+        #expect(try Data(contentsOf: file) == template)
+        let link = dir.appendingPathComponent("dangling")
+        try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "missing")
+        #expect(throws: (any Error).self) { try provider.createFile(server.url(link), contents: template) }
+        #expect(try fm.destinationOfSymbolicLink(atPath: link.path) == "missing")
+        let folder = dir.appendingPathComponent("a/b")
+        try provider.createFolder(server.url(folder))
+        try write("other writer", to: folder.appendingPathComponent("keep"))
+        #expect(throws: (any Error).self) { try provider.createFolder(server.url(folder)) }
+        #expect(read(folder.appendingPathComponent("keep")) == "other writer")
+    }
+
     @Test func makesRenamesAndDeletes() throws {
         let dir = try server.folder()
         let p = server.provider()

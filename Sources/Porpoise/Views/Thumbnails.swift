@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
@@ -129,7 +130,9 @@ final class Thumbnails {
         if let img = folderCache.object(forKey: key as NSString) { return img }
         if folderNone.contains(key) { return nil }
         // Still listing: the last preview made at another size meanwhile, else the plain folder.
-        guard let candidates = folderPreviewCandidates(item, version: version) else { return folderLatest.object(forKey: version as NSString) }
+        guard let candidates = folderPreviewCandidates(item, version: version, owner: owner) else {
+            return folderLatest.object(forKey: version as NSString)
+        }
         var thumbs: [NSImage] = []
         var waiting = false
         for c in candidates where thumbs.count < 4 {
@@ -184,27 +187,55 @@ final class Thumbnails {
 
     /// Up to 8 previewable files among the first 80 visible entries (in name order), cached per folder version.
     /// Nil while they are listed on a worker queue; `ready` is posted for the folder when they are known.
-    private func folderPreviewCandidates(_ folder: FileItem, version: String) -> [FileItem]? {
+    private func folderPreviewCandidates(_ folder: FileItem, version: String, owner: ThumbnailOwner?) -> [FileItem]? {
         if let c = folderCandidates[version] { return c }
-        guard folderScans.insert(version).inserted else { return nil }
-        let url = folder.url, generation = folderGeneration
-        Self.folderScanQueue.addOperation { [weak self] in
-            let files = Self.firstNames(in: url, count: 80).compactMap { FileItem.load(url.appendingPathComponent($0)) }.filter { !$0.isDirectory }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, generation == self.folderGeneration else { return }
-                self.folderScans.remove(version)
-                if self.folderCandidates.count > Self.maxRemembered / 10 { self.folderCandidates.removeAll() }
-                self.folderCandidates[version] = Array(files.filter(Self.wantsPreview).prefix(8))
-                NotificationCenter.default.post(name: Thumbnails.ready, object: url)
-            }
+        let key = "folder-candidates|\(folderGeneration)|\(version)"
+        let interest = ThumbnailWorkScheduler.Interest(owner: owner, url: folder.url)
+        guard folderScans.insert(version).inserted else {
+            scheduler.touch(key, interest: interest)
+            return nil
         }
+        let url = folder.url, generation = folderGeneration
+        scheduler.submit(
+            key, lane: .folder, interest: interest,
+            body: { [weak self] job in
+                let cancellation = ThumbnailWorkScheduler.Flag()
+                job.onCancel { cancellation.set() }
+                Self.folderScanQueue.addOperation { [weak self] in
+                    var files: [FileItem] = []
+                    for name in Self.firstNames(in: url, count: 80, cancelled: { cancellation.isSet }) {
+                        guard !cancellation.isSet else { break }
+                        if let item = FileItem.load(url.appendingPathComponent(name)), !item.isDirectory { files.append(item) }
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        defer { job.finish() }
+                        guard let self, generation == self.folderGeneration else { return }
+                        self.folderScans.remove(version)
+                        guard !job.isCancelled else {
+                            // An owner may have returned while its old scan was stopping: let the view request fresh work.
+                            NotificationCenter.default.post(name: Thumbnails.ready, object: url)
+                            return
+                        }
+                        if self.folderCandidates.count > Self.maxRemembered / 10 { self.folderCandidates.removeAll() }
+                        self.folderCandidates[version] = Array(files.filter(Self.wantsPreview).prefix(8))
+                        NotificationCenter.default.post(name: Thumbnails.ready, object: url)
+                    }
+                }
+            }, dropped: { [weak self] in self?.folderScans.remove(version) })
         return nil
     }
 
-    /// The first `count` visible names in name order (Finder's), without sorting them all.
-    static func firstNames(in folder: URL, count: Int) -> [String] {
+    /// Keeps alphabetical collage selection without allocating an entire directory listing. Each iteration
+    /// checks owner cancellation; a stale share may finish its current syscall but no next entry is requested.
+    static func firstNames(in folder: URL, count: Int, cancelled: () -> Bool = { false }) -> [String] {
+        guard count > 0, !cancelled(), let directory = opendir(folder.path) else { return [] }
+        defer { closedir(directory) }
         var first: [String] = []
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where !name.hasPrefix(".") {
+        while !cancelled(), let entry = readdir(directory) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) { pointer in
+                pointer.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(validatingUTF8: $0) }
+            }
+            guard let name, !name.hasPrefix(".") else { continue }
             if first.count == count {
                 guard name.localizedStandardCompare(first[count - 1]) == .orderedAscending else { continue }
                 first.removeLast()
@@ -216,7 +247,7 @@ final class Thumbnails {
             }
             first.insert(name, at: lo)
         }
-        return first
+        return cancelled() ? [] : first
     }
 
     func hasFailed(_ item: FileItem, _ size: CGFloat) -> Bool { failed.contains(key(item, size)) }
@@ -226,6 +257,7 @@ final class Thumbnails {
 
     /// Settings changed: forget folder previews so they are rebuilt (or dropped).
     func resetFolderPreviews() {
+        scheduler.cancel(keysWithPrefix: "folder-candidates|")
         folderCache.removeAllObjects()
         folderLatest.removeAllObjects()
         folderNone = []

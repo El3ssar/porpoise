@@ -228,16 +228,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Shows items selected in their folder (Finder's reveal).
     func reveal(_ urls: [URL]) {
-        guard let first = urls.first else { return }
-        let parent = first.deletingLastPathComponent()
-        if let w = windows.first, Settings.shared.singleWindow {
-            w.addTab(url: parent)
-            w.view.pendingSelect = first
-            w.window?.makeKeyAndOrderFront(nil)
+        let groups = Dictionary(grouping: urls, by: { $0.deletingLastPathComponent() })
+        let folders = groups.keys.sorted { $0.path < $1.path }
+        guard !folders.isEmpty else { return }
+        let controller: MainWindowController
+        if let existing = windows.first, Settings.shared.singleWindow {
+            controller = existing
+            for folder in folders {
+                controller.addTab(url: folder)
+                let files = groups[folder] ?? []
+                controller.view.pendingAutomationSelection = (folder, Set(files))
+                controller.view.pendingSelect = files.first
+            }
         } else {
-            newWindow(at: parent)
-            windows.last?.view.pendingSelect = first
+            newWindow(urls: folders)
+            guard let created = windows.last else { return }
+            controller = created
+            for (tab, folder) in zip(controller.tabs, folders) {
+                let files = groups[folder] ?? []
+                tab.primary.pendingAutomationSelection = (folder, Set(files))
+                tab.primary.pendingSelect = files.first
+            }
         }
+        controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }
 

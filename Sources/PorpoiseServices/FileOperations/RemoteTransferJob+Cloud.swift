@@ -5,7 +5,7 @@ import PorpoiseFileSystem
 extension RemoteTransferJob {
     /// One durable conflict/publication/removal flow for every opaque-ID cloud provider.
     func transferCloud(_ source: URL, into folder: URL) throws -> URL? {
-        if let target = completed[source] { finishProgress(source); return target }
+        if let target = completed[source] { finishProgress(source, credited: true); return target }
         try control.checkpoint()
         let sourceProvider = RemoteFS.provider(for: source) as? CloudTransferProvider
         let targetProvider = RemoteFS.provider(for: folder) as? CloudTransferProvider
@@ -43,11 +43,11 @@ extension RemoteTransferJob {
         }
         if record.phase == .done, let target = record.targetURL {
             if record.skipped { skipConflict(source, target: target, identical: record.skippedIdentical); return nil }
-            completed[source] = target; finishProgress(source); return target
+            completed[source] = target; finishProgress(source, credited: true); return target
         }
         if record.phase == .committed, let receipt = record.receipt {
             try verifyCloudReceipt(receipt); try finishCloudSource(source, provider: sourceProvider, record: &record, journal: journal)
-            completed[source] = receipt.url; finishProgress(source); return receipt.url
+            completed[source] = receipt.url; finishProgress(source, credited: true); return receipt.url
         }
         guard let incoming = try item(source) else { throw CloudContentError.notFound }
         let snapshot = try sourceProvider?.transferSnapshot(source)
@@ -88,7 +88,7 @@ extension RemoteTransferJob {
             try validateNativeCloudCopy(source: snapshot, receipt: receipt, native: record.native)
             record.receipt = receipt; record.targetURL = receipt.url; record.phase = .committed; try journal.save(record)
             try finishCloudSource(source, provider: sourceProvider, record: &record, journal: journal)
-            completed[source] = receipt.url; finishProgress(source, copied: true); return receipt.url
+            completed[source] = receipt.url; finishProgress(source, copied: true, credited: true); return receipt.url
         }
         var matches = try children(folder, fresh: true).filter { $0.name == name }
         guard matches.count <= 1 else { throw CloudEditError.denied("Several items have this name. Choose a different destination.") }
@@ -96,7 +96,7 @@ extension RemoteTransferJob {
         while let old = existing {
             if kind == .move, sourceProvider?.sameItem(old.url, source) == true || old.url == source {
                 record.targetURL = source; record.phase = .done; try journal.save(record)
-                completed[source] = source; finishProgress(source); return source
+                completed[source] = source; finishProgress(source, credited: true); return source
             }
             let suggestion = FileFormat.suggestedName(for: name, existing: Set(try children(folder).map(\.name)))
             switch try conflictDecision(source, incoming: incoming, existing: old, suggestion: suggestion) {
@@ -122,6 +122,7 @@ extension RemoteTransferJob {
         let child = record.childOperationID!, download = record.downloadOperationID!
         progressLock.withLock {
             progress.currentName = incoming.name; activeLimit = totals[source]?.bytes ?? incoming.size; activeLegs = legCount(source); activeBytes = 0
+            activeNonTransferredBytes = 0
         }
         var receipt: CloudTransferReceipt?
         if !replace, let targetProvider, record.sourceAccount != nil, record.sourceAccount == record.destinationAccount,
@@ -129,8 +130,12 @@ extension RemoteTransferJob {
             !incoming.isDirectory || targetProvider.supportsNativeTransferFolders
         {
             record.native = true; try journal.save(record)
+            creditActive(bytes: (totals[source]?.bytes ?? incoming.size) * activeLegs)
             receipt = try targetProvider.nativeTransfer(source, into: folder, named: name, move: kind == .move, operationID: child)
-            if receipt == nil { record.native = false; try journal.save(record) }
+            if receipt == nil {
+                resetActiveCredits()
+                record.native = false; try journal.save(record)
+            }
         }
         if let receipt {
             try validateNativeCloudCopy(source: snapshot, receipt: receipt, native: true)
@@ -168,12 +173,13 @@ extension RemoteTransferJob {
                     guard let checksum = snapshot?.item.checksum, try checksum.verify(kept) else { throw CloudTransferError.sourceChanged }
                 }
                 local = kept
+                creditActive(bytes: totals[source]?.bytes ?? incoming.size, reportedByProgress: false)
             } else if let sourceProvider {
-                local = try TransferRetry.run(control: control, notice: onNotice) {
+                local = try retryDownload {
                     try sourceProvider.downloadTransfer(source, into: scratch, operationID: download)
                 }
             } else {
-                local = try TransferRetry.run(control: control, notice: onNotice) {
+                local = try retryDownload {
                     try RemoteFS.provider(for: source)!.download(source, into: scratch)
                 }
             }
@@ -206,7 +212,7 @@ extension RemoteTransferJob {
         if record.phase != .done { record.phase = .done; try journal.save(record) }
         completed[source] = target; listings[folder] = nil
         if replace { progressLock.withLock { progress.replacedItems += 1 } }
-        finishProgress(source, copied: true); return target
+        finishProgress(source, copied: true, credited: record.native); return target
     }
     private func validateNativeCloudCopy(source: CloudTransferSnapshot?, receipt: CloudTransferReceipt, native: Bool) throws {
         guard native, !receipt.sourceRemoved, let source, let target = receipt.snapshot else { return }

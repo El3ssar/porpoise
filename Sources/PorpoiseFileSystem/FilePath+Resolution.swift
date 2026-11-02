@@ -9,18 +9,24 @@ extension FilePath {
     public static func key(_ url: URL) -> String { url.isFileURL ? entry(url.path) : url.absoluteString }
 
     /// Resolve each shared parent once for a listing; callers discard the result when their rows change.
-    public static func keys(_ urls: [URL]) -> [String] {
+    public static func keys(_ urls: [URL], cancelled: () -> Bool = { false }) -> [String] {
         var parents: [String: String] = [:]
-        return urls.map { url in
-            guard url.isFileURL else { return url.absoluteString }
-            return entry(
-                url.path,
-                resolveParent: { path in
-                    if let known = parents[path] { return known }
-                    let resolved = canonical(path); parents[path] = resolved
-                    return resolved
-                })
+        var keys: [String] = []
+        keys.reserveCapacity(urls.count)
+        for url in urls {
+            guard !cancelled() else { return [] }
+            if !url.isFileURL { keys.append(url.absoluteString); continue }
+            keys.append(
+                entry(
+                    url.path,
+                    resolveParent: { path in
+                        if let known = parents[path] { return known }
+                        let resolved = canonical(path)
+                        parents[path] = resolved
+                        return resolved
+                    }))
         }
+        return cancelled() ? [] : keys
     }
 
     public static func entry(_ input: String) -> String { entry(input, resolveParent: canonical) }

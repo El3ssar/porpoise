@@ -96,7 +96,7 @@ final class ItemAccessibilityElement: NSAccessibilityElement, NSAccessibilityEle
     override func accessibilityIdentifier() -> String { url.absoluteString }
 
     override func accessibilityLabel() -> String? {
-        guard let list, let item else { return nil }
+        guard let item else { return nil }
         return item.name
     }
 

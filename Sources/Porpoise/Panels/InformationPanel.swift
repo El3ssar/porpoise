@@ -17,6 +17,10 @@ final class InformationPanel: NSView {
     private var drivePreview: Task<Void, Never>?
     private let nameLabel = NSTextField(wrappingLabelWithString: "")
     private let grid = NSStackView()
+    private let detailsScroll = NSScrollView()
+    private let detailsContent = FlippedView()
+    /// Text previews use the full column width; fallback previews return to the compact width.
+    var onPreviewLayoutChange: (() -> Void)?
     /// Inspector look: same tinted material as the sidebar.
     private let material = TintedMaterialView(material: .sidebar, tint: Theme.panelBackground, alpha: 0.72)
     /// Off where the panel sits inside the file view (Column view's preview column): the view's own background shows.
@@ -29,6 +33,7 @@ final class InformationPanel: NSView {
     private var hoverArea: NSTrackingArea?
 
     private var shownURLs: [URL] = []
+    private var scrollSelection: [URL] = []
     /// The size and date of the one item shown, as listed: a listing that says otherwise (a download growing, an
     /// image edited) shows it again.
     private var shownStamp: (size: Int64, date: Date?)?
@@ -99,7 +104,14 @@ final class InformationPanel: NSView {
         player.addGestureRecognizer(NSClickGestureRecognizer(target: controls, action: #selector(MediaControls.togglePlay)))
         controls.isHidden = true
         codePreview.isHidden = true
-        [preview, codePreview, player, controls, nameLabel, grid].forEach(addSubview)
+        detailsScroll.drawsBackground = false
+        detailsScroll.contentView.drawsBackground = false
+        detailsScroll.hasVerticalScroller = true
+        detailsScroll.autohidesScrollers = true
+        detailsScroll.documentView = detailsContent
+        detailsContent.addSubview(nameLabel)
+        detailsContent.addSubview(grid)
+        [preview, codePreview, player, controls, detailsScroll].forEach(addSubview)
         addSubview(previewSpinner)
         previewStatus.font = Tokens.font(.caption, weight: .regular)
         previewStatus.textColor = Theme.windowTextInactive
@@ -125,40 +137,62 @@ final class InformationPanel: NSView {
         super.layout()
         material.frame = bounds
         let w = bounds.width
-        let side = min(w - 40, Self.maxPreviewSide)
-        preview.frame = CGRect(x: (w - side) / 2, y: 16, width: side, height: Settings.shared.infoShowPreview ? side : 0)
-        codePreview.frame = CGRect(x: 12, y: preview.frame.minY, width: max(0, w - 24), height: preview.frame.height)
-        // Decided from the file type (never by loading the media on the main thread).
+        let contentWidth = max(0, w - 24)
+        let availableHeight = max(0, bounds.height - 32)
+        let maximumFooterHeight = Settings.shared.infoShowPreview ? availableHeight * 0.45 : availableHeight
+        detailsScroll.frame = CGRect(x: 12, y: 16, width: contentWidth, height: maximumFooterHeight)
+        // Tiling can reveal a persistent scrollbar. Measure again with its actual viewport width so
+        // neither the document nor wrapped values extend underneath the legacy scroller gutter.
+        for _ in 0..<2 {
+            detailsScroll.tile()
+            let viewportWidth = detailsScroll.contentSize.width
+            let metadataWidth = min(viewportWidth, 420)
+            for case let row as NSStackView in grid.arrangedSubviews {
+                if let value = row.arrangedSubviews.last as? NSTextField { value.preferredMaxLayoutWidth = valueWidth }
+            }
+            let tableSize = grid.arrangedSubviews.isEmpty ? .zero : grid.fittingSize
+            let nameHeight = nameLabel.stringValue.isEmpty ? 0 : nameLabel.sizeThatFits(CGSize(width: metadataWidth, height: 200)).height
+            let tableY = nameHeight + (tableSize.height > 0 && nameHeight > 0 ? 12 : 0)
+            let detailsHeight = tableY + tableSize.height
+            let footerHeight = min(detailsHeight, maximumFooterHeight)
+            detailsScroll.frame = CGRect(x: 12, y: max(16, bounds.height - 16 - footerHeight), width: contentWidth, height: footerHeight)
+            detailsContent.frame = CGRect(x: 0, y: 0, width: viewportWidth, height: detailsHeight)
+            nameLabel.frame = CGRect(x: (viewportWidth - metadataWidth) / 2, y: 0, width: metadataWidth, height: nameHeight)
+            let tableWidth = min(metadataWidth, tableSize.width)
+            grid.frame = CGRect(x: floor((viewportWidth - tableWidth) / 2), y: tableY, width: tableWidth, height: tableSize.height)
+        }
+        let previewHeight = Settings.shared.infoShowPreview ? max(0, detailsScroll.frame.minY - 28) : 0
+        codePreview.frame = CGRect(x: 12, y: 16, width: contentWidth, height: previewHeight)
+        let maximumSide = max(0, min(w - 40, Self.maxPreviewSide, previewHeight))
+        let fullWidthControls = playerIsAudio || (player.player != nil && maximumSide < 180)
+        let controlsHeight: CGFloat = fullWidthControls && Settings.shared.infoShowPreview ? 40 : 0
+        let side = max(0, min(maximumSide, previewHeight - controlsHeight))
+        let previewY = 16 + max(0, (previewHeight - side - controlsHeight) / 2)
+        preview.frame = CGRect(x: (w - side) / 2, y: previewY, width: side, height: side)
         previewSpinner.frame = CGRect(x: preview.frame.midX - 8, y: preview.frame.midY - 8, width: 16, height: 16)
         previewStatus.frame = CGRect(x: preview.frame.minX, y: preview.frame.maxY - 26, width: preview.frame.width, height: 24)
-        player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: w - 24, height: 32) : preview.frame
-        // Songs: the bar is the player. Videos: the bar sits over the bottom of the picture.
-        controls.frame =
-            playerIsAudio
-            ? player.frame
-            : CGRect(
-                x: player.frame.minX + 8, y: player.frame.maxY - 38,
-                width: player.frame.width - 16, height: 30)
+        player.frame = playerIsAudio ? CGRect(x: 12, y: preview.frame.maxY + 6, width: contentWidth, height: 32) : preview.frame
+        if playerIsAudio {
+            controls.frame = player.frame
+        } else if fullWidthControls {
+            // Preserve the short-inspector playback bar instead of shrinking it to the picture's width.
+            controls.frame = CGRect(x: 12, y: preview.frame.maxY + 8, width: contentWidth, height: 30)
+        } else {
+            controls.frame = CGRect(x: player.frame.minX + 8, y: player.frame.maxY - 38, width: player.frame.width - 16, height: 30)
+        }
         updateTrackingAreas()
         updateControls()
-        let ny = (controls.isHidden || !playerIsAudio ? preview.frame.maxY : controls.frame.maxY) + 10
-        let nh = nameLabel.sizeThatFits(CGSize(width: w - 24, height: 200)).height
-        nameLabel.frame = CGRect(x: 12, y: ny, width: w - 24, height: nh)
-        grid.frame = CGRect(x: 12, y: nameLabel.frame.maxY + 12, width: w - 24, height: max(0, bounds.height - nameLabel.frame.maxY - 20))
-        // Values wrap to the panel's current width (it can be resized after they were added).
-        for case let row as NSStackView in grid.arrangedSubviews {
-            if let v = row.arrangedSubviews.last as? NSTextField { v.preferredMaxLayoutWidth = valueWidth }
-        }
     }
 
-    private var valueWidth: CGFloat { max(80, bounds.width - 140) }
+    private var valueWidth: CGFloat { max(1, min(detailsScroll.contentSize.width, 420) - 104) }
 
     // MARK: Player controls
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let a = hoverArea { removeTrackingArea(a) }
-        let a = NSTrackingArea(rect: player.frame, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self, userInfo: nil)
+        let a = NSTrackingArea(
+            rect: player.frame, options: [.mouseEnteredAndExited, .activeInActiveApp], owner: self, userInfo: nil)
         addTrackingArea(a)
         hoverArea = a
     }
@@ -166,16 +200,37 @@ final class InformationPanel: NSView {
     override func mouseEntered(with event: NSEvent) { overVideo = true; updateControls() }
     override func mouseExited(with event: NSEvent) { overVideo = false; updateControls() }
 
-    /// Songs always show the bar; videos while the pointer is over them or they're paused.
+    /// Stable playback controls remain available independently of pointer hover.
     private func updateControls() {
         let active = player.player != nil
-        let show = active && (playerIsAudio || overVideo || !controls.isPlaying)
+        // Stable controls remain reachable for keyboard and VoiceOver while media plays.
+        let show = active
         guard controls.isHidden == show else { return }
         controls.isHidden = !show
+        needsLayout = true
         if !playerIsAudio {
             controls.alphaValue = show ? 0 : 1
             Animator.fade(controls, to: show ? 1 : 0)
         }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49, player.player != nil { controls.togglePlay(); return }
+        if [125, 126, 116, 121].contains(Int(event.keyCode)) {
+            let amount: CGFloat = [116, 121].contains(Int(event.keyCode)) ? max(40, detailsScroll.contentView.bounds.height - 40) : 40
+            let delta = [125, 121].contains(Int(event.keyCode)) ? amount : -amount
+            let clip = detailsScroll.contentView
+            clip.scroll(to: CGPoint(x: 0, y: min(max(0, detailsContent.frame.height - clip.bounds.height), max(0, clip.bounds.minY + delta))))
+            detailsScroll.reflectScrolledClipView(clip)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    /// Keep the inspector's reading/scrolling stop, then expose its live native playback controls.
+    var keyboardControls: [NSView] {
+        guard KeyboardAccess.isFull(), window != nil, !controls.isHidden else { return [] }
+        return controls.keyboardControls
     }
 
     // MARK: Visibility
@@ -277,6 +332,11 @@ final class InformationPanel: NSView {
     }
 
     private func update(_ urls: [URL]) {
+        if urls != scrollSelection {
+            scrollSelection = urls
+            detailsScroll.contentView.scroll(to: .zero)
+            detailsScroll.reflectScrolledClipView(detailsScroll.contentView)
+        }
         grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
         observeThumbnail(nil)
         clearCodePreview()
@@ -475,6 +535,8 @@ final class InformationPanel: NSView {
         codePreview.onCompletion = nil
         codePreview.isHidden = true
         preview.isHidden = false
+        needsLayout = true
+        onPreviewLayoutChange?()
         if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
         codeCleanup = nil
     }
@@ -487,6 +549,8 @@ final class InformationPanel: NSView {
         }
         codePreview.isHidden = false
         preview.isHidden = true
+        needsLayout = true
+        onPreviewLayoutChange?()
         if item.url.isFileURL { codePreview.load(item.url, filename: item.name); return }
         drivePreview = Task { @MainActor [weak self] in
             do {

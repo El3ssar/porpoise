@@ -81,9 +81,13 @@ import Testing
         crumbs.url = s.path("A")
         crumbs.layoutSubtreeIfNeeded()
         func tick() throws {
-            let r = try #require(crumbs.crumbRect(crumbs.url))
+            guard let r = crumbs.crumbRect(crumbs.url) else {
+                throw NSError(domain: "StaleStateTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing current-folder breadcrumb"])
+            }
             let p = crumbs.convert(CGPoint(x: r.midX, y: r.midY), to: nil)
-            let cg = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0) else {
+                throw NSError(domain: "StaleStateTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not create the scroll-wheel event"])
+            }
             cg.flags = []
             // A window-less event's location reads as its point in the window.
             cg.location = CGPoint(x: p.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - p.y)

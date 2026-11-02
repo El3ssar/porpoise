@@ -104,7 +104,7 @@ import Testing
     }
 }
 
-private final class TrashCountingDefaults: UserDefaults, @unchecked Sendable {
+private final class TrashCountingDefaults: UserDefaults {
     private let lock = NSLock()
     private var values: [String: Any] = [:]
     private var count = 0

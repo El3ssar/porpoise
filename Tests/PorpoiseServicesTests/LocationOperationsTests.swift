@@ -94,6 +94,81 @@ import Testing
         #expect(throws: CocoaError.self) { try FileActions.undo(try #require(renamed.undo)) }
     }
 
+    @Test func failedAuthoritativeListingNeverAttemptsCreationOrUpload() throws {
+        let (server, root) = server()
+        defer { RemoteFS.use(nil, for: root) }
+        server.add("existing.txt", size: 17)
+        server.failLists = true
+        #expect(throws: (any Error).self) { try LocationOperations(for: root).makeEmptyFile(root.appendingPathComponent("existing.txt")) }
+        #expect(server.creates == 0 && server.uploads == 0 && server.size("existing.txt") == 17)
+    }
+
+    @Test func anotherWriterWinningAfterListingIsPreservedByExclusiveCreation() throws {
+        let (server, root) = server()
+        defer { RemoteFS.use(nil, for: root) }
+        server.beforeCreate = { server.add("raced.txt", size: 23) }
+        defer { server.beforeCreate = nil }
+        #expect(throws: LocationOperationError.exists("raced.txt")) {
+            try LocationOperations(for: root).makeEmptyFile(root.appendingPathComponent("raced.txt"))
+        }
+        #expect(server.size("raced.txt") == 23 && server.uploads == 0)
+    }
+
+    @Test func generatedFilePreservesItsBytesAcrossUndoAndRedo() throws {
+        let (server, root) = server()
+        defer { RemoteFS.use(nil, for: root) }
+        let template = Data("<!DOCTYPE html>\n<html></html>\n".utf8)
+        let target = root.appendingPathComponent("page.html")
+        guard case .remote(let change) = try LocationOperations(for: root).makeFile(target, contents: template) else {
+            Issue.record("missing undo"); return
+        }
+        #expect(server.data("page.html") == template && change.inverse.inverse == change)
+        try LocationOperations.revert(change)
+        #expect(server.data("page.html") == nil)
+        try LocationOperations.revert(change.inverse)
+        #expect(server.data("page.html") == template)
+        server.add("page.html", size: 50)
+        #expect(throws: LocationOperationError.notEmpty("page.html")) { try LocationOperations.revert(change) }
+        #expect(server.size("page.html") == 50)
+    }
+
+    @Test func emptyFileChangedAfterVerificationIsNotDeletedByUndo() throws {
+        let (server, root) = server()
+        defer { RemoteFS.use(nil, for: root); server.afterDownload = nil }
+        let target = root.appendingPathComponent("empty.txt")
+        guard case .remote(let change) = try LocationOperations(for: root).makeEmptyFile(target) else {
+            Issue.record("missing undo"); return
+        }
+        // Download returns the verified empty revision, then another writer commits real bytes before removal.
+        server.afterDownload = { server.add("empty.txt", size: 41) }
+        #expect(throws: (any Error).self) { try LocationOperations.revert(change) }
+        #expect(server.size("empty.txt") == 41 && server.deletes == 0)
+    }
+
+    @Test func emptyFileUndoRefusesAProviderWithoutConditionalRemoval() throws {
+        let root = URL(string: "sftp://unversioned-\(UUID().uuidString).invalid/")!
+        let server = MemoryServer(root: root)
+        let unversioned = UnversionedCreationServer(base: server)
+        RemoteFS.use(unversioned, for: root)
+        defer { RemoteFS.use(nil, for: root) }
+        let target = root.appendingPathComponent("empty.txt")
+        guard case .remote(let change) = try LocationOperations(for: root).makeEmptyFile(target) else {
+            Issue.record("missing undo"); return
+        }
+        #expect { try LocationOperations.revert(change) } throws: {
+            $0.localizedDescription.contains("Undo cannot safely remove this file")
+        }
+        #expect(server.size("empty.txt") == 0 && server.deletes == 0)
+    }
+
+    @Test func existingLocalFolderNeverProducesCreationUndo() throws {
+        let scratch = try Scratch()
+        let folder = try scratch.folder("existing")
+        try scratch.file("existing/other-writer.txt", "keep")
+        #expect(throws: (any Error).self) { try LocationOperations(for: scratch.url).makeFolder(folder) }
+        #expect(scratch.read("existing/other-writer.txt") == "keep")
+    }
+
     @Test func thisMacKeepsItsRulesAndNamesCopiesLikeBefore() throws {
         let s = try Scratch()
         try s.file("Archive.zip"); try s.file("Archive 2.zip"); try s.folder("Shots")
@@ -112,17 +187,36 @@ import Testing
 }
 
 /// A server whose files live in a dictionary: path below the root → (folder, size).
-final class MemoryServer: RemoteProvider, @unchecked Sendable {
+final class MemoryServer: RemoteProvider, RemoteTransferConditionalRemoval, @unchecked Sendable {
     let root: URL
     private var entries: [String: (folder: Bool, size: Int64)] = [:]
     private var listings = 0
+    private var bytes: [String: Data] = [:]
+    private var revisions: [String: UUID] = [:]
+    var failLists = false
+    var beforeCreate: (() -> Void)?
+    var afterDownload: (() -> Void)?
+    private(set) var deletes = 0
+    private(set) var creates = 0
+    private(set) var uploads = 0
     private let lock = NSLock()
     /// How many times a folder was listed.
     var lists: Int { lock.withLock { listings } }
     init(root: URL) { self.root = root }
 
-    func add(_ path: String, size: Int64, folder: Bool = false) { lock.withLock { entries[path] = (folder, size) } }
-    func remove(_ path: String) { lock.withLock { entries[path] = nil } }
+    func add(_ path: String, size: Int64, folder: Bool = false) {
+        lock.withLock {
+            entries[path] = (folder, size)
+            bytes[path] = folder ? nil : Data(count: Int(size))
+            revisions[path] = UUID()
+        }
+    }
+    func data(_ path: String) -> Data? { lock.withLock { bytes[path] } }
+    func remove(_ path: String) {
+        lock.withLock {
+            entries[path] = nil; bytes[path] = nil; revisions[path] = nil
+        }
+    }
     func size(_ path: String) -> Int64? { lock.withLock { entries[path]?.size } }
     /// The names at the top, sorted.
     var names: [String] { lock.withLock { entries.keys.filter { !$0.contains("/") }.sorted() } }
@@ -135,6 +229,7 @@ final class MemoryServer: RemoteProvider, @unchecked Sendable {
     func list(_ folder: URL) throws -> [FileItem] {
         try lock.withLock {
             listings += 1
+            if failLists { throw CocoaError(.fileReadNoPermission) }
             let k = key(folder)
             guard k.isEmpty || entries[k]?.folder == true else { throw CocoaError(.fileNoSuchFile) }
             return children(of: k).map {
@@ -144,17 +239,51 @@ final class MemoryServer: RemoteProvider, @unchecked Sendable {
         }
     }
     func download(_ remote: URL, into localFolder: URL) throws -> URL {
-        guard let size = size(key(remote)) else { throw CocoaError(.fileNoSuchFile) }
+        guard let data = data(key(remote)) else { throw CocoaError(.fileNoSuchFile) }
         try FileManager.default.createDirectory(at: localFolder, withIntermediateDirectories: true)
         let local = localFolder.appendingPathComponent(remote.lastPathComponent)
-        try Data(count: Int(size)).write(to: local)
+        try data.write(to: local, options: .withoutOverwriting)
+        afterDownload?()
         return local
     }
     func upload(_ local: URL, into remoteFolder: URL) throws {
-        let size = (try FileManager.default.attributesOfItem(atPath: local.path)[.size] as? Int64) ?? 0
-        add(key(remoteFolder.appendingPathComponent(local.lastPathComponent)), size: size)
+        let data = try Data(contentsOf: local)
+        lock.withLock {
+            uploads += 1
+            let path = key(remoteFolder.appendingPathComponent(local.lastPathComponent))
+            entries[path] = (false, Int64(data.count)); bytes[path] = data; revisions[path] = UUID()
+        }
     }
-    func delete(_ remote: [URL]) throws { for url in remote { remove(key(url)) } }
+    func createFile(_ remote: URL, contents: Data) throws {
+        beforeCreate?()
+        try lock.withLock {
+            creates += 1
+            let path = key(remote)
+            guard entries[path] == nil else { throw LocationOperationError.exists(remote.lastPathComponent) }
+            entries[path] = (false, Int64(contents.count)); bytes[path] = contents; revisions[path] = UUID()
+        }
+    }
+    func createFolder(_ remote: URL) throws {
+        try lock.withLock {
+            let path = key(remote)
+            guard entries[path] == nil else { throw LocationOperationError.exists(remote.lastPathComponent) }
+            entries[path] = (true, 0); revisions[path] = UUID()
+        }
+    }
+    func captureTransferRemoval(_ source: URL) throws -> RemoteRemovalReceipt {
+        let path = key(source)
+        let revision = try lock.withLock { try #require(revisions[path]) }
+        return RemoteRemovalReceipt {
+            try self.lock.withLock {
+                guard self.revisions[path] == revision else { throw CocoaError(.fileWriteFileExists) }
+                self.entries[path] = nil; self.bytes[path] = nil; self.revisions[path] = nil
+            }
+        }
+    }
+    func delete(_ remote: [URL]) throws {
+        lock.withLock { deletes += 1 }
+        for url in remote { remove(key(url)) }
+    }
     func makeFolder(_ remote: URL) throws { add(key(remote), size: 0, folder: true) }
     func removeEmptyFolder(_ remote: URL) throws {
         try lock.withLock {
@@ -165,11 +294,30 @@ final class MemoryServer: RemoteProvider, @unchecked Sendable {
     func rename(_ remote: URL, to newName: String) throws {
         try lock.withLock {
             guard let entry = entries[key(remote)] else { throw CocoaError(.fileNoSuchFile) }
-            entries[key(remote)] = nil
-            entries[key(remote.deletingLastPathComponent().appendingPathComponent(newName))] = entry
+            let old = key(remote), new = key(remote.deletingLastPathComponent().appendingPathComponent(newName))
+            entries[old] = nil; entries[new] = entry
+            bytes[new] = bytes.removeValue(forKey: old)
+            revisions[new] = revisions.removeValue(forKey: old)
         }
     }
     func move(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func copy(_ remote: [URL], into folder: URL) throws { throw CocoaError(.featureUnsupported) }
     func rootTitle(_ url: URL) -> String { "Memory" }
+}
+
+/// An adapter with safe creation but no conditional-removal guarantee. In particular, default delete
+/// must never become the fallback for Undo after a size check.
+private final class UnversionedCreationServer: RemoteProvider {
+    let base: MemoryServer
+    init(base: MemoryServer) { self.base = base }
+    func list(_ folder: URL) throws -> [FileItem] { try base.list(folder) }
+    func download(_ remote: URL, into localFolder: URL) throws -> URL { try base.download(remote, into: localFolder) }
+    func upload(_ local: URL, into remoteFolder: URL) throws { try base.upload(local, into: remoteFolder) }
+    func createFile(_ remote: URL, contents: Data) throws { try base.createFile(remote, contents: contents) }
+    func delete(_ remote: [URL]) throws { try base.delete(remote) }
+    func makeFolder(_ remote: URL) throws { try base.makeFolder(remote) }
+    func rename(_ remote: URL, to name: String) throws { try base.rename(remote, to: name) }
+    func move(_ remote: [URL], into folder: URL) throws { try base.move(remote, into: folder) }
+    func copy(_ remote: [URL], into folder: URL) throws { try base.copy(remote, into: folder) }
+    func rootTitle(_ url: URL) -> String { base.rootTitle(url) }
 }

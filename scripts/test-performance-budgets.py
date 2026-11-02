@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import plistlib
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -146,7 +147,7 @@ class BudgetTests(unittest.TestCase):
                 budgets.measure(root)
 
     def prepare_fixture(self, folder, candidate_version='CANDIDATE', bridge_changed=False):
-        repo, out = folder / 'repo', folder / 'out'
+        repo, out = folder.resolve() / 'repo', folder.resolve() / 'out'
         repo.mkdir()
         out.mkdir()
         def git(*args):
@@ -251,6 +252,101 @@ shutil.rmtree(app, ignore_errors=True)
                 self.assertFalse((out / 'apps/candidate.app').exists())
                 self.assertEqual(set(json.loads((out / 'preparation.json').read_text())), {'base'})
                 self.assertFalse((out / 'prepared.json').exists())
+
+    def test_private_compiler_cache_survives_new_worktree_but_builds_every_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo, _, base, candidate = self.prepare_fixture(Path(folder))
+            out = repo / 'build/performance-budgets'
+            out.mkdir(parents=True)
+            real_command = budgets.command
+            with patch.object(budgets, 'ROOT', repo), \
+                    patch.object(budgets, 'command', side_effect=self.fake_prepare_command(real_command)) as calls, \
+                    patch.object(budgets, 'fixture_at'):
+                apps = budgets.prepare(out, base, candidate, reuse_compiler_cache=True)
+                first = {label: Path(app).read_bytes() for label, app in apps.items()}
+                def bridge_time(label):
+                    return next(line for line in (out / (label + '-build.log')).read_text().splitlines()
+                                if line.startswith('bridge_mtime_ns='))
+                timestamp = bridge_time('base')
+                self.assertEqual(timestamp, bridge_time('candidate'))
+                owner = json.loads((repo / '.build-budgets/owner.json').read_text())
+                self.assertEqual(owner['checkout'], str(repo.resolve()))
+                self.assertEqual(owner['workspace'], str(out / 'builds/working'))
+                subprocess.check_call(['git', '-C', str(repo), 'worktree', 'remove', '--force',
+                                       str(out / 'builds/working')], stdout=subprocess.DEVNULL)
+                shutil.rmtree(out)
+                out.mkdir()
+                apps = budgets.prepare(out, base, candidate, reuse_compiler_cache=True)
+                self.assertEqual(sum(call.args[0] == ['scripts/make-app.sh'] for call in calls.call_args_list), 4)
+                for label, app in apps.items():
+                    self.assertEqual(Path(app).read_bytes(), first[label])
+                    self.assertIn('cache_present=True', (out / (label + '-build.log')).read_text())
+                    self.assertEqual(bridge_time(label), timestamp)
+                stages = json.loads((out / 'preparation.json').read_text())
+                for label, commit in [('base', base), ('candidate', candidate)]:
+                    self.assertEqual(stages[label]['commit'], commit)
+                    self.assertEqual(stages[label]['executable_sha256'], hashlib.sha256(first[label]).hexdigest())
+
+    def test_private_compiler_cache_rejects_foreign_and_symlink_paths(self):
+        for kind in ['output', 'cache-symlink', 'foreign', 'owner', 'swiftpm-symlink', 'manifest-symlink']:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as folder:
+                repo, _, base, candidate = self.prepare_fixture(Path(folder))
+                out = repo / 'build/performance-budgets'
+                out.mkdir(parents=True)
+                with patch.object(budgets, 'ROOT', repo):
+                    if kind == 'output':
+                        out = Path(folder) / 'out'
+                    elif kind == 'cache-symlink':
+                        (repo / '.build-budgets').symlink_to(Path(folder) / 'out', target_is_directory=True)
+                    elif kind == 'foreign':
+                        (repo / '.build-budgets').mkdir()
+                        (repo / '.build-budgets/unknown').touch()
+                    else:
+                        cache, identity = budgets.compiler_cache(out)
+                        if kind == 'owner':
+                            budgets.write_json(cache / 'owner.json', dict(identity, checkout='/foreign'))
+                        else:
+                            name = 'swiftpm' if kind == 'swiftpm-symlink' else 'source-mtimes.json'
+                            (cache / name).symlink_to(Path(folder) / 'out')
+                    with patch.object(budgets, 'prepare_builds') as build:
+                        with self.assertRaises(ValueError):
+                            budgets.prepare(out, base, candidate, reuse_compiler_cache=True)
+                        build.assert_not_called()
+
+    def test_source_mtimes_require_identical_bytes_and_never_follow_source_symlinks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo, _, _, _ = self.prepare_fixture(Path(folder))
+            original = budgets.source_mtimes(repo, 'missing-probe')
+            path = repo / 'version.txt'
+            path.write_text('different bytes')
+            changed_time = path.stat().st_mtime_ns
+            budgets.source_mtimes(repo, 'missing-probe', original)
+            self.assertEqual(path.stat().st_mtime_ns, changed_time)
+            path.write_text('CANDIDATE')
+            budgets.source_mtimes(repo, 'missing-probe', original)
+            self.assertEqual(path.stat().st_mtime_ns, original['version.txt']['mtime_ns'])
+            path.unlink()
+            target = Path(folder) / 'external'
+            target.write_text('CANDIDATE')
+            before = target.stat().st_mtime_ns
+            path.symlink_to(target)
+            self.assertNotIn('version.txt', budgets.source_mtimes(repo, 'missing-probe', original))
+            self.assertEqual(target.stat().st_mtime_ns, before)
+
+    def test_failed_cached_build_invalidates_timestamp_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo, _, base, candidate = self.prepare_fixture(Path(folder), candidate_version='FAIL')
+            out = repo / 'build/performance-budgets'
+            out.mkdir(parents=True)
+            real_command = budgets.command
+            with patch.object(budgets, 'ROOT', repo), \
+                    patch.object(budgets, 'command', side_effect=self.fake_prepare_command(real_command)), \
+                    patch.object(budgets, 'fixture_at'):
+                with self.assertRaises(RuntimeError):
+                    budgets.prepare(out, base, candidate, reuse_compiler_cache=True)
+            self.assertFalse((repo / '.build-budgets/source-mtimes.json').exists())
+            self.assertTrue((repo / '.build-budgets/swiftpm/cache-sentinel').exists())
+            self.assertFalse((out / 'apps/candidate.app').exists())
 
     def test_schema2_cli_pass_idle_breach_and_each_latency_regression(self):
         with tempfile.TemporaryDirectory() as folder:

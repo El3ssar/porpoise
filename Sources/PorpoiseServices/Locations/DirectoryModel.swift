@@ -72,12 +72,27 @@ public final class DirectoryModel {
         if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
     }
     deinit {
+        searchSortWork?.cancel()
         rowPreparation?.cancel(); currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel();
         for load in childLoads.values { load.cancel() }
         if let transferObserver { NotificationCenter.default.removeObserver(transferObserver) }
         if let gitSettingsObserver { NotificationCenter.default.removeObserver(gitSettingsObserver) }
     }
     public private(set) var location: URL
+    /// A location-specific presentation choice, independent of the global Applications library preference.
+    private static let applicationFilesKey = "applications.showAsFiles"
+    private var libraryPresentationEnabled = true
+    public var appLibraryPresentationEnabled: Bool {
+        get { libraryPresentationEnabled }
+        set {
+            guard newValue != libraryPresentationEnabled else { return }
+            libraryPresentationEnabled = newValue
+            if location.isFileURL && location.standardizedFileURL.path == AppLibrary.location.path {
+                Settings.store.set(!newValue, forKey: Self.applicationFilesKey)
+            }
+            reload()
+        }
+    }
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
     /// Changes whenever the visible rows are replaced, for constant-time view cache invalidation.
     public private(set) var rowsRevision: UInt64 = 0
@@ -120,6 +135,7 @@ public final class DirectoryModel {
     public var searchResults: [FileItem]? {
         didSet {
             searchSortGeneration += 1  // results still being sorted are out of date
+            if !applyingSortedResults { searchSortWork?.cancel(); searchSortWork = nil }
             if applyingSortedResults { return }
             // A search's next batch adds to the last: only the new results are sorted, then merged in, so thousands
             // of results don't make each batch stall the window.
@@ -135,12 +151,16 @@ public final class DirectoryModel {
     public var isSearching: Bool { searchResults != nil }
     /// Bumped whenever the results change: a sort of older ones finishing later is dropped.
     private var searchSortGeneration = 0
+    private var searchSortWork: DiskCancellation?
     private var applyingSortedResults = false
 
     /// Sorts `items` off the main thread (thousands of results take a while), then hands over a closure that shows
     /// them, to call at once (between a snapshot and an animation). Results newer than these, or none (the search was
     /// closed), meanwhile: nothing happens.
     public func sortSearchResults(_ items: [FileItem], then show: @escaping (_ apply: () -> Void) -> Void) {
+        searchSortWork?.cancel()
+        let work = DiskCancellation()
+        searchSortWork = work
         let p = props, choice = Settings.shared.sortingChoice, sizes = folderCounts
         guard p.sortRole != .tags else { return show { self.searchResults = items } }  // tags are read here
         searchSortGeneration += 1
@@ -150,13 +170,20 @@ public final class DirectoryModel {
         let grows = !old.isEmpty && kept != nil && items.count >= old.count && old.indices.allSatisfy { items[$0] == old[$0] }
         let shown = visible(grows ? Array(items[old.count...]) : items, filtered: false)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard !work.isCancelled else { return }
             let top =
                 grows
                 ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes)
                 : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes)
+            let urls = items.map(\.url)
+            let keys = FilePath.keys(urls, cancelled: { work.isCancelled })
+            guard !work.isCancelled else { return }
             DispatchQueue.main.async {
-                guard let self, g == self.searchSortGeneration else { return }
+                guard let self, !work.isCancelled, g == self.searchSortGeneration else { return }
                 show {
+                    guard !work.isCancelled, g == self.searchSortGeneration else { return }
+                    self.searchSortWork = nil
+                    self.fileKeyCache.merge(Dictionary(zip(urls, keys), uniquingKeysWith: { first, _ in first })) { _, new in new }
                     // Sorted with other settings meanwhile (the view's sort changed): sorted again here.
                     guard Self.sortsAlike(self.props, p), choice == Settings.shared.sortingChoice else { return self.searchResults = items }
                     self.applyingSortedResults = true
@@ -316,11 +343,17 @@ public final class DirectoryModel {
     private var dynamicViewPending = true
 
     private let prefetchFolders: Bool
+    /// Instance-scoped source creation also lets semantic tests avoid the host's Spotlight service.
+    var sourceFactory: (URL, Bool) -> LocationContentSource = {
+        LocationContentSources.source(for: $0, allowAppLibrary: $1)
+    }
 
     public init(location: URL, prefetchFolders: Bool = true) {
         self.prefetchFolders = prefetchFolders
         self.location = location
-        self.source = LocationContentSources.source(for: location)
+        let libraryEnabled = !Settings.store.bool(forKey: Self.applicationFilesKey)
+        self.libraryPresentationEnabled = libraryEnabled
+        self.source = LocationContentSources.source(for: location, allowAppLibrary: libraryEnabled)
         self.props = ViewStyleStore().style(for: location)
         source.retainMetadata(for: [location])
         gitSettingsObserver = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] note in
@@ -373,6 +406,7 @@ public final class DirectoryModel {
         location = url
         observeGit()
         if changed {
+            libraryPresentationEnabled = !Settings.store.bool(forKey: Self.applicationFilesKey)
             loadedNotificationPending = false
             incomingItems = []; incomingProgress = [:]
             expanded = []
@@ -391,7 +425,7 @@ public final class DirectoryModel {
             dynamicViewPending = true
             columnOverride = ViewOverride()
             props = inColumns(ViewStyleStore().style(for: url))
-            let replacement = LocationContentSources.source(for: url)
+            let replacement = sourceFactory(url, appLibraryPresentationEnabled)
             replacement.retainMetadata(for: [url])
             source = replacement
             // Stop watching the old folder now: virtual and remote locations don't use FSEvents.
@@ -519,7 +553,7 @@ public final class DirectoryModel {
         loadedNotificationPending = false
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
-        let replacement = LocationContentSources.source(for: location)
+        let replacement = sourceFactory(location, appLibraryPresentationEnabled)
         replacement.retainMetadata(for: expanded.union([location]))
         source = replacement
         folderPrefetch?.cancel(); folderPrefetch = nil
@@ -592,6 +626,7 @@ public final class DirectoryModel {
         _ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool, changedOnly: Bool = false
     ) {
         let traits = source.traits
+        if fileKeyCache.isEmpty { fileKeyCache = listing.entryKeys } else { fileKeyCache.merge(listing.entryKeys) { _, new in new } }
         if traits.optimisticEdits, listing.complete { listingArrived(token) }
         let before = changedOnly ? folderDates() : [:]
         items = traits.optimisticEdits ? withEdits(listing.items, in: url) : listing.items
@@ -694,7 +729,7 @@ public final class DirectoryModel {
             filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
             knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil,
-            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [])
+            search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [], knownEntryKeys: fileKeyCache)
         // Never let a later filter/mode change reuse order from a superseded listing.
         if !keepingOrder { sortedTop = nil }
         rowPreparation = prepareRows(snapshot) { [weak self] result in
@@ -929,6 +964,7 @@ public final class DirectoryModel {
         childLoads[url] = source.load(url, expanded: []) { [weak self] listing in
             // A reload since then lists expanded folders itself; a collapse makes this one moot.
             guard let self, token == self.loadToken, self.expanded.contains(url) else { return }
+            self.fileKeyCache.merge(listing.entryKeys) { _, new in new }
             switch listing.part {
             case .page: return
             case .whole:
@@ -963,13 +999,28 @@ public final class DirectoryModel {
     /// resolving all of them again took tens of milliseconds on the main thread for thousands of results.
     private var fileKeyCache: [URL: String] = [:]
 
-    /// Stable for this delivered listing; rendering performs no filesystem work (all rows are keyed at once, on the
-    /// first ask after the rows change).
+    /// Stable entry identity for rendering. Production local/search loaders resolve parents on their workers;
+    /// optimistic or synthetic entries use their lexical URL until the next authoritative listing arrives.
     public func identity(ofRow index: Int) -> String {
         if let keys = rowFileKeys { return keys[index] }
-        let missing = rows.map(\.item.url).filter { fileKeyCache[$0] == nil }
-        for (url, key) in zip(missing, FilePath.keys(missing)) { fileKeyCache[url] = key }
-        let keys = rows.map { fileKeyCache[$0.item.url]! }
+        let keys = rows.map { row in
+            let url = row.item.url
+            if let known = fileKeyCache[url] { return known }
+            if url.isFileURL {
+                let parent = url.deletingLastPathComponent()
+                // Optimistic/synthetic child rows may inherit a physical directory's prepared identity.
+                // Never derive through a symlink entry: its target has a different parent identity.
+                if let base = fileKeyCache[parent],
+                    items.contains(where: { $0.url == parent && $0.isDirectory && !$0.isSymlink })
+                        || children.values.contains(where: { $0.contains { $0.url == parent && $0.isDirectory && !$0.isSymlink } })
+                {
+                    let key = (base == "/" ? "" : base) + "/" + url.lastPathComponent
+                    fileKeyCache[url] = key
+                    return key
+                }
+            }
+            return url.isFileURL ? url.path : url.absoluteString
+        }
         rowFileKeys = keys
         return keys[index]
     }
@@ -1168,6 +1219,7 @@ public final class DirectoryModel {
             Self.sameFolder(other.location, location)
         else { return }
         items = other.items
+        fileKeyCache = other.fileKeyCache
         folderCounts = other.folderCounts
         if Self.sortsAlike(props, other.props), props.effectiveGroupRole == other.props.effectiveGroupRole, filter == other.filter,
             other.expanded.isEmpty, other.rowPreparation == nil, incomingItems.isEmpty, other.incomingItems.isEmpty

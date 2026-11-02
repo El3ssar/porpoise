@@ -102,7 +102,13 @@ import Testing
                 "Ask for confirmation when", "Trash", "Copies and moves", "Transfer rules", "Name clashes", "Archives", "Compare files",
             ])
         let accounts = try headings(tabs, "Accounts & Servers")
-        #expect(accounts.first == "Accounts and servers" && accounts.last == "Sign-in configuration", "\(accounts)")
+        #expect(accounts.first == "Accounts and servers" && !accounts.contains("Sign-in configuration"), "\(accounts)")
+        let signIn = try #require(try control(tabs, "Accounts & Servers", "Show Sign-in Configuration") as? NSButton)
+        signIn.performClick(nil)
+        #expect(try headings(tabs, "Accounts & Servers").last == "Sign-in configuration")
+        #expect(signIn.title == "Hide Sign-in Configuration")
+        signIn.performClick(nil)
+        #expect(try !headings(tabs, "Accounts & Servers").contains("Sign-in configuration"))
         #expect(try headings(tabs, "Keyboard") == ["Key set", "Keyboard shortcuts", "Toolbar", "Custom tools"])
         let advanced = try headings(tabs, "Advanced")
         for section in [

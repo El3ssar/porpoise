@@ -17,10 +17,13 @@ Goal: Dolphin's structure and behavior, presented the way a current macOS app (F
 
 ## Visual language
 
-- **Colors:** Desert-Dark, and a light scheme made to match it; the app follows macOS's Light/Dark setting (or the
-  one chosen in Settings). Every color in `Theme` is dynamic; materials are tinted with the window color (wallpaper
-  shows through softly).
+- **Colors:** native macOS system colors and the user's accent by default, with the existing optional themes. The app follows the selected system/light/dark appearance. Semantic Theme/Tokens roles own color and contrast; native navigation materials remain untinted.
 - **Shapes:** continuous rounded corners; 6 pt for rows/items, 8 pt for fields, capsules for toolbar groups.
 - **Type:** SF 13 for content, 11–12 for secondary text (status bar, section headers, column headers).
 - **Motion:** short ease-out (open) / ease-in (close) curves, 160–280 ms: split view, panels, zoom, hover fades.
 - **Density:** 52 pt unified toolbar, 28 pt sidebar rows, 26 pt status bar.
+
+
+## Current finish rules
+
+The maintained token and interaction contract is [the design system](../design/DESIGN-SYSTEM.md). The [2026-11-01 implementation ledger](audits/2026-11-01/implementation-ui.md) covers adaptive search/filter, deliberate tab overflow, scrollable inspectors/errors, keyboard media controls, Applications file-view switching and Settings disclosure. Keep source review, geometry assertions, active visual captures and attended accessibility as separate evidence.

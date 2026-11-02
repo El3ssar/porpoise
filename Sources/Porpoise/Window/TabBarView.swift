@@ -20,7 +20,10 @@ final class TabBarView: NSView {
     weak var delegate: TabBarDelegate?
     var titles: [String] = [] { didSet { relayout() } }
     var icons: [String] = []
-    var selected = 0 { didSet { needsDisplay = true } }
+    var selected = 0 { didSet { revealTab(selected); relayout() } }
+    private var firstVisible = 0
+    private var visibleCapacity = 1
+    private let overflow = FlatButton(icon: "go-down", tooltip: "Show All Tabs")
     private var rects: [CGRect] = []
     private var closeRects: [CGRect] = []
     private var plusRect: CGRect = .zero
@@ -36,7 +39,7 @@ final class TabBarView: NSView {
 
     /// VoiceOver: each tab, then its close button (there even when the tab is too narrow to draw one), and "+".
     override func accessibilityChildren() -> [Any]? {
-        var out: [Any] = rects.indices.flatMap { i -> [Any] in
+        var out: [Any] = rects.indices.filter { !rects[$0].isEmpty }.flatMap { i -> [Any] in
             let title = titles.indices.contains(i) ? titles[i] : ""
             return [
                 AccessibleRegion(
@@ -57,6 +60,7 @@ final class TabBarView: NSView {
             AccessibleRegion(
                 in: self, role: .button, label: "New Tab", frame: { [weak self] in self?.plusRect ?? .zero },
                 press: { [weak self] in if let self { self.delegate?.tabBarNewTab(self, duplicate: nil) } }))
+        if !overflow.isHidden { out.append(overflow) }
         return out
     }
 
@@ -64,6 +68,8 @@ final class TabBarView: NSView {
         super.init(frame: frame)
         registerForDraggedTypes(DropTargetPolicy.types)
         setAccessibilityRole(.tabGroup)
+        overflow.menuProvider = { [weak self] in self?.allTabsMenu() }
+        addSubview(overflow)
     }
 
     // MARK: Keyboard (Full Keyboard Access)
@@ -71,7 +77,7 @@ final class TabBarView: NSView {
     /// The tab with keyboard focus: Tab reaches the bar, ←/→ move between tabs, Space or Return shows that tab.
     private var focused: Int? {
         didSet {
-            if focused != oldValue { noteFocusRingMaskChanged(); needsDisplay = true }
+            if focused != oldValue { if let focused { revealTab(focused); relayout() }; noteFocusRingMaskChanged(); needsDisplay = true }
         }
     }
 
@@ -112,32 +118,68 @@ final class TabBarView: NSView {
     /// Below this width a tab shows its icon only, without title or close button.
     private static let compactTabWidth: CGFloat = 64
 
+    private func revealTab(_ index: Int) {
+        if index < firstVisible { firstVisible = max(0, index) }
+        if index >= firstVisible + visibleCapacity { firstVisible = max(0, index - visibleCapacity + 1) }
+    }
+
+    private func allTabsMenu() -> NSMenu {
+        let menu = NSMenu()
+        for i in titles.indices {
+            let path = delegate?.tabBar(self, folderAt: i).map {
+                $0.isFileURL ? ($0.path as NSString).abbreviatingWithTildeInPath : RemoteFS.withoutPassword($0).absoluteString
+            }
+            let title = titles[i] + (path.map { " — " + $0 } ?? "")
+            let item = NSMenuItem(title: title, action: #selector(chooseTab(_:)), keyEquivalent: "")
+            item.target = self; item.tag = i; item.state = i == selected ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func chooseTab(_ item: NSMenuItem) { delegate?.tabBar(self, select: item.tag) }
+
     private func relayout() {
         let attrs: [NSAttributedString.Key: Any] = [.font: Theme.font]
+        let available = max(24, bounds.width - 44)
+        let overflowNeeded = CGFloat(titles.count) * 66 > available
+        overflow.isHidden = !overflowNeeded
+        overflow.frame = CGRect(x: max(0, bounds.width - 64), y: 4, width: 28, height: 24)
+        plusRect = CGRect(x: max(0, bounds.width - 30), y: 4, width: 24, height: 24)
+        let end = overflowNeeded ? overflow.frame.minX - 4 : plusRect.minX - 4
+        let stripWidth = max(24, end - 6)
+        let previousCapacity = visibleCapacity
+        visibleCapacity = max(1, Int(stripWidth / 66))
+        if visibleCapacity != previousCapacity { revealTab(focused ?? selected) }
+        firstVisible = min(firstVisible, max(0, titles.count - visibleCapacity))
+        if !overflowNeeded { firstVisible = 0 }
+        rects = Array(repeating: .zero, count: titles.count)
+        closeRects = Array(repeating: .zero, count: titles.count)
+        let count = min(titles.count - firstVisible, visibleCapacity)
+        guard count > 0 else { needsDisplay = true; return }
+        let share = max(Self.minTabWidth, stripWidth / CGFloat(count) - 2)
         var x: CGFloat = 6
-        rects = []
-        closeRects = []
-        let style = Settings.shared.tabStyle
-        let n = CGFloat(max(1, titles.count))
-        let avail = bounds.width - 44
-        // Equal share of the bar; with many tabs they narrow down to their icon so every tab (and "+") stays reachable.
-        let share = max(Self.minTabWidth, (avail - 6) / n - 2)
-        var widths = titles.map { t -> CGFloat in
-            switch style {
-            case .autoSize: min(260, max(110, (t as NSString).size(withAttributes: attrs).width + 64))
-            case .fixedSize: 225
-            case .fullWidth: share
+        for i in firstVisible..<(firstVisible + count) {
+            let wanted: CGFloat
+            switch Settings.shared.tabStyle {
+            case .autoSize: wanted = min(260, max(110, (titles[i] as NSString).size(withAttributes: attrs).width + 64))
+            case .fixedSize: wanted = 225
+            case .fullWidth: wanted = share
             }
+            let width = min(wanted, share)
+            rects[i] = CGRect(x: x, y: 4, width: width, height: max(0, bounds.height - 4))
+            if width >= Self.compactTabWidth { closeRects[i] = CGRect(x: x + width - 24, y: 4 + (bounds.height - 20) / 2, width: 16, height: 16) }
+            x += width + 2
         }
-        if widths.reduce(0, +) + 2 * n > avail - 6 { widths = widths.map { min($0, share) } }
-        for w in widths {
-            rects.append(CGRect(x: x, y: 4, width: w, height: bounds.height - 4))
-            // Narrow tabs have no room for a close button (middle-click, the context menu and ⌘W still close them).
-            closeRects.append(w < Self.compactTabWidth ? .zero : CGRect(x: x + w - 24, y: 4 + (bounds.height - 4 - 16) / 2, width: 16, height: 16))
-            x += w + 2
-        }
-        plusRect = CGRect(x: x + 4, y: 4 + (bounds.height - 4 - 24) / 2, width: 24, height: 24)
         needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !overflow.isHidden else { return super.scrollWheel(with: event) }
+        let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
+        guard abs(delta) > 0.1 else { return }
+        firstVisible = min(max(0, titles.count - visibleCapacity), max(0, firstVisible + (delta < 0 ? 1 : -1)))
+        relayout()
     }
 
     override func layout() { super.layout(); relayout() }
@@ -149,6 +191,7 @@ final class TabBarView: NSView {
         Theme.frame.setFill()
         CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
         for (i, r0) in rects.enumerated() {
+            guard !r0.isEmpty else { continue }
             var r = r0
             if let d = dragging, d.index == i { r.origin.x += d.offset }
             let isSel = i == selected

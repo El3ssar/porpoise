@@ -22,6 +22,7 @@ extension MainWindowController {
     static func keyViews(in root: NSView) -> [NSView] {
         func collect(_ v: NSView) -> [NSView] {
             guard !v.isHiddenOrHasHiddenAncestor, v.window != nil, !v.visibleRect.isEmpty else { return [] }
+            if let information = v as? InformationPanel { return [information] + information.keyboardControls }
             return v.canBecomeKeyView ? [v] : v.subviews.flatMap(collect)
         }
         return collect(root).sorted { a, b in
@@ -43,7 +44,13 @@ extension MainWindowController {
             view = up
         }
         guard let i = loop.firstIndex(where: { $0 === view }) else { return nil }
-        return loop[(i + (backwards ? loop.count - 1 : 1)) % loop.count]
+        let target = loop[(i + (backwards ? loop.count - 1 : 1)) % loop.count]
+        var ancestor = target.superview
+        while let view = ancestor {
+            if view is InformationPanel { target.scrollToVisible(target.bounds); break }
+            ancestor = view.superview
+        }
+        return target
     }
 
     /// The view that has the focus: a text field's own view while its field editor is typing in it.
