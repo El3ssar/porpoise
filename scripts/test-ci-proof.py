@@ -117,21 +117,41 @@ class ProofTests(unittest.TestCase):
         for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None)]:
             self.assertIsNone(proof.find_proof([self.run_record(**state), self.run_record()], self.repository))
 
-    def merged_fixture(self, changed_controls=False):
+    def merged_fixture(self, changed_controls=False, style='merge', multiple_commits=False):
         branch = self.git('branch', '--show-current')
         self.git('checkout', '-qb', 'feature')
-        Path('feature.swift').write_text('reviewed feature')
         if changed_controls:
             Path('scripts').mkdir()
             Path('scripts/ci-proof.py').write_text('untrusted proof producer')
+            if multiple_commits:
+                self.commit()
+        Path('feature.swift').write_text('reviewed feature')
         head = self.commit()
+        commits = self.git('rev-list', '--reverse', self.base + '..' + head).splitlines()
         self.git('checkout', '-q', branch)
-        self.git('merge', '--no-ff', '-qm', 'approved merge', head)
+        if style == 'rebase':
+            Path('CHANGELOG.md').write_text('base advanced before PR verification')
+            self.commit()
+        tested_base = self.git('rev-parse', 'HEAD')
+        self.git('merge', '--no-ff', '-qm', 'tested merge', head)
+        checkout = self.git('rev-parse', 'HEAD')
+        if style != 'merge':
+            self.git('reset', '--hard', tested_base)
+            if style == 'squash':
+                self.git('merge', '--squash', head)
+                self.git('commit', '-qm', 'approved squash')
+            elif style == 'rebase':
+                for commit in commits:
+                    self.git('cherry-pick', commit)
+            else:
+                raise ValueError(style)
         merge = self.git('rev-parse', 'HEAD')
-        run = self.run_record(id=42, run_attempt=2, head_sha=head, event='pull_request', head_branch='feature')
+        run = self.run_record(id=42, run_attempt=2, head_sha=head, event='pull_request', head_branch='feature',
+                              referenced_workflows=[dict(path=f'{self.repository}/.github/workflows/ui-acceptance.yml@{checkout}',
+                                                         ref='refs/pull/7/merge', sha=checkout)])
         value = dict(schema=1, repository=self.repository, run_id=42, run_attempt=2,
-                     event='pull_request', head=head, pr=7, checkout=merge,
-                     base=self.base,
+                     event='pull_request', head=head, pr=7, checkout=checkout,
+                     base=tested_base,
                      application_tree=proof.application_tree(), gates=sorted(proof.GATES))
         pr = dict(merged=True, merge_commit_sha=merge,
                   base=dict(ref='main', repo=dict(full_name=self.repository)),
@@ -148,6 +168,51 @@ class ProofTests(unittest.TestCase):
         Path('CHANGELOG.md').write_text('release notes')
         self.commit()
         self.assertEqual(self.pr_proof([run], value, pr), run)
+
+    def test_squash_and_rebase_approved_exact_tree_can_reuse_proof(self):
+        for style in ['squash', 'rebase']:
+            with self.subTest(style=style):
+                self.git('reset', '--hard', self.base)
+                if style == 'rebase':
+                    self.git('branch', '-D', 'feature')
+                run, value, pr = self.merged_fixture(style=style)
+                self.assertFalse(proof.ancestor(run['head_sha'], 'HEAD'))
+                self.assertEqual(self.pr_proof([run], value, pr), run)
+
+    def test_squash_failed_merge_context_vetoes_older_green_main_even_with_different_head_tree(self):
+        run, value, pr = self.merged_fixture(style='squash')
+        # Test HEAD lacks a change that landed in main before the synthetic PR merge was tested.
+        branch = self.git('branch', '--show-current')
+        self.git('checkout', '-qb', 'advanced-base', self.base)
+        Path('new-base.swift').write_text('current base input')
+        base = self.commit()
+        self.git('merge', '--no-ff', '-qm', 'new tested context', run['head_sha'])
+        checkout = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '-q', branch)
+        self.git('reset', '--hard', base)
+        self.git('merge', '--squash', run['head_sha'])
+        self.git('commit', '-qm', 'approved updated-base squash')
+        target = self.git('rev-parse', 'HEAD')
+        pr['merge_commit_sha'] = target
+        failed = dict(run, id=44, run_attempt=3, conclusion='failure', referenced_workflows=[
+            dict(path=f'{self.repository}/.github/workflows/ui-acceptance.yml@{checkout}', ref='refs/pull/7/merge', sha=checkout)])
+        older = self.run_record(id=40, head_sha=target)
+        self.assertNotEqual(proof.application_tree(run['head_sha']), proof.application_tree())
+        self.assertIsNone(self.pr_proof([failed, older], value, pr))
+
+    def test_rebase_earlier_control_commit_cannot_self_certify(self):
+        run, value, pr = self.merged_fixture(style='rebase', changed_controls=True, multiple_commits=True)
+        self.assertEqual(self.git('diff', '--name-only', pr['merge_commit_sha'] + '^1', 'HEAD', '--', 'scripts/'), '')
+        self.assertIsNone(self.pr_proof([run], value, pr))
+
+    def test_missing_or_ambiguous_merge_context_cannot_fall_back_to_older_proof(self):
+        run, value, pr = self.merged_fixture(style='squash')
+        older = self.run_record(id=40, head_sha=pr['merge_commit_sha'])
+        for refs in [[], None, [dict(run['referenced_workflows'][0], sha=self.base)],
+                     run['referenced_workflows'] + [dict(run['referenced_workflows'][0], ref='refs/pull/8/merge')]]:
+            with self.subTest(refs=refs):
+                failed = dict(run, conclusion='failure', referenced_workflows=refs)
+                self.assertIsNone(self.pr_proof([failed, older], value, pr))
 
     def test_pr_evidence_is_bound_to_run_attempt_head_repository_and_all_gates(self):
         run, value, pr = self.merged_fixture()
@@ -218,7 +283,7 @@ class ProofTests(unittest.TestCase):
     def test_attestation_creation_requires_exact_checkout_and_every_gate(self):
         run, _, _ = self.merged_fixture()
         event = Path('event.json').resolve()
-        event.write_text(json.dumps(dict(number=7, pull_request=dict(head=dict(sha=run['head_sha']), base=dict(sha=self.base)))))
+        event.write_text(json.dumps(dict(number=7, pull_request=dict(head=dict(sha=run['head_sha']), base=dict(sha='0' * 40)))))
         environment = dict(GITHUB_SHA=self.git('rev-parse', 'HEAD'), GITHUB_REPOSITORY=self.repository,
                            GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
                            GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='2',
@@ -227,6 +292,7 @@ class ProofTests(unittest.TestCase):
         with patch.dict(os.environ, environment):
             proof.attest(output)
             self.assertEqual(json.loads(output.read_text())['application_tree'], proof.application_tree())
+            self.assertEqual(json.loads(output.read_text())['base'], self.git('rev-parse', 'HEAD^1'))
             with patch.dict(os.environ, GITHUB_SHA=self.base), self.assertRaises(ValueError):
                 proof.attest(output)
             for result in ['failure', 'cancelled', 'skipped']:
