@@ -142,6 +142,7 @@ final class ActivityWindowController: SecondaryWindowController, NSWindowDelegat
 
     /// Internal for deterministic lifecycle fixtures; rebuilding never orders a window.
     func reload() {
+        dismissedAttention.formIntersection(Set(controller.activities.map(\.id)))
         rows = Self.ordered(controller.activities).filter { !dismissedAttention.contains($0.id) }
         edits = cloudEditing.entries.filter { $0.mark == .saving || $0.mark.needsAttention }
         let ids = Self.progressOrder(rows, editIDs: edits.map(\.id))

@@ -55,7 +55,7 @@ import Testing
         let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
         disclosure.performClick(nil)
         #expect(card.isExpanded && card.preferredHeight == 268 && !card.speedHistory.isHidden)
-        #expect(descendants(card, as: ThinProgressView.self).allSatisfy(\.isHidden))
+        #expect(descendants(card, as: ThinProgressView.self).allSatisfy { $0.isHidden })
         #expect(card.speedHistory.samples == activity.transferSummary.speedSamples)
         #expect(Set(card.speedHistory.samples.map(\.segment)).count == 2)
         #expect(descendants(card, as: NSTableView.self).isEmpty)
@@ -132,7 +132,7 @@ import Testing
             Settings.shared.appearance = look; app.appearance = Theme.appearance; Theme.lookChanged()
             let card = TransferProgressView(window: nil)
             card.update(activity)
-            let root = NSView(frame: CGRect(x: 0, y: 0, width: 480, height: card.preferredHeight + 24))
+            let root = NSView(frame: CGRect(x: 0, y: 0, width: 480, height: card.preferredHeight + 40))
             root.wantsLayer = true
             root.addSubview(card)
             let window = NSWindow(contentRect: root.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -145,9 +145,9 @@ import Testing
                     let disclosure = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
                     disclosure.performClick(nil)
                 }
-                root.frame.size.height = card.preferredHeight + 24
+                root.frame.size.height = card.preferredHeight + 40
                 window.setContentSize(root.frame.size)
-                card.frame = CGRect(x: 12, y: 12, width: 456, height: card.preferredHeight)
+                card.frame = CGRect(x: 20, y: 20, width: 440, height: card.preferredHeight)
                 window.effectiveAppearance.performAsCurrentDrawingAppearance {
                     root.layer?.backgroundColor = Theme.windowBackground.cgColor
                     root.layoutSubtreeIfNeeded()

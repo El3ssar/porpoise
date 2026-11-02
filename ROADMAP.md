@@ -21,7 +21,9 @@ These are foundations to improve, not future feature milestones:
   bandwidth limits, exclusions and sleep/network interruption handling. Transfers uses a
   compact window with current-file information and an expandable speed graph.
 - Indexed and streamed search, tags/comments, previews, batch rename, file comparison,
-  checksums, disk usage, duplicates, app cleanup and templates.
+  checksums, disk usage, duplicates, app cleanup and templates. Local zip/7z/tar archives
+  browse read-only without whole-archive extraction; opening or copying extracts the requested item.
+  Other archive formats retain the bounded extracted-cache fallback.
 - Saved server connections, SFTP, FTP/FTPS, mounted network shares, S3, Google Drive and
   Dropbox, plus implemented OneDrive and Box adapters. Cloud files support offline copies
   and edit-in-place. Provider capabilities and real-account availability are separate.
@@ -41,7 +43,7 @@ validated. The contracts and dated receipts describe their actual evidence bound
 
 Refine the compact progress window with a design review against Dolphin's clear hierarchy.
 Keep the current filename, honest processed/total file and folder counts, progress, speed,
-remaining time and useful Pause/Stop/error actions easy to scan. The expanded detail is a
+remaining time and useful Pause/Cancel/error actions easy to scan. The expanded detail is a
 speed history, not a queue of filenames. Successful and cancelled operations leave the
 progress surface; it hides when no live operation or unresolved failure needs it. Past-transfer
 history is not part of this UI. Internal Undo and recovery records remain. The current window
@@ -127,8 +129,9 @@ These earlier decisions remain in force unless explicitly reopened:
 - No unrestricted third-party extension SDK or outside code in the privileged helper path.
 - No separate Azure Blob/Google Cloud Storage engines; revisit only for a concrete requested workflow.
 - No iOS app-document access through unsupported interfaces.
-- Archives remain browsable through extracted copies. Archives as writable locations,
-  localisation, a search builder and pending-edit recovery for SFTP/FTP/S3 were explicitly dropped.
+- Writable archive locations remain excluded; existing read-only zip/7z/tar browsing and
+  extracted-cache fallback are already shipped. Localisation, a search builder and pending-edit
+  recovery for SFTP/FTP/S3 were explicitly dropped.
 - Developer ID/notarisation and paid CASA remain excluded under the existing no-maintainer-cost
   decision. Releases use the established signing identity and signed updater; installation
   guidance must describe the actual Gatekeeper steps. Revisit costs explicitly rather than

@@ -301,6 +301,17 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         func totalWidth(_ values: [Segment]) -> CGFloat { values.reduce(0) { $0 + width(of: $1) } }
         var result = assembled()
         while totalWidth(result) > available, crumbs.count > 1 {
+            if crumbs.count == 2, !prefix.isEmpty {
+                prefix.removeFirst()
+                result = assembled()
+                continue
+            }
+            if crumbs.count == 2 {
+                let minimum = result.reduce(CGFloat(0)) { value, segment in
+                    if case .crumb = segment.kind { return value + 36 }; return value + width(of: segment)
+                }
+                if minimum <= available { break }  // Elide both names before hiding the parent.
+            }
             // Prefer keeping a named context (e.g. a search root), but never at the expense of
             // the immediate parent when earlier ancestors can be collapsed instead.
             let candidates = crumbs.indices.dropLast(2)
@@ -318,19 +329,27 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             prefix.removeFirst()
             result = assembled()
         }
-        // A single long folder name must elide inside its own segment, never cover its neighbours.
-        let natural = totalWidth(result)
-        var remainingReduction = max(0, natural - available)
+        // Share scarce text space between the parent and current folder, rather than letting
+        // one long name hide the other folder's target. Short names give their unused space back.
         var widths = result.map { width(of: $0) }
-        for index in result.indices.reversed() {
-            guard case .crumb = result[index].kind else { continue }
-            let reduction = min(remainingReduction, max(0, widths[index] - min(36, available)))
-            widths[index] -= reduction
-            remainingReduction -= reduction
+        let crumbIndices = result.indices.filter {
+            if case .crumb = result[$0].kind { return true }; return false
         }
-        if remainingReduction > 0, !result.isEmpty {
-            // At extremely small widths preserve the current folder; ancestors remain available
-            // through the root context menu and the editable location shortcut.
+        let fixedWidth = result.indices.filter { !crumbIndices.contains($0) }.reduce(CGFloat(0)) { $0 + widths[$1] }
+        let textBudget = max(0, available - fixedWidth)
+        if !crumbIndices.isEmpty, crumbIndices.reduce(CGFloat(0), { $0 + widths[$1] }) > textBudget {
+            let share = textBudget / CGFloat(crumbIndices.count)
+            for index in crumbIndices { widths[index] = min(widths[index], share) }
+            var spare = textBudget - crumbIndices.reduce(CGFloat(0)) { $0 + widths[$1] }
+            for index in crumbIndices.reversed() {
+                let extra = min(spare, width(of: result[index]) - widths[index])
+                widths[index] += extra; spare -= extra
+            }
+        }
+        let remainingReduction = max(0, widths.reduce(0, +) - available)
+        if remainingReduction > 0 || (widths.min() ?? 0) < 16, !result.isEmpty {
+            // At extremely small widths preserve the current folder; the full location remains available
+            // through the editable location shortcut.
             result = crumbs.suffix(1).map { $0 }
             widths = [available]
         }

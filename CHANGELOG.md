@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.0
+
+- **Transfers stay out of your way.** A cleaner Dolphin-inspired progress window shows only live operations and problems that need attention. Successful and cancelled transfers disappear automatically; the window closes when there is nothing left to handle. Details turns the progress bar into a speed graph. Past-transfer history and the section picker are gone; custom-tool output has its own window.
+- **Easier path navigation.** Click anywhere in a breadcrumb's padded segment to open that folder. Narrow paths keep an ancestor menu and preserve the parent/current folder by shortening long names; keyboard users can open a folder's children with Down Arrow.
+- **Faster useful folder information.** Get Info counts entries as metadata batches arrive, using less temporary memory instead of collecting a huge directory first. Partial scans say “At least” when some items cannot be read. The optimized local 100,000-file fixture reached its first useful count in 0.26 s instead of 1.77 s; storage and folder shape affect results.
+
 ## 0.18.0
 
 - **Run Quick Actions in Porpoise.** Right-click local files or folders to run compatible Automator Quick Actions already installed on your Mac, with their names and icons. Customize opens the macOS Quick Actions settings.

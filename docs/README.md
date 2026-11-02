@@ -95,6 +95,7 @@ original evidence. Temporary artifact paths may no longer exist.
 | [Transfer verification](audits/2026-11-01/transfer-verification.md) | Prior transfer implementation and hosted failure investigations. |
 | [Contributor PR/CI review](audits/2026-11-01/pr-and-ci-review.md) | Review of the old PR heads, before their later integration. |
 | [Drive M1 validation](drive/VALIDATION.md) | Initial fake-account engine handoff. |
+| [Folder information performance](validation/FOLDER-INFO-PERFORMANCE.md) | Optimized synthetic baseline/candidate measurements and a reproducible fixture recipe. |
 | [Fast transfers/previews](validation/M4-FASTPREVIEW.md) | W-70 fixtures, performance numbers and replay receipts. |
 | [Module split](validation/R16-MODULE-SPLIT.md) | Target-boundary refactor validation. |
 | [Credential isolation](verification/W-58-keychain-isolation.md) | Worker checkpoint for test/review credential isolation. |

@@ -65,11 +65,20 @@ import Testing
         #expect(view.crumbRect(parent)?.height == 38, "Hit targets follow height as well as width")
     }
 
+    @Test func parentTakesPriorityOverRootPrefixAtTheWidthThreshold() throws {
+        let view = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: 200, height: 34))
+        let parent = URL(fileURLWithPath: "/Library/A")
+        view.url = parent.appendingPathComponent("Current0000")
+        #expect(view.crumbRect(parent) != nil)
+        #expect(try #require(view.crumbRect(view.url)).maxX <= view.bounds.maxX)
+    }
+
     @Test func longNamesRemainInsideEvenVeryNarrowPaths() throws {
         for width: CGFloat in [40, 80, 120, 180, 260, 640] {
             let view = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: width, height: 34))
             view.url = URL(fileURLWithPath: "/Library/A very long parent folder/An even longer current folder with Unicode 日本語")
             let current = try #require(view.crumbRect(view.url))
+            if width >= 180 { #expect(view.crumbRect(view.url.deletingLastPathComponent()) != nil, "Elide names before hiding the parent") }
             #expect(current.minX >= 0 && current.maxX <= width)
             #expect(current.width > 0)
             #expect((view.accessibilityChildren() ?? []).count >= 3)
