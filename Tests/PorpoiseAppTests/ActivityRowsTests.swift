@@ -45,6 +45,7 @@ import Testing
         let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/source")], destination: nil, job: nil)
         activity.state = .running
         activity.startedAt = Date().addingTimeInterval(-11)
+        activity.speedHistory = TransferSpeedHistory()  // Synthetic readings below use a zero-based clock.
         activity.speedHistory.add(bytes: 0, at: 0)
         activity.speedHistory.add(bytes: 1024, at: 1)
         activity.speedHistory.interrupt()
@@ -63,6 +64,17 @@ import Testing
         #expect(descendants(card, as: NSTableView.self).isEmpty)
         disclosure.performClick(nil)
         #expect(!card.isExpanded && card.speedHistory.isHidden)
+    }
+
+    @Test(.isolatedSettings) func averageSpeedExcludesSkippedAndReusedBytes() throws {
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running; activity.startedAt = Date().addingTimeInterval(-10)
+        var progress = JobProgress(kind: .copy, totalBytes: 4096, doneBytes: 2048, totalItems: 2, doneItems: 1, currentName: "file", destination: nil)
+        progress.nonTransferredBytes = 1024
+        activity.progress = progress
+        let card = TransferProgressView(window: nil); card.update(activity)
+        let average = try #require(card.speedHistory.averageSpeed)
+        #expect(average > 90 && average < 110, "Only 1024 bytes crossed the transfer, not the 2048 credited to completion")
     }
 
     @Test(.isolatedSettings) func finishedInstantOperationDoesNotOfferAnEmptySpeedGraph() throws {
@@ -116,7 +128,8 @@ import Testing
         defer { app.appearance = previous; Theme.lookChanged() }
         let activity = Activity(
             kind: .copy, sources: [URL(fileURLWithPath: "/fixture/Photo Library")], destination: URL(fileURLWithPath: "/fixture/Backup"), job: nil)
-        activity.state = .running; activity.startedAt = Date().addingTimeInterval(-72)
+        activity.state = .running; activity.startedAt = Date().addingTimeInterval(-64)
+        activity.speedHistory = TransferSpeedHistory()  // Match the synthetic zero-based sample clock.
         var bytes: Int64 = 0
         for second in 0...64 {
             if second == 30 { activity.speedHistory.interrupt(); activity.rate.reset() }
@@ -134,6 +147,7 @@ import Testing
             Settings.shared.appearance = look; app.appearance = Theme.appearance; Theme.lookChanged()
             let card = TransferProgressView(window: nil)
             card.update(activity)
+            #expect(card.speedHistory.samples.last?.elapsed == 64)
             let root = NSView(frame: CGRect(x: 0, y: 0, width: 480, height: card.preferredHeight + 40))
             root.wantsLayer = true
             root.addSubview(card)

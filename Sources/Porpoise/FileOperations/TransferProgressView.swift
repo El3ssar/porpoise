@@ -139,7 +139,8 @@ final class TransferProgressView: NSView {
         if remaining.stringValue.isEmpty { remaining.stringValue = activity.statusText }
         remaining.toolTip = remaining.stringValue
         speedHistory.currentSpeed = summary.bytesPerSecond
-        speedHistory.averageSpeed = summary.elapsed > 0 ? Double(summary.doneBytes) / summary.elapsed : nil
+        // Skipped or reused bytes advance completion but are not transferred throughput.
+        speedHistory.averageSpeed = summary.elapsed > 0 ? Double(activity.progress?.transferredBytes ?? 0) / summary.elapsed : nil
         speedHistory.samples = summary.speedSamples
         let hasFinishedWithoutSamples = activity.state.isEnded && summary.speedSamples.count < 2
         disclosure.isHidden = hasFinishedWithoutSamples
