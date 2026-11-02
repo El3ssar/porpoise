@@ -50,7 +50,7 @@ struct OneDriveConfigurationTests {
         }
     }
 
-    @Test(.isolatedSettings) func changingTheSettingUpdatesAvailabilityWithoutRestart() {
+    @Test(.isolatedSettings) @MainActor func changingTheSettingUpdatesAvailabilityWithoutRestart() {
         let external = OneDriveConfiguration.selected(defaults: MemoryDefaults()).isConfigured
         if !external {
             #expect(!CloudProvider.oneDrive.isAvailable)
