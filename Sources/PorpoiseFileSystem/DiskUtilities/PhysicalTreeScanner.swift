@@ -24,7 +24,7 @@ public enum PhysicalTreeScanner {
     public static func scan(
         _ urls: [URL], crossVolumes: Bool = false, maxDepth: Int = .max,
         cancellation: DiskCancellation = DiskCancellation(), parallelism: Int = 4, retainEntries: Bool = true,
-        onEntry: @escaping (DiskEntry) -> Void = { _ in }, progress: @escaping (DiskProgress) -> Void = { _ in }
+        onEntry: @escaping (DiskEntry) -> Void = { _ in }, progress: ((DiskProgress) -> Void)? = nil
     ) -> DiskScan {
         let lock = NSLock()
         var entryCount = 0
@@ -32,6 +32,8 @@ public enum PhysicalTreeScanner {
         let roots = Array(Set(urls.filter(\.isFileURL).map { URL(fileURLWithPath: FilePath.entry($0.path)) })).sorted { $0.path < $1.path }
         func error(_ path: String, _ message: String) { lock.withLock { result.errors.append("\(path): \(message)") } }
         func add(_ entry: DiskEntry) {
+            // Aggregate consumers already track their own counters and throttled updates.
+            if !retainEntries && progress == nil { onEntry(entry); return }
             let update: DiskProgress? = lock.withLock {
                 if retainEntries { result.entries.append(entry) }
                 entryCount += 1
@@ -40,18 +42,44 @@ public enum PhysicalTreeScanner {
                 last = Date(); return DiskProgress(files: entryCount, bytes: bytes, path: entry.url.path)
             }
             onEntry(entry)
-            if let update { progress(update) }
+            if let update { progress?(update) }
         }
         func walk(_ item: DiskEntry, device: Int32, depth: Int) {
-            if cancellation.isCancelled || (!crossVolumes && item.identity.device != device) { return }
-            add(item)
-            guard item.directory, depth < maxDepth, lock.withLock({ seen.insert(item.identity).inserted }) else { return }
-            do {
-                for child in try children(item.url, cancellation: cancellation) {
-                    if cancellation.isCancelled { return }
-                    walk(child, device: device, depth: depth + 1)
-                }
-            } catch let err { error(item.url.path, err.localizedDescription) }
+            if retainEntries {
+                // Inventory consumers retain traversal order; aggregate-only measurements can stream
+                // files first without retaining the whole directory's metadata.
+                if cancellation.isCancelled || (!crossVolumes && item.identity.device != device) { return }
+                add(item)
+                guard item.directory, depth < maxDepth, lock.withLock({ seen.insert(item.identity).inserted }) else { return }
+                do {
+                    for child in try children(item.url, cancellation: cancellation) {
+                        if cancellation.isCancelled { return }
+                        walk(child, device: device, depth: depth + 1)
+                    }
+                } catch let err { error(item.url.path, err.localizedDescription) }
+                return
+            }
+            // Close each directory before visiting its subfolders: streaming must not hold one open
+            // descriptor per depth, or a deep tree would exhaust the process's descriptor limit.
+            var pending = [(item, depth)]
+            while let (item, depth) = pending.popLast() {
+                if cancellation.isCancelled { return }
+                if !crossVolumes && item.identity.device != device { continue }
+                add(item)
+                guard item.directory, depth < maxDepth, lock.withLock({ seen.insert(item.identity).inserted }) else { continue }
+                do {
+                    var subfolders: [DiskEntry] = []
+                    try visitChildren(item.url, cancellation: cancellation) { child in
+                        if cancellation.isCancelled || (!crossVolumes && child.identity.device != device) { return }
+                        if child.directory {
+                            subfolders.append(child)
+                        } else {
+                            add(child)
+                        }
+                    }
+                    pending.append(contentsOf: subfolders.reversed().map { ($0, depth + 1) })
+                } catch let err { error(item.url.path, err.localizedDescription) }
+            }
         }
         // Drop roots already traversed by a selected ancestor on the same device.
         let entries = roots.compactMap { url -> DiskEntry? in
@@ -68,7 +96,7 @@ public enum PhysicalTreeScanner {
         }
         for root in unique {
             if cancellation.isCancelled { break }
-            if root.directory && maxDepth > 0 {
+            if root.directory && maxDepth > 0 && (parallelism > 1 || retainEntries) {
                 add(root)
                 lock.withLock { _ = seen.insert(root.identity) }
                 do {
@@ -88,11 +116,21 @@ public enum PhysicalTreeScanner {
             }
         }
         result.cancelled = cancellation.isCancelled
-        progress(DiskProgress(files: entryCount, bytes: bytes, path: ""))
+        progress?(DiskProgress(files: entryCount, bytes: bytes, path: ""))
         return result
     }
 
     static func children(_ folder: URL, cancellation: DiskCancellation, strict: Bool = false) throws -> [DiskEntry] {
+        var items: [DiskEntry] = []
+        try visitChildren(folder, cancellation: cancellation, strict: strict) { items.append($0) }
+        return items
+    }
+
+    /// Deliver each bulk metadata batch before reading the next one. Only names are retained to
+    /// suppress already delivered entries if a filesystem requires the POSIX fallback mid-scan.
+    static func visitChildren(
+        _ folder: URL, cancellation: DiskCancellation, strict: Bool = false, visit: (DiskEntry) -> Void
+    ) throws {
         let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { close(fd) }
@@ -101,12 +139,19 @@ public enum PhysicalTreeScanner {
         attrs.commonattr =
             attrgroup_t(ATTR_CMN_RETURNED_ATTRS) | attrgroup_t(ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_OBJTYPE | ATTR_CMN_MODTIME | ATTR_CMN_FILEID)
         attrs.fileattr = attrgroup_t(ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH)
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024), items: [DiskEntry] = []
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        var deliveredNames = Set<String>()
+        func fallback() throws {
+            try visitPOSIXChildren(folder, cancellation: cancellation, strict: strict) { entry in
+                if !deliveredNames.contains(entry.url.lastPathComponent) { visit(entry) }
+            }
+        }
         while true {
             try cancellation.check()
             let count = buffer.withUnsafeMutableBytes { getattrlistbulk(fd, &attrs, $0.baseAddress!, $0.count, 0) }
-            if count == 0 { return items }
-            if count < 0 { return try posixChildren(folder, cancellation: cancellation, strict: strict) }
+            if count == 0 { return }
+            if count < 0 { return try fallback() }
+            var items: [(String, DiskEntry)] = []
             do {
                 try buffer.withUnsafeBytes { raw in
                     var offset = 0
@@ -139,26 +184,41 @@ public enum PhysicalTreeScanner {
                         if returned.fileattr & attrgroup_t(ATTR_FILE_DATALENGTH) != 0 { size = try read(Int64.self) }
                         let url = folder.appendingPathComponent(name)
                         if inode == 0 || device == 0 || kind == 0 {
-                            if strict { items.append(try self.entry(url)) } else if let fallback = try? self.entry(url) { items.append(fallback) }
+                            if strict {
+                                items.append((name, try self.entry(url)))
+                            } else if let fallback = try? self.entry(url) {
+                                items.append((name, fallback))
+                            }
                         } else if kind == 1 || kind == 2 || kind == 5 {
                             items.append(
-                                DiskEntry(
-                                    url: url, identity: DiskIdentity(device: device, inode: inode), directory: kind == 2, symlink: kind == 5,
-                                    size: max(0, size), allocated: max(0, allocated),
-                                    modified: Date(timeIntervalSince1970: Double(modified.tv_sec) + Double(modified.tv_nsec) / 1e9)))
+                                (
+                                    name,
+                                    DiskEntry(
+                                        url: url, identity: DiskIdentity(device: device, inode: inode), directory: kind == 2, symlink: kind == 5,
+                                        size: max(0, size), allocated: max(0, allocated),
+                                        modified: Date(timeIntervalSince1970: Double(modified.tv_sec) + Double(modified.tv_nsec) / 1e9))
+                                ))
                         } else if strict {
                             throw CocoaError(.fileReadUnsupportedScheme)
                         }
                         offset += length
                     }
                 }
-            } catch { return try posixChildren(folder, cancellation: cancellation, strict: strict) }
+            } catch { return try fallback() }
+            for (index, item) in items.enumerated() {
+                // The visitor checks cancellation before counting each entry. Check the owning
+                // pause/cancel gate in small chunks too, without taking its lock for every name.
+                if index.isMultiple(of: 64) { try cancellation.check() }
+                deliveredNames.insert(item.0)
+                visit(item.1)
+            }
         }
     }
-    private static func posixChildren(_ folder: URL, cancellation: DiskCancellation, strict: Bool = false) throws -> [DiskEntry] {
+    private static func visitPOSIXChildren(
+        _ folder: URL, cancellation: DiskCancellation, strict: Bool, visit: (DiskEntry) -> Void
+    ) throws {
         guard let dir = opendir(folder.path) else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         defer { closedir(dir) }
-        var items: [DiskEntry] = []
         while let ent = readdir(dir) {
             try cancellation.check()
             let name = withUnsafePointer(to: &ent.pointee.d_name) {
@@ -166,10 +226,9 @@ public enum PhysicalTreeScanner {
             }
             if name == "." || name == ".." { continue }
             let url = folder.appendingPathComponent(name)
-            do { items.append(try entry(url)) } catch let err {
+            do { visit(try entry(url)) } catch let err {
                 if strict || (err as? CocoaError)?.code != .fileReadUnsupportedScheme { throw err }
             }
         }
-        return items
     }
 }

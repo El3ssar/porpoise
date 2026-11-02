@@ -22,24 +22,22 @@ public enum TreeMeasure {
     ) -> Progress? {
         let local = urls.filter(\.isFileURL)
         let roots = followTopLevelLink ? local.map { URL(fileURLWithPath: FilePath.canonical($0.path)) } : local
-        let lock = NSLock()
+        // parallelism: 1 below keeps all aggregation and progress on this caller's worker.
         var total = Progress(), seen: Set<DiskIdentity> = []
         var lastReport = ProcessInfo.processInfo.systemUptime
         let scan = PhysicalTreeScanner.scan(
             roots, crossVolumes: crossVolumes, maxDepth: maxDepth, cancellation: cancellation, parallelism: 1, retainEntries: false,
             onEntry: { entry in
-                lock.withLock {
-                    guard !cancellation.isCancelled, seen.insert(entry.identity).inserted else { return }
-                    if entry.directory {
-                        total.folders += 1
-                    } else {
-                        total.files += 1
-                        if !entry.symlink { total.bytes += policy == .logical ? entry.size : entry.allocated }
-                    }
-                    let now = ProcessInfo.processInfo.systemUptime
-                    if now - lastReport >= reportInterval && !cancellation.isCancelled {
-                        progress(total); lastReport = now
-                    }
+                guard !cancellation.isCancelled, seen.insert(entry.identity).inserted else { return }
+                if entry.directory {
+                    total.folders += 1
+                } else {
+                    total.files += 1
+                    if !entry.symlink { total.bytes += policy == .logical ? entry.size : entry.allocated }
+                }
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - lastReport >= reportInterval && !cancellation.isCancelled {
+                    progress(total); lastReport = now
                 }
             })
         total.errors = scan.errors
