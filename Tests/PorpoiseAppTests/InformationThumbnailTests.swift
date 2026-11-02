@@ -56,6 +56,8 @@ import Testing
         let smallPixels = small.representations.map(\.pixelsWide).max() ?? 0
         let largePixels = large.representations.map(\.pixelsWide).max() ?? 0
         #expect(largePixels > smallPixels)
-        #expect(preview.image === large)
+        // Cache availability is not the panel's completion signal, and NSCache may replace that image.
+        // Verify the visible result: the preview must reach the larger resolution after notification delivery.
+        #expect(await poll { (preview.image?.representations.map(\.pixelsWide).max() ?? 0) >= largePixels })
     }
 }
