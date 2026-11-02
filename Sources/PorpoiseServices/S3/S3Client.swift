@@ -169,6 +169,7 @@ public final class S3Client: @unchecked Sendable {
         let (data, _) = try await send("PUT", key: key, headers: headers)
         let xml = try S3XML.parse(data)
         guard xml.first("ETag") != nil, xml.first("Code") == nil else { throw S3Error.invalidResponse }
+        context.nonTransferred(object.size)
         context.progress(object.size, object.size)
     }
 }

@@ -13,6 +13,19 @@ import Testing
     /// Crawls and FSEvents can take seconds in a full parallel run: waits end as soon as their condition holds.
     static let liveWait: TimeInterval = eventualTimeout
 
+    /// The index installs its callback on a worker; test mutations emit through the same subscription boundary.
+    private final class ManualEvents: IndexEventWatching {
+        let available = true
+        private let lock = NSLock()
+        private var callback: (([String], UInt64, Bool) -> Void)?
+        func install(_ callback: @escaping ([String], UInt64, Bool) -> Void) { lock.withLock { self.callback = callback } }
+        func emit(_ paths: [String], event: UInt64) throws {
+            let installed: (([String], UInt64, Bool) -> Void)? = lock.withLock { self.callback }
+            let handler = try #require(installed)
+            handler(paths, event, false)
+        }
+    }
+
     /// A private settings domain, removed when the test ends.
     final class Defaults {
         let name = "PorpoiseIndexCoverageTests.\(UUID())"
@@ -213,15 +226,23 @@ import Testing
         try s.folder("root")
         let defaults = Defaults()
         let index = SearchIndex(directory: s.path("store"), defaults: defaults.store)
+        let events = ManualEvents()
+        index.makeEvents = { _, _, _, callback in
+            events.install(callback); return events
+        }
+        index.updateDelay = 0
         index.configure(configuration(s))
         defer { index.configure(IndexConfiguration()) }
         try await index.waitUntilReady(timeout: Self.liveWait)
-        try s.file("root/patched.txt")
-        // A new file is saved as a patch over the base.
+        let file = try s.file("root/patched.txt")
+        // Drive the leaf and root events separately: real FSEvents may coalesce them into one root rescan,
+        // legitimately skipping the intermediate patch state. Real-event content propagation is covered separately.
+        try events.emit([file.path], event: 1)
         try #require(await eventually(Self.liveWait) { (savedPatches(s) ?? 0) > 0 })
         #expect(index.search("patched", scope: s.path("root"))?.paths.count == 1)
         // An event naming the root walks it again into a new base without patches.
         try FileManager.default.setAttributes([.posixPermissions: 0o750], ofItemAtPath: s.path("root").path)
+        try events.emit([s.path("root").path], event: 2)
         try #require(await eventually(Self.liveWait) { savedPatches(s) == 0 })
         #expect(index.search("patched", scope: s.path("root"))?.paths.count == 1)
         #expect(index.status.count == 2)

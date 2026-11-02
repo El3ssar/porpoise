@@ -2,17 +2,22 @@
 """Check immutable actions and verification of restored ffmpeg builds (also run in CI)."""
 import pathlib
 import re
+from workflow_actions import references
 
 
 def check(root):
     errors = []
-    for path in sorted((root / '.github/workflows').glob('*.yml')):
+    paths = [path for folder in ['.github/workflows', '.github/actions']
+             for path in (root / folder).rglob('*') if path.suffix in {'.yml', '.yaml'}]
+    for path in sorted(paths):
         text = path.read_text()
-        for line in text.splitlines():
-            match = re.match(r'\s*(?:-\s*)?uses:\s*(\S+)(.*)', line)
-            if not match or match[1].startswith('./'):
-                continue
-            if not re.fullmatch(r'[^@\s]+@[0-9a-f]{40}', match[1]) or not re.search(r'#\s*v\S+', match[2]):
+        try:
+            actions = references(text)
+        except ValueError as error:
+            errors.append(f'{path.name}: {error}')
+            actions = []
+        for reference, comment in actions:
+            if not re.fullmatch(r'[^@\s]+@[0-9a-f]{40}', reference) or not re.search(r'\bv\S+', comment):
                 errors.append(f'{path.name}: action must use a commit SHA and version comment')
         if 'scripts/build-ffmpeg.sh' in text:
             if 'build/ffmpeg/ffmpeg' in text:

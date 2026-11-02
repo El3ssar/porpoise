@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import PorpoiseCore
+import os
 
 /// A persistent local archive address: the file path is a query item, the entry path is the URL path.
 /// Entry names containing ?, #, %, Unicode or spaces round-trip without becoming URL syntax.
@@ -27,21 +28,24 @@ public struct ArchiveLocation {
 
 /// Archives expose listing and copy-out only. Unsupported writes fail before changing either the archive or
 /// the destination. Each provider retains one version's in-memory index, protected across parallel views.
-final class ArchiveProvider: RemoteProvider {
+final class ArchiveProvider: RemoteProvider, Sendable {
     let archive: URL
-    private let lock = NSLock()
-    private weak var cached: ArchiveIndexSnapshot?
+    private struct Cache {
+        weak var snapshot: ArchiveIndexSnapshot?
+    }
+    // The cache is the provider's only mutable state, and every access holds this lock.
+    private let cache = OSAllocatedUnfairLock(initialState: Cache())
     init(archive: URL) { self.archive = archive }
 
     func index(checkpoint: () throws -> Void = {}) throws -> ArchiveIndex {
-        try lock.withLock {
-            if let cached, ArchiveVersion.at(archive) == cached.index.version {
+        try cache.withLock { state in
+            if let cached = state.snapshot, ArchiveVersion.at(archive) == cached.index.version {
                 ArchiveIndexRetention.keep(cached)
                 return cached.index
             }
             let index = try ArchiveIndex(archive, checkpoint: checkpoint)
             let snapshot = ArchiveIndexSnapshot(index)
-            cached = snapshot
+            state.snapshot = snapshot
             ArchiveIndexRetention.keep(snapshot)
             return index
         }

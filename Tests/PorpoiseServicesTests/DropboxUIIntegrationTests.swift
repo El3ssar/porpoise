@@ -159,9 +159,10 @@ import Testing
                 kind: .copy, sources: [local], destination: root, control: JobControl(),
                 rule: rule, options: .init())
             try await awaitCallback { continuation in
-                Thread {
-                    job.run(); continuation.resume()
-                }.start()
+                Task {
+                    await offThePool { job.run() }
+                    continuation.resume()
+                }
             }; return job
         }
         let both = try await copy(.keepBoth); #expect(both.errors.isEmpty && both.results.count == 1)
@@ -172,9 +173,10 @@ import Testing
             kind: .copy, sources: [tree], destination: root, control: JobControl(), rule: .ask,
             options: .init())
         try await awaitCallback { continuation in
-            Thread {
-                treeJob.run(); continuation.resume()
-            }.start()
+            Task {
+                await offThePool { treeJob.run() }
+                continuation.resume()
+            }
         }
         #expect(treeJob.errors.isEmpty && treeJob.results.count == 1)
         let treeURL = try #require(treeJob.results.first); #expect(try await provider.refresh(treeURL).map(\.name) == ["child.txt"])
@@ -183,9 +185,10 @@ import Testing
             kind: .copy, sources: [copiedFolder.url], destination: treeURL,
             control: JobControl(), rule: .ask, options: .init())
         try await awaitCallback { continuation in
-            Thread {
-                native.run(); continuation.resume()
-            }.start()
+            Task {
+                await offThePool { native.run() }
+                continuation.resume()
+            }
         }
         #expect(native.errors.isEmpty)
     }

@@ -26,15 +26,22 @@ public final class Activity: Identifiable {
         guard let incomingItem else { return 0 }
         return incomingItem.size > 0 ? min(1, Double(max(0, (progress?.doneBytes ?? 0) - incomingStartBytes)) / Double(incomingItem.size)) : fraction
     }
-    public internal(set) var state: State = .queued
+    public internal(set) var state: State = .queued {
+        didSet { if state != oldValue { speedHistory.interrupt() } }
+    }
     public internal(set) var progress: JobProgress?
     public internal(set) var rate = TransferRate()
+    var speedHistory = TransferSpeedHistory()
     public internal(set) var errors: [String] = []
     var failures: [TransferFailure] = []
     public var errorDetails: [TransferFailure] { failures.isEmpty ? errors.map { TransferFailure(source: nil, message: $0) } : failures }
     public internal(set) var verification: CopyVerification.Result?
     public internal(set) var queuedAt = Date()
-    public internal(set) var startedAt: Date?
+    public internal(set) var startedAt: Date? {
+        didSet {
+            if startedAt != nil && oldValue == nil { speedHistory.begin(at: ProcessInfo.processInfo.systemUptime) }
+        }
+    }
     public internal(set) var finishedAt: Date?
     /// Sources that failed, for Retry.
     public internal(set) var failedSources: [URL] = []
@@ -51,6 +58,25 @@ public final class Activity: Identifiable {
     var retryTransfer: (() -> Void)?
 
     public var fraction: Double { progress?.fraction ?? 0 }
+
+    func creditProgress(bytes: Int64) {
+        if progress == nil {
+            progress = JobProgress(
+                kind: kind, totalBytes: 0, doneBytes: 0, totalItems: sources.count, doneItems: 0, currentName: "", destination: destination)
+        }
+        progress?.nonTransferredBytes += max(0, bytes)
+    }
+
+    /// Logical completion credits never enter the current session's measured throughput.
+    func updateProgress(_ p: JobProgress, at time: TimeInterval) {
+        if progress?.phase != p.phase { speedHistory.interrupt() }
+        progress = p
+        if state == .running && p.phase != .transferring { rate.reset() }
+        if state == .running && p.phase == .transferring {
+            rate.add(bytes: p.transferredBytes, at: time, totalBytes: p.transferBytesTotal, items: p.doneFiles, totalItems: p.totalFiles)
+            if notice == nil && environmentNotice == nil { speedHistory.add(bytes: p.transferredBytes, at: time) } else { speedHistory.interrupt() }
+        }
+    }
     /// Starts it (queued jobs wait for a free slot).
     var start: (() -> Void)?
     /// Whether a journal is kept while it runs (under its id), for resuming after a relaunch (local jobs).
@@ -94,8 +120,14 @@ public final class Activity: Identifiable {
 
     /// A passing condition the transfer is handling by itself ("Slowed down by Google, retrying", "Waiting for
     /// network"): shown instead of the speed until it clears.
-    public internal(set) var notice: String?
-    var environmentNotice: String?
+    public internal(set) var notice: String? {
+        didSet {
+            if notice != oldValue { speedHistory.interrupt(); rate.reset() }
+        }
+    }
+    var environmentNotice: String? {
+        didSet { if environmentNotice != oldValue { speedHistory.interrupt() } }
+    }
 
     /// One line: speed, amounts and time left while running; the outcome once ended.
     public var statusText: String { ActivityPresentation.status(of: self) }
@@ -211,12 +243,7 @@ extension FileOperationsController {
     }
 
     func progressed(_ activity: Activity, _ p: JobProgress) {
-        activity.progress = p
-        if activity.state == .running && p.phase != .transferring { activity.rate.reset() }
-        if activity.state == .running && p.phase == .transferring {
-            activity.rate.add(
-                bytes: p.doneBytes, at: ProcessInfo.processInfo.systemUptime, totalBytes: p.totalBytes, items: p.doneFiles, totalItems: p.totalFiles)
-        }
+        activity.updateProgress(p, at: ProcessInfo.processInfo.systemUptime)
         activityDidChange()
     }
 

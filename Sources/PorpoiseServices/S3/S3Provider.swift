@@ -100,6 +100,21 @@ public final class S3Provider: RemoteProvider, @unchecked Sendable {
             }
         }
     }
+    public func createFolder(_ remote: URL) throws { try makeFolder(remote) }
+
+    public func createFile(_ remote: URL, contents: Data) throws {
+        try RemoteFS.checkName(remote.lastPathComponent)
+        let location = try location(remote)
+        guard !location.key.isEmpty, !location.key.hasSuffix("/") else { throw S3Error.invalidLocation }
+        try CloudAwait.run {
+            guard try await !self.client.exists(location.key + "/"),
+                try await self.client.list(prefix: location.key + "/").isEmpty
+            else { throw RemoteError.exists(remote.lastPathComponent) }
+            _ = try await self.client.send(
+                "PUT", key: location.key, headers: ["If-None-Match": "*"], body: contents, idempotent: false)
+        }
+    }
+
     public func makeFolder(_ remote: URL) throws {
         let location = try location(remote)
         guard !location.key.isEmpty else { throw S3Error.invalidLocation }

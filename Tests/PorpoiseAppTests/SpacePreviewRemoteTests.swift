@@ -8,6 +8,12 @@ import Testing
 @testable import PorpoiseServices
 
 @Suite(.serialized, .isolatedSettings) @MainActor struct SpacePreviewRemoteTests {
+    /// The inspector's preview may sit in a scroll document; its actual visibility matters, not view depth.
+    private static func hasVisibleImage(in view: NSView) -> Bool {
+        if let image = view as? NSImageView, image.image != nil, !image.isHiddenOrHasHiddenAncestor { return true }
+        return view.subviews.contains { hasVisibleImage(in: $0) }
+    }
+
     @Test func progressiveTextKeepsItsGlassAndSelectionCancelsLateContent() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
@@ -69,7 +75,7 @@ import Testing
         let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
         panel.show(hovered: nil, container: wc.view)
         try #require(await poll { provider.progressiveCalls.value == 1 && panel.codePreview.isHidden })
-        #expect(panel.subviews.contains { ($0 as? NSImageView)?.image != nil && !$0.isHidden })
+        #expect(Self.hasVisibleImage(in: panel))
         #expect(panel.codePreview.document == nil && provider.downloadCalls.value == 0)
     }
 

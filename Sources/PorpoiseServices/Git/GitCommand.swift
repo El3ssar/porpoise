@@ -4,7 +4,7 @@ import Foundation
 /// A local, non-interactive Git subprocess. No shell, inherited Git variables, credentials, hooks, locks or lazy fetches.
 /// Call only on a background queue. Both the output and wall time are bounded, including a blocked child.
 enum GitCommand {
-    enum Failure: Error { case unavailable, budget, command }
+    enum Failure: Error, Equatable { case unavailable, budget, command }
     static let configuration = [
         "core.fsmonitor=false", "core.hooksPath=/dev/null", "credential.helper=", "core.untrackedCache=false",
         "core.preloadIndex=false", "submodule.recurse=false", "core.pager=cat", "diff.external=", "protocol.allow=never",
@@ -14,24 +14,55 @@ enum GitCommand {
         "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_ALLOW_PROTOCOL": "",
     ]
+    /// A failed or timed-out probe must not disable Git for the rest of the process. The lock protects only
+    /// the successful value; discovery runs outside it so another caller never waits behind a slow subprocess.
+    final class DeveloperDirectoryCache: @unchecked Sendable {
+        // Every access to the only mutable field is protected by lock; discovery closures are never retained.
+        private let lock = NSLock()
+        private var successfulDirectory: String?
+
+        func resolve(
+            deadline: TimeInterval, now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+            discover: (TimeInterval) throws -> String
+        ) throws -> String {
+            guard now() < deadline else { throw Failure.budget }
+            let cached = lock.withLock { successfulDirectory }
+            guard now() < deadline else { throw Failure.budget }
+            if let cached { return cached }
+            let directory = try discover(deadline)
+            guard now() < deadline else { throw Failure.budget }
+            let result = lock.withLock {
+                // Concurrent successful discoveries converge on the first validated value. A failed discovery
+                // never reaches this mutation and cannot clear another caller's successful result.
+                if let successfulDirectory { return successfulDirectory }
+                successfulDirectory = directory
+                return directory
+            }
+            guard now() < deadline else { throw Failure.budget }
+            return result
+        }
+    }
+
+    private static let developerDirectories = DeveloperDirectoryCache()
+
     // /usr/bin/git is an installer shim on Macs without developer tools. Ask xcode-select (which never offers an
     // installation) first, then pin its installed directory for the shim. No GUI or settings changes on absence.
-    private static let developerDirectory: String? = {
-        let folder = URL(fileURLWithPath: "/")
-        guard
-            let data = try? runProcess(
-                "/usr/bin/xcode-select", ["--print-path"], in: folder, environment: environment,
-                deadline: ProcessInfo.processInfo.systemUptime + 0.5, limit: 4096),
-            let directory = try? path(data),
-            FileManager.default.isExecutableFile(atPath: directory.appendingPathComponent("usr/bin/git").path)
-        else { return nil }
+    private static func discoverDeveloperDirectory(deadline: TimeInterval) throws -> String {
+        let data = try runProcess(
+            "/usr/bin/xcode-select", ["--print-path"], in: URL(fileURLWithPath: "/"), environment: environment,
+            deadline: deadline, limit: 4096)
+        let directory = try path(data)
+        guard FileManager.default.isExecutableFile(atPath: directory.appendingPathComponent("usr/bin/git").path) else {
+            throw Failure.unavailable
+        }
         return directory.path
-    }()
+    }
     static func run(
         _ arguments: [String], in folder: URL, deadline: TimeInterval, limit: Int = 16 * 1024 * 1024,
         extraConfiguration: [String] = [], configHome: URL? = nil
     ) throws -> Data {
-        guard let developerDirectory, FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { throw Failure.unavailable }
+        let developerDirectory = try developerDirectories.resolve(deadline: deadline) { try discoverDeveloperDirectory(deadline: $0) }
+        guard FileManager.default.isExecutableFile(atPath: "/usr/bin/git") else { throw Failure.unavailable }
         guard let resolved = realpath(developerDirectory + "/usr/bin/git", nil) else { throw Failure.unavailable }
         let tool = String(cString: resolved); free(resolved)
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/sandbox-exec") else { throw Failure.unavailable }

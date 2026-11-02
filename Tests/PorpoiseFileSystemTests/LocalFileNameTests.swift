@@ -5,6 +5,17 @@ import PorpoiseTestSupport
 import Testing
 
 struct LocalFileNameTests {
+    @Test func folderCreationNeverAdoptsAnExistingLeafOrDanglingLink() throws {
+        let scratch = try Scratch()
+        try scratch.file("a/b/other.txt", "another writer")
+        #expect(throws: (any Error).self) { try FileActions.makeFolder(named: "a/b", in: scratch.url) }
+        #expect(scratch.read("a/b/other.txt") == "another writer")
+        let link = scratch.path("link")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "missing")
+        #expect(throws: (any Error).self) { try FileActions.makeFolder(named: "link", in: scratch.url) }
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == "missing")
+    }
+
     @Test func nestedPathsAndWarningsDoNotBypassErrors() throws {
         #expect(FileName.validate("a//b", for: .multiComponent) == .nestedFolders)
         #expect(FileName.validate("a/../b", for: .multiComponent) == .dot)

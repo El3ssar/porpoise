@@ -183,7 +183,7 @@ extension FileOperationsController {
     ) {
         undosRunning += 1
         stacksChanged()
-        DispatchQueue.global(qos: .userInitiated).async {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
             let result = Result { try LocationOperations.revert(change) }
             DispatchQueue.main.async { [weak self] in
                 self?.undosRunning -= 1

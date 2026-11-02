@@ -17,6 +17,8 @@ struct DirectoryModelPreparation {
     let ordered: [FileItem]?
     var search: SearchMatches? = nil
     var retainedItems: [FileItem] = []
+    /// Authoritative identities from the listing/search worker, shared without copying until new entries appear.
+    var knownEntryKeys: [URL: String] = [:]
 
     struct Result {
         let top: [FileItem]
@@ -119,10 +121,33 @@ struct DirectoryModelPreparation {
         let rows = assembly.rows, groups = assembly.groups
         guard !cancelled() else { return nil }
         let urls = rows.map(\.item.url)
-        let keys = FilePath.keys(urls)
+        var keyCache = knownEntryKeys
+        var missing: [URL] = []
+        var missingIndexes: [Int] = []
+        var keys: [String] = []
+        keys.reserveCapacity(urls.count)
+        for url in urls {
+            guard !cancelled() else { return nil }
+            if let known = keyCache[url] {
+                keys.append(known)
+            } else {
+                missingIndexes.append(keys.count)
+                missing.append(url)
+                keys.append("")
+            }
+        }
+        if !missing.isEmpty {
+            let resolved = FilePath.keys(missing, cancelled: cancelled)
+            guard !cancelled() else { return nil }
+            for (offset, key) in resolved.enumerated() {
+                guard !cancelled() else { return nil }
+                keyCache[missing[offset]] = key
+                keys[missingIndexes[offset]] = key
+            }
+        }
         guard !cancelled() else { return nil }
         return Result(
-            top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: Dictionary(zip(urls, keys), uniquingKeysWith: { a, _ in a }),
+            top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: keyCache,
             alive: Set(items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url) + children.values.flatMap { $0.map(\.url) }))
     }
 }

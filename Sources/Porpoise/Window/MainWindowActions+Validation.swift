@@ -207,7 +207,10 @@ extension MainWindowController: NSMenuItemValidation {
             return tab.isSplit || tab.canSplit
 
         // View state (checkmarks)
-        case #selector(setViewMode(_:)): item.state = ViewMode.allCases[safe: item.tag] == p.mode ? .on : .off
+        case #selector(setViewMode(_:)): item.state = !view.showsApps && ViewMode.allCases[safe: item.tag] == p.mode ? .on : .off
+        case #selector(showApplicationLibrary(_:)):
+            item.state = view.showsApps ? .on : .off
+            return AppLibrary.isActive(for: view.url)
         case #selector(togglePreviewColumn(_:)):
             item.state = Settings.shared.columnsShowPreview ? .on : .off
             return view.showsColumns

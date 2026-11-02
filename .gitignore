@@ -1,4 +1,8 @@
 .build/
+.build-budgets/
+*.profraw
+*.profdata
+__pycache__/
 build/
 .swiftpm/
 *.xcodeproj

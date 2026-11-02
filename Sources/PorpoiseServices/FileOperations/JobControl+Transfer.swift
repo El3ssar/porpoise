@@ -32,7 +32,7 @@ extension Shell {
             progress: { count, _ in
                 let delta = bytes.add(cumulative: count)
                 control?.onBytes(delta)
-            }, status: { control?.onStatus($0) })
+            }, status: { control?.onStatus($0) }, nonTransferred: { control?.onNonTransferredBytes($0) })
     }
 
 }

@@ -3,7 +3,7 @@ import PorpoiseCore
 import PorpoiseFileSystem
 import PorpoiseServices
 
-enum NewItemKind: Int, CaseIterable {
+enum NewItemKind: Int, CaseIterable, Sendable {
     case folder, textFile, htmlFile, emptyFile, link, urlLink
 
     var menuTitle: String {
@@ -53,6 +53,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
     private let targetField = NSTextField()
     private let message = NSTextField(labelWithString: "")
     private static var active: NewItemDialog?
+    private var knownNames: Set<String> = []
     /// A cloud folder or a server's: the names in it (for the suggested name and the check), its name, and what
     /// creates the item.
     private var named: (names: Set<String>, title: String, create: (String) -> Void)?
@@ -63,8 +64,9 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         super.init()
     }
 
-    static func run(kind: NewItemKind, in folder: URL, window: NSWindow?, done: @escaping (URL) -> Void) {
+    static func run(kind: NewItemKind, in folder: URL, window: NSWindow?, existingNames: Set<String> = [], done: @escaping (URL) -> Void) {
         let d = NewItemDialog(kind: kind, folder: folder)
+        d.knownNames = existingNames
         active = d
         d.present(window: window, done: done)
     }
@@ -89,7 +91,7 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         alert.icon = Icons.shared.image(kind.icon, size: 64)
         let hasTarget = kind == .link || kind == .urlLink
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 340, height: hasTarget ? 86 : 50))
-        let existing = named?.names ?? Set((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+        let existing = named?.names ?? knownNames
         var name = kind.defaultName
         if existing.contains(name) { name = FileFormat.suggestedName(for: name, existing: existing) }
         nameField.stringValue = name
@@ -112,59 +114,18 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
             defer { NewItemDialog.active = nil }
             guard r == .alertFirstButtonReturn else { return }
             if let named { named.create(nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)); return }
-            do {
-                let url: URL
-                switch kind {
-                case .folder: url = try FileActions.makeFolder(named: nameField.stringValue, in: folder)
-                case .textFile, .emptyFile: url = try FileActions.makeFile(named: nameField.stringValue, in: folder)
-                case .htmlFile:
-                    url = try FileActions.makeFile(named: nameField.stringValue, in: folder, contents: NewItemKind.htmlTemplate)
-                case .link:
-                    url = folder.appendingPathComponent(nameField.stringValue)
-                    try FileManager.default.createSymbolicLink(
-                        atPath: url.path, withDestinationPath: (targetField.stringValue as NSString).expandingTildeInPath)
-                case .urlLink:
-                    let plist = try PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)
-                    url = try FileActions.makeFile(named: finalName, in: folder, contents: plist)
-                }
-                done(url)
-            } catch  where FileErrorKind.classify(error) == .permission {
-                // Protected folder: create it as administrator, as the normal path would ("a/b" makes both folders)
-                // and never over something that appeared meanwhile.
-                let dst = folder.appendingPathComponent(finalName)
-                var tempFile: URL?
-                var data = Data()
-                if kind == .htmlFile { data = NewItemKind.htmlTemplate }
-                if kind == .urlLink {
-                    data =
-                        (try? PropertyListSerialization.data(fromPropertyList: ["URL": targetField.stringValue], format: .xml, options: 0)) ?? Data()
-                }
-                if ![.folder, .link].contains(kind) {
-                    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                    do { try data.write(to: tmp) } catch {
-                        DispatchQueue.main.async { NSAlert(error: error).runSheet(for: window) { _ in } }
-                        return
+            let request = NewItemCreation(kind: kind, folder: folder, name: finalName, target: targetField.stringValue)
+            StatusCenter.post("Creating “\(request.name)”…")
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Result { try request.create() }
+                DispatchQueue.main.async { [self] in
+                    switch result {
+                    case .success(let url): done(url)
+                    case .failure(let error) where FileErrorKind.classify(error) == .permission:
+                        authorizeCreation(request, window: window, done: done)
+                    case .failure(let error): showCreationError(error, window: window)
                     }
-                    tempFile = tmp
                 }
-                let commands = Self.administratorCommands(
-                    kind, at: dst, in: folder, linkTarget: (targetField.stringValue as NSString).expandingTildeInPath, contents: tempFile)
-                let ok = FileOperationsController.shared.authorize(verb: "create an item in", items: [folder], commands: commands, window: window)
-                if let t = tempFile { try? FileManager.default.removeItem(at: t) }  // also when the prompt was cancelled
-                // `mv -n` leaves an item that appeared under the name meanwhile: then nothing was created, say so.
-                if ok, ![.folder, .link].contains(kind), (try? Data(contentsOf: dst)) != data {
-                    DispatchQueue.main.async {
-                        let a = NSAlert()
-                        a.messageText = "An item named “\(dst.lastPathComponent)” appeared in the folder meanwhile."
-                        a.informativeText = "Nothing was replaced, and no new item was created."
-                        a.runSheet(for: window) { _ in }
-                    }
-                } else if ok {
-                    done(dst)
-                }
-            } catch {
-                // After the sheet has gone, or the error sheet could not attach.
-                DispatchQueue.main.async { NSAlert(error: error).runSheet(for: window) { _ in } }
             }
         }
         alert.runSheet(for: window, handler)
@@ -178,6 +139,39 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
         }
     }
 
+    private func showCreationError(_ error: Error, window: NSWindow?) {
+        StatusCenter.error(error.localizedDescription)
+        NSAlert(error: error).runSheet(for: window) { _ in }
+    }
+
+    private func authorizeCreation(_ request: NewItemCreation, window: NSWindow?, done: @escaping (URL) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let prepared = Result { try request.prepareAuthorization() }
+            DispatchQueue.main.async { [self] in
+                switch prepared {
+                case .failure(let error): showCreationError(error, window: window)
+                case .success(let preparation):
+                    let ok = FileOperationsController.shared.authorize(
+                        verb: "create an item in", items: [request.folder], commands: preparation.commands, window: window)
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        defer { if let temp = preparation.contentsFile { try? FileManager.default.removeItem(at: temp) } }
+                        guard ok else { return }
+                        let result = Result {
+                            try preparation.verifyPublication(at: request.url)
+                            return request.url
+                        }
+                        DispatchQueue.main.async {
+                            switch result {
+                            case .success(let url): done(url)
+                            case .failure(let error): self.showCreationError(error, window: window)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func controlTextDidChange(_ obj: Notification) { validate() }
 
     /// The name the item gets: a link to a location ends in ".webloc".
@@ -187,24 +181,9 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
 
     /// What creates the item as administrator. Folders: each missing one on the way ("a/b"). Files: copied next to
     /// where they go under a temporary name, then moved in without replacing (`mv -n`): an item that appeared there
-    /// since stays, and the leftover copy goes.
+    /// since stays. A skipped move's temporary copy stays until publication ownership has been checked.
     static func administratorCommands(_ kind: NewItemKind, at dst: URL, in folder: URL, linkTarget: String, contents: URL?) -> [[String]] {
-        switch kind {
-        case .folder:
-            var missing: [URL] = []
-            var u = dst
-            while u.path.count > folder.path.count, !FileManager.default.fileExists(atPath: u.path) {
-                missing.insert(u, at: 0)
-                u = u.deletingLastPathComponent()
-            }
-            return missing.map { ["/bin/mkdir", "--", $0.path] }
-        case .link:
-            return [["/bin/ln", "-s", "--", linkTarget, dst.path]]
-        default:
-            guard let contents else { return [] }
-            let staged = dst.deletingLastPathComponent().appendingPathComponent(".porpoise-new-\(UUID().uuidString)").path
-            return [["/bin/cp", "--", contents.path, staged], ["/bin/mv", "-n", "--", staged, dst.path], ["/bin/rm", "-rf", "--", staged]]
-        }
+        NewItemCreation.administratorCommands(kind, at: dst, in: folder, linkTarget: linkTarget, contents: contents)
     }
 
     /// What to say about a new item's name in a folder elsewhere: nothing, a note (the service keeps both), or an error.
@@ -227,7 +206,13 @@ final class NewItemDialog: NSObject, NSTextFieldDelegate {
             return
         }
         // The name it will have: "Link" is taken when "Link.webloc" is there.
-        let res = FileActions.validateName(finalName, in: folder, allowSlash: kind == .folder)
+        // This is advisory and deliberately performs no filesystem IO. The exclusive create is authoritative.
+        let lexical = FileName.validate(finalName, for: kind == .folder ? .multiComponent : .local)
+        let res: (message: String, isError: Bool)? =
+            finalName.trimmingCharacters(in: .whitespaces).isEmpty
+            ? ("", true)
+            : lexical.map { ($0.message(for: finalName), $0.isError) }
+                ?? (knownNames.contains(finalName) ? ("A file or folder with this name already exists.", true) : nil)
         message.stringValue = res?.message ?? ""
         message.textColor = (res?.isError ?? false) ? Theme.negativeText : Theme.neutralText
         // Links need a target: an empty one would make a dangling symlink or an empty .webloc.

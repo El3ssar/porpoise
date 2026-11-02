@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import PorpoiseCore
 
@@ -9,7 +10,13 @@ extension FileActions {
             throw FileOperationError.failed("“\(name)” is not a valid name.")
         }
         let url = folder.appendingPathComponent(name, isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        // Parents may be shared; ownership of the requested leaf must be established exclusively.
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard mkdir(url.path, 0o777) == 0 else {
+            let code = errno
+            if code == EEXIST { throw FileOperationError.failed("A file or folder named “\(url.lastPathComponent)” already exists.") }
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
         return url
     }
 

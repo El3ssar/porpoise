@@ -117,7 +117,7 @@ extension DropboxClient {
         else {
             throw DropboxError.sourceChanged
         }
-        if record.phase == "done", let result = record.result { return result }
+        if record.phase == "done", let result = record.result { context.nonTransferred(record.total); return result }
         if record.phase == "conflict" { throw DropboxError.conflict }
         guard record.phase != "committing", record.phase != "uncertain" else { throw DropboxError.uncertain }
         record.revision = expectedRevision; record.localURL = local; record.fingerprint = fingerprint
@@ -146,6 +146,7 @@ extension DropboxClient {
             record.phase = "prepared"; record.proposedOffset = nil; try journal.save(record)
         }
         let input = try FileHandle(forReadingFrom: local); defer { try? input.close() }
+        context.nonTransferred(record.offset)
         while record.offset < record.total {
             try await context.checkpoint()
             guard JobJournal.Fingerprint(local) == fingerprint else { throw DropboxError.sourceChanged }

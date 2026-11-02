@@ -122,6 +122,7 @@ public final class FileJob: @unchecked Sendable {
         progress.phase = .preparing
         inventoryMethod = comparisonOptions.method
         publish(force: true)
+        var completeCounts = kind == .copy || kind == .move
         if kind == .copy || kind == .move {
             for source in sources {
                 do {
@@ -133,24 +134,36 @@ public final class FileJob: @unchecked Sendable {
                         try checkpoint()
                         renameOnly.insert(source)
                         sizes[source] = 0
-                        fileCounts[source] = 1
-                        progress.totalFiles += 1
+                        var metadata = stat()
+                        if lstat(source.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR {
+                            // Preserve the constant-time rename: descendants were never enumerated.
+                            completeCounts = false
+                            fileCounts[source] = 0
+                            folderCounts[source] = 1
+                            progress.totalFolders += 1
+                        } else {
+                            fileCounts[source] = 1
+                            progress.totalFiles += 1
+                        }
                     } else {
                         _ = try inventory(source, target: target)
                     }
                 } catch FileOperationError
                     .cancelled
-                { return nil } catch FileOperationError.interrupted { return nil } catch
-                { /* The actual operation reports unreadable/missing sources. */  }
+                { return nil } catch FileOperationError.interrupted { return nil } catch {
+                    completeCounts = false /* The actual operation reports unreadable/missing sources. */
+                }
             }
         }
         progress.phase = .transferring
+        progress.countsAreComplete = completeCounts && inventoryCountsComplete
         publish(force: true)
         for (index, src) in sources.enumerated() {
             if (try? checkpoint()) == nil { break }
             progress.currentName = src.lastPathComponent
             currentIndex = index
             let filesBefore = progress.doneFiles
+            let foldersBefore = progress.doneFolders
             let errorsBefore = errors.count + denied.count
             let resultsBefore = results.count
             do {
@@ -177,6 +190,7 @@ public final class FileJob: @unchecked Sendable {
             onEvent(.finished(index: index, outcome: failed ? .failed : skipped ? .skipped : .done))
             progress.doneItems += 1
             if !failed { progress.doneFiles = max(progress.doneFiles, filesBefore + (fileCounts[src] ?? 1)) }
+            if !failed { progress.doneFolders = max(progress.doneFolders, foldersBefore + (folderCounts[src] ?? 0)) }
             if directorySources.contains(src), !knownConflicts.isEmpty {
                 let prefix = src.standardizedFileURL.path + "/"
                 knownConflicts = knownConflicts.filter { $0 != src && !$0.standardizedFileURL.path.hasPrefix(prefix) }
@@ -278,6 +292,7 @@ public final class FileJob: @unchecked Sendable {
         }
         if let target = completedTransfers[src], Self.itemExists(at: target) {
             progress.doneBytes += size(of: src)
+            progress.nonTransferredBytes += size(of: src)
             progress.doneFiles += fileCounts[src] ?? 1
             knownConflicts.remove(src)
             return target
@@ -290,7 +305,10 @@ public final class FileJob: @unchecked Sendable {
             Self.itemExists(at: folder.appendingPathComponent(src.lastPathComponent)) || !Self.sameVolume(src, folder)
         {
             // A target or mount may have changed since preparation; recover the full conflict/copy inventory.
-            sizes[src] = nil; fileCounts[src] = nil; progress.totalFiles -= 1
+            sizes[src] = nil
+            progress.totalFiles -= fileCounts[src] ?? 0
+            progress.totalFolders -= folderCounts[src] ?? 0
+            fileCounts[src] = nil; folderCounts[src] = nil
             _ = try inventory(src, target: folder.appendingPathComponent(src.lastPathComponent))
         }
         guard let (target, placement) = try resolveTarget(for: src, in: folder) else { return nil }
@@ -409,6 +427,7 @@ public final class FileJob: @unchecked Sendable {
     private func skipped(_ src: URL, identical: Bool = false) -> (URL, Placement)? {
         if identical { progress.skippedIdenticalItems += fileCounts[src] ?? 1 }
         progress.doneBytes += size(of: src)
+        progress.nonTransferredBytes += size(of: src)
         return nil
     }
 
@@ -455,8 +474,10 @@ public final class FileJob: @unchecked Sendable {
             if dest != src { try FilePublication.renameExclusively(src, to: dest) }
             renamed = true
             progress.doneBytes += size(of: src)  // what was there before the rename
+            progress.nonTransferredBytes += size(of: src)
         default:
             let bytesBefore = progress.doneBytes
+            let creditsBefore = progress.nonTransferredBytes
             while true {
                 do {
                     try copyItem(src, to: dest, resumeFrom: resumeFrom, report: top)
@@ -467,6 +488,7 @@ public final class FileJob: @unchecked Sendable {
                     try? fm.removeItem(at: dest)
                     guard FileErrorKind.classify(error) == .noSpace, let onNoSpace else { throw error }
                     progress.doneBytes = bytesBefore
+                    progress.nonTransferredBytes = creditsBefore
                     publish(force: true)
                     guard onNoSpace(size(of: src)) else { cancel(); throw FileOperationError.cancelled }
                     resumeFrom = 0
@@ -538,6 +560,7 @@ public final class FileJob: @unchecked Sendable {
         }
         if resumeFrom == 0, allowsClone, control.policy.bytesPerSecond == 0, clonefile(src.path, dest.path, UInt32(CLONE_NOFOLLOW)) == 0 {
             progress.doneBytes += size
+            progress.nonTransferredBytes += size
             publish()
             return
         }
@@ -577,6 +600,7 @@ public final class FileJob: @unchecked Sendable {
         }
         defer { close(output) }
         progress.doneBytes += offset
+        progress.nonTransferredBytes += offset
         publish()
         let buffer = UnsafeMutableRawPointer.allocate(byteCount: Self.chunkSize, alignment: 16)
         defer { buffer.deallocate() }
@@ -681,6 +705,8 @@ public final class FileJob: @unchecked Sendable {
                 job.dataProgress(Int64(copied))
             } else if what == COPYFILE_COPY_DATA && stage == COPYFILE_FINISH {
                 job.fileFinished()
+            } else if what == COPYFILE_RECURSE_DIR && stage == COPYFILE_FINISH {
+                job.progress.doneFolders += 1
             } else if what == COPYFILE_RECURSE_FILE && stage == COPYFILE_START, let s = src {
                 let path = String(cString: s), url = URL(fileURLWithPath: path)
                 let name = url.lastPathComponent
@@ -720,7 +746,10 @@ public final class FileJob: @unchecked Sendable {
         }
         // Clones report no data progress; account for the bytes anyway.
         let expected = size(of: src)
-        if progress.doneBytes < currentFileBase + expected { progress.doneBytes = currentFileBase + expected }
+        if progress.doneBytes < currentFileBase + expected {
+            progress.nonTransferredBytes += currentFileBase + expected - progress.doneBytes
+            progress.doneBytes = currentFileBase + expected
+        }
         publish()
     }
 
@@ -809,15 +838,17 @@ public final class FileJob: @unchecked Sendable {
     }
 
     private var fileCounts: [URL: Int] = [:]
+    private var folderCounts: [URL: Int] = [:]
+    private var inventoryCountsComplete = true
 
     /// Inventory without following directory symlinks. Cancellation/pause remains responsive while counting.
     @discardableResult
     private func inventory(_ url: URL, target: URL?) throws -> Int64 {
         try checkpoint()
-        if control.policy.excludes(url, sources: sources) { sizes[url] = 0; fileCounts[url] = 0; return 0 }
+        if control.policy.excludes(url, sources: sources) { sizes[url] = 0; fileCounts[url] = 0; folderCounts[url] = 0; return 0 }
         if inventoryDelay > 0 { Thread.sleep(forTimeInterval: inventoryDelay) }
         var st = stat()
-        guard lstat(url.path, &st) == 0 else { return 0 }
+        guard lstat(url.path, &st) == 0 else { inventoryCountsComplete = false; return 0 }
         if let target, Self.itemExists(at: target), !FilePath.sameItem(url, target) {
             knownConflicts.insert(url)
             if st.st_mode & S_IFMT != S_IFDIR, inventoryMethod != .content, let source = FileItem.load(url), let destination = FileItem.load(target) {
@@ -829,6 +860,7 @@ public final class FileJob: @unchecked Sendable {
         let directory = st.st_mode & S_IFMT == S_IFDIR
         var bytes: Int64 = directory || st.st_mode & S_IFMT == S_IFLNK ? 0 : Int64(st.st_size)
         var files = directory ? 0 : 1
+        var folders = directory ? 1 : 0
         if directory {
             directorySources.insert(url)
             progress.totalFolders += 1
@@ -839,6 +871,7 @@ public final class FileJob: @unchecked Sendable {
                 // A job is one long work item: what Foundation autoreleases per file goes after each.
                 bytes += try autoreleasepool { try inventory(child, target: target?.appendingPathComponent(child.lastPathComponent)) }
                 files += fileCounts[child] ?? 0
+                folders += folderCounts[child] ?? 0
                 longest = max(longest, child.lastPathComponent.utf8.count + 1 + (longestInsidePaths[child] ?? 0))
             }
             longestInsidePaths[url] = longest
@@ -849,6 +882,7 @@ public final class FileJob: @unchecked Sendable {
         progress.currentName = url.lastPathComponent
         sizes[url] = bytes
         fileCounts[url] = files
+        folderCounts[url] = folders
         publish()
         return bytes
     }

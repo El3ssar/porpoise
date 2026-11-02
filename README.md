@@ -67,7 +67,7 @@ with *Porpoise › Check for Updates…*.
   shell that follows the view, and the view follows it. The **Shelf** (F8) holds references to files from different
   folders so you can collect them before copying, moving or sharing them.
 - **File utilities:** SHA-256/512 checksums, legacy MD5/SHA-1, GNU/BSD manifest verification and export; a drill-down disk-usage map and duplicate review with APFS clone-family reporting and undoable Trash.
-- **Activity:** **⌥⌘J** opens one place for local and remote jobs, progress, pause/cancel, retry, verification and
+- **Transfers:** **⌥⌘J** opens compact local and remote progress with processed file/folder totals, the current file, pause/stop, an expandable speed-history graph, retry, verification and
   operation history. Supported interrupted transfers can be resumed after relaunch; recovery rechecks the source
   and destination before continuing.
 - **Compare Files:** compare two text or image files and their metadata with **⌥⌘Y**; image comparison includes
@@ -297,7 +297,7 @@ In the file list: arrows move (⇧ extends), Space is Quick Look, ⌫ goes back,
 | Tools | Open Terminal Here | ⌥⇧F4 |
 | Tools | Empty Trash | ⇧⌘⌫ |
 | Window | Minimize | ⌘M |
-| Window | Activity | ⌥⌘J |
+| Window | Transfers | ⌥⌘J |
 | Window | Next Tab | ⌃⇥ or ⌘} or ⌘Page Down |
 | Window | Previous Tab | ⌃⇧⇥ or ⌘{ or ⌘Page Up |
 | Window | Go to Tab › Tab 1 | ⌥1 |

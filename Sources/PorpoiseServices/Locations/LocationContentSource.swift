@@ -31,6 +31,8 @@ struct LocationListing {
     var items: [FileItem] = []
     /// The expanded folders' listings, when the source lists them with the folder.
     var children: [URL: [FileItem]]?
+    /// Entry identities resolved on the listing worker, never by a rendering callback.
+    var entryKeys: [URL: String] = [:]
     var complete = true
     var error: LocationLoadError?
     /// The folder itself is gone (only sources that can tell say so).
@@ -106,7 +108,9 @@ enum LocationContentSources {
     }
 
     /// The source that lists `url`.
-    static func source(for url: URL) -> LocationContentSource {
+    static func source(for url: URL) -> LocationContentSource { source(for: url, allowAppLibrary: true) }
+
+    static func source(for url: URL, allowAppLibrary: Bool) -> LocationContentSource {
         switch LocationKind.of(url) {
         case .tag, .smartFolder: return SpotlightListSource(location: url)
         case .recentFiles, .recentLocations: return RecentSource(location: url)
@@ -115,7 +119,7 @@ enum LocationContentSources {
         case .archive: return ArchiveSource(location: url)
         default: break
         }
-        if AppLibrary.isActive(for: url) { return AppLibrarySource(location: url) }
+        if allowAppLibrary && AppLibrary.isActive(for: url) { return AppLibrarySource(location: url) }
         if let provider = RemoteFS.provider(for: url) {
             if let cloud = provider as? CloudFileProvider { return CloudSource(location: url, provider: cloud) }
             return ProviderSource(location: url, provider: provider)

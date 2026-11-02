@@ -170,7 +170,11 @@ public final class SearchIndex: @unchecked Sendable {
     private var roots: [Root] = []
     private var revision = 0
     private var eventID: UInt64 = 0
-    private var events: IndexEvents?
+    private var events: (any IndexEventWatching)?
+    /// A watcher is owned for its subscription lifetime. Tests may supply explicit events without kernel coalescing.
+    var makeEvents: ([String], UInt64, [String], @escaping ([String], UInt64, Bool) -> Void) -> any IndexEventWatching = {
+        roots, since, excluding, callback in IndexEvents(roots: roots, since: since, excluding: excluding, callback: callback)
+    }
     private let directory: URL
     private let storagePath: String
     private let defaults: UserDefaults
@@ -301,22 +305,24 @@ public final class SearchIndex: @unchecked Sendable {
         var left = stat(), right = stat()
         return stat(a, &left) == 0 && stat(b, &right) == 0 && left.st_dev == right.st_dev
     }
-    private func excluded(_ path: String, config: IndexConfiguration) -> Bool {
-        FilePath.contains(path: path, in: storagePath) || config.exclusions.contains { FilePath.contains(path: path, in: $0) }
-            || config.inSystemFolder(path)
-            || (config.excludeGitObjects && (path.hasSuffix("/.git/objects") || path.contains("/.git/objects/")))
-            || (config.excludeNodeModules && path.split(separator: "/").contains("node_modules"))
-            || (config.excludeBuildOutput
-                && IndexConfiguration.buildFolderNames.contains { path.hasSuffix("/" + $0) || path.contains("/" + $0 + "/") })
+    private func excluded(_ path: String, config: IndexConfiguration, generated: GeneratedPathExclusions? = nil) -> Bool {
+        let generated =
+            generated
+            ?? GeneratedPathExclusions(
+                gitObjects: config.excludeGitObjects, nodeModules: config.excludeNodeModules, buildOutput: config.excludeBuildOutput)
+        return FilePath.contains(path: path, in: storagePath) || config.exclusions.contains { FilePath.contains(path: path, in: $0) }
+            || config.inSystemFolder(path) || generated.matches(path)
     }
     private func crawl(_ path: String, config: IndexConfiguration, generation: Int) -> (table: NameIndex, holes: [String]) {
-        guard !excluded(path, config: config) else { return (NameIndex(), []) }
+        let generated = GeneratedPathExclusions(
+            gitObjects: config.excludeGitObjects, nodeModules: config.excludeNodeModules, buildOutput: config.excludeBuildOutput)
+        guard !excluded(path, config: config, generated: generated) else { return (NameIndex(), []) }
         var holes: [String] = []
         // One update can walk many folders: what Foundation autoreleases on the way goes after each.
         let table = autoreleasepool {
             IndexCrawler.crawl(
                 path, exclusions: config.exclusions, content: config.content, cancelled: { !self.valid(generation) },
-                unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config) })
+                unreadable: { holes.append($0) }, skip: { self.excluded($0, config: config, generated: generated) })
         }
         return (table, holes)
     }
@@ -324,7 +330,7 @@ public final class SearchIndex: @unchecked Sendable {
         // The index's own saves first: an index of the home folder would otherwise hear every one of them.
         var quiet = [storagePath] + config.exclusions
         if config.excludeSystemFolders { quiet.append(IndexConfiguration.home + "/.Trash") }
-        events = IndexEvents(roots: config.roots, since: eventID, excluding: quiet) { [weak self] paths, id, rescan in
+        events = makeEvents(config.roots, eventID, quiet) { [weak self] paths, id, rescan in
             self?.queue.async { [weak self] in self?.enqueue(paths, event: id, rescan: rescan, config: config, generation: generation) }
         }
         guard events?.available == true else {

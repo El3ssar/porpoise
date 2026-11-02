@@ -176,7 +176,6 @@ final class ColumnBrowserView: NSView {
         strip.hasHorizontalScroller = true
         strip.hasVerticalScroller = false
         strip.autohidesScrollers = true
-        strip.scrollerStyle = .overlay
         strip.drawsBackground = true
         strip.backgroundColor = Theme.viewBackground
         strip.borderType = .noBorder
@@ -231,7 +230,6 @@ final class ColumnBrowserView: NSView {
     static func configure(_ scroll: NSScrollView, showing list: ItemListView) {
         // Overlay first, then tile: with "Show scroll bars: Always", setting the style after the scroller leaves the
         // content view a legacy scroller's width short until the next tile, and the column's rows stop short of it.
-        scroll.scrollerStyle = .overlay
         scroll.documentView = list
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false

@@ -71,11 +71,14 @@ extension CloudOfflineActivityTests {
     @Test func aSpaceSignalInsideThePauseNotificationIsNotLost() async throws {
         let scratch = try Scratch(), operations = operations(scratch)
         var attempts = 0
-        let observer = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: operations, queue: .main) {
-            _ in
+        let onChanged: @MainActor @Sendable () -> Void = {
             if operations.activities.last?.state == .paused {
                 NotificationCenter.default.post(name: CloudOffline.spaceChanged, object: nil)
             }
+        }
+        let observer = NotificationCenter.default.addObserver(forName: FileOperationsController.activityChanged, object: operations, queue: .main) {
+            _ in
+            MainActor.assumeIsolated { onChanged() }
         }
         defer { NotificationCenter.default.removeObserver(observer) }
         let task = Task {

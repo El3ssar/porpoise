@@ -59,6 +59,10 @@ import Testing
         try Data(count: 50_000).write(to: folder.appendingPathComponent("a.jpg"))
         try FileManager.default.createDirectory(at: scratch.url.appendingPathComponent("Empty"), withIntermediateDirectories: true)
         let w = DiskUsageWindow(roots: [scratch.url])
+        let scans = AsyncStream.makeStream(of: Void.self)
+        var completions = scans.stream.makeAsyncIterator()
+        w.onScanCompleted = { scans.continuation.yield() }
+        defer { scans.continuation.finish(); w.onScanCompleted = nil }
         let window = try #require(w.window)
         defer { window.close() }
         let bar = try #require(w.bar)
@@ -69,7 +73,9 @@ import Testing
         #expect(bar.toolbar.items.map(\.itemIdentifier.rawValue) == ["back", "NSToolbarFlexibleSpaceItem", "metric", "rescan", "reveal", "trash"])
         #expect(bar.item("back")?.image?.name() == nil && bar.item("back")?.image != nil)
         #expect(w.toolbar.isHidden, "no row of bordered buttons in the content")
-        #expect(await eventually { !w.busy && !w.rows.isEmpty })
+        // Installed before yielding the main actor, so even an immediate worker cannot deliver ahead of this callback.
+        try #require(await completions.next() != nil)
+        #expect(!w.busy && !w.rows.isEmpty)
         #expect(w.progressRow.isHidden, "no idle progress bar or disabled Cancel")
         // Nothing selected to reveal or trash.
         for id in ["reveal", "trash"] { #expect(bar.validateToolbarItem(try #require(bar.item(id))) == false, "\(id)") }

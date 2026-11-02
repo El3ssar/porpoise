@@ -7,16 +7,20 @@ final class AccessibleRegion: NSAccessibilityElement {
     private let label: String
     private let frame: () -> CGRect
     private let selected: () -> Bool
+    private let select: ((Bool) -> Void)?
+    private let showMenu: (() -> Bool)?
     private let press: () -> Void
 
     init(
         in view: NSView, role: NSAccessibility.Role, label: String, frame: @escaping () -> CGRect,
-        selected: @escaping () -> Bool = { false }, press: @escaping () -> Void
+        selected: @escaping () -> Bool = { false }, select: ((Bool) -> Void)? = nil, showMenu: (() -> Bool)? = nil, press: @escaping () -> Void
     ) {
         self.view = view
         self.label = label
         self.frame = frame
         self.selected = selected
+        self.select = select
+        self.showMenu = showMenu
         self.press = press
         super.init()
         setAccessibilityParent(view)
@@ -25,6 +29,8 @@ final class AccessibleRegion: NSAccessibilityElement {
 
     override func accessibilityLabel() -> String? { label }
     override func isAccessibilitySelected() -> Bool { selected() }
+    override func setAccessibilitySelected(_ selected: Bool) { select?(selected) }
+    override func accessibilityPerformShowMenu() -> Bool { showMenu?() ?? false }
     override func accessibilityFrameInParentSpace() -> NSRect { frame() }
 
     override func accessibilityFrame() -> NSRect {

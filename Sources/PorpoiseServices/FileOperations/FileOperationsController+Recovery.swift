@@ -1,6 +1,7 @@
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
+import os
 
 /// A job that didn't finish last time (Porpoise quit, crashed or the Mac lost power), checked against the disk as it
 /// is now: what can be resumed, what changed meanwhile.
@@ -121,8 +122,13 @@ extension FileOperationsController {
                 }
             case .placed:
                 // Complete at its place; a move still had to remove its original.
-                guard kind == .move, let target = item.target, now != nil else { continue }
+                guard kind == .move, let target = item.target, let now else { continue }
+                guard let expected = item.fingerprint, now == expected else {
+                    plan.notes.append("“\(name)” was replaced or changed since the interrupted move; the current item is kept.")
+                    continue
+                }
                 if FileJob.itemExists(at: target) {
+                    plan.identities[item.source] = expected
                     plan.unfinishedMoves.append((item.source, target))
                 } else {
                     plan.notes.append("The moved copy of “\(name)” is gone; the original is kept.")
@@ -162,6 +168,7 @@ extension FileOperationsController {
         activity.cloudTitle = "Checking before resuming: \(plan.kind.verb)\(dest)"
         activity.originWindow = window
         var runner = LocalRecoveryRunner(plan: plan, control: control)
+        runner.stageJournal = transferStages
         let steps = runner.steps
         runner.progress = { [weak self, weak activity] name, step in
             DispatchQueue.main.async {
@@ -230,11 +237,24 @@ extension FileOperationsController {
             if activity?.state != .interrupted { journals.remove(id) }
             return
         }
-        var token: NSObjectProtocol?
-        token = NotificationCenter.default.addObserver(forName: Self.activityChanged, object: self, queue: .main) { [weak self] _ in
-            guard activity.state.isEnded else { return }
+        let retire: @MainActor @Sendable () -> Bool = { [weak self] in
+            guard activity.state.isEnded else { return false }
             if activity.state != .interrupted { self?.journals.remove(id) }
-            if let token { NotificationCenter.default.removeObserver(token) }
+            return true
+        }
+        let observation = OSAllocatedUnfairLock<NSObjectProtocol?>(initialState: nil)
+        observation.withLock { token in
+            token = NotificationCenter.default.addObserver(forName: Self.activityChanged, object: self, queue: .main) { _ in
+                MainActor.assumeIsolated {
+                    guard retire() else { return }
+                    let token = observation.withLock { token in
+                        let previous = token
+                        token = nil
+                        return previous
+                    }
+                    if let token { NotificationCenter.default.removeObserver(token) }
+                }
+            }
         }
     }
 

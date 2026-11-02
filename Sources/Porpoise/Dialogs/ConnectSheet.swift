@@ -403,7 +403,7 @@ final class ConnectSheet: SecondaryWindowController {
     static func caption(_ s: String) -> NSTextField {
         let t = NSTextField(labelWithString: s)
         t.font = .systemFont(ofSize: Tokens.FontSize.caption, weight: .semibold)
-        t.textColor = .tertiaryLabelColor
+        t.textColor = .secondaryLabelColor
         return t
     }
 
@@ -467,6 +467,15 @@ final class ConnectTile: NSControl {
     required init?(coder: NSCoder) { fatalError() }
 
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { available && KeyboardAccess.isFull() }
+    override var canBecomeKeyView: Bool { acceptsFirstResponder && !isHiddenOrHasHiddenAncestor }
+    override var focusRingMaskBounds: NSRect { bounds.insetBy(dx: 2, dy: 2) }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: focusRingMaskBounds, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row).fill()
+    }
+    override func keyDown(with event: NSEvent) {
+        if [36, 49, 76].contains(Int(event.keyCode)) { _ = accessibilityPerformPress() } else { super.keyDown(with: event) }
+    }
     override func mouseEntered(with event: NSEvent) { hovering = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
     override func mouseDown(with event: NSEvent) {

@@ -6,6 +6,43 @@ import Testing
 
 @testable import PorpoiseServices
 
+/// Hold the real SSH upload after its first chunk, while its remote staging file is still incomplete.
+/// Only the first attempt is held; resuming exercises the same SSH provider normally.
+private final class StagedUploadGate: RemoteProvider {
+    let base: RemoteProvider
+    let staged = Flag()
+    let firstBytes = Locked<Int64>(0)
+    let release = DispatchSemaphore(value: 0)
+
+    init(_ base: RemoteProvider) { self.base = base }
+    func list(_ folder: URL) throws -> [FileItem] { try base.list(folder) }
+    func download(_ remote: URL, into folder: URL) throws -> URL { try base.download(remote, into: folder) }
+    func upload(_ source: URL, into folder: URL) throws {
+        guard source.lastPathComponent == "large.bin", !staged.isSet else { return try base.upload(source, into: folder) }
+        guard let control = Shell.currentTransferControl else { throw RemoteError.failed("The upload has no transfer control.") }
+        let previous = control.onBytes
+        let staged = self.staged, firstBytes = self.firstBytes, release = self.release, timedOut = Flag()
+        control.onBytes = { bytes in
+            previous(bytes)
+            if !staged.isSet {
+                firstBytes.change { $0 = bytes }
+                staged.set()
+                if release.wait(timeout: .now() + 2 * eventualTimeout) != .success { timedOut.set() }
+            }
+        }
+        defer { control.onBytes = previous }
+        try base.upload(source, into: folder)
+        if timedOut.isSet { throw RemoteError.failed("The test did not release its staged upload.") }
+    }
+    func delete(_ urls: [URL]) throws { try base.delete(urls) }
+    func makeFolder(_ url: URL) throws { try base.makeFolder(url) }
+    func removeEmptyFolder(_ url: URL) throws { try base.removeEmptyFolder(url) }
+    func rename(_ url: URL, to name: String) throws { try base.rename(url, to: name) }
+    func move(_ urls: [URL], into folder: URL) throws { try base.move(urls, into: folder) }
+    func copy(_ urls: [URL], into folder: URL) throws { try base.copy(urls, into: folder) }
+    func rootTitle(_ url: URL) -> String { base.rootTitle(url) }
+}
+
 /// Copy, move and delete jobs between local folders and remote hosts, against a real sshd (see `SSHServer`). A
 /// second host is the same server under another name ("localhost"), with a connection of its own.
 @MainActor
@@ -122,28 +159,46 @@ final class RemoteTransferCoverageTests {
     @Test func stopThenResumeRemoteQueueKeepsFinishedFilesAndCleansStaging() async throws {
         let dir = try server.folder()
         let small = try local.file("src/first.txt", "finished")
-        let big = try local.file("src/large.bin", size: 256 << 20)
+        let big = try local.file("src/large.bin")
+        // Sparse files can fit in a tiny tar stream regardless of their logical size.
+        let bytes = Data(repeating: 42, count: 512 << 10)
+        try bytes.write(to: big)
+        let base = try #require(RemoteFS.provider(for: remoteFolder(dir)))
+        let gate = StagedUploadGate(base)
+        RemoteFS.use(gate, for: server.url("/"))
+        defer { gate.release.signal(); RemoteFS.use(base, for: server.url("/")) }
         let c = makeController(ScriptedUI())
         c.run(.copy, [small, big], to: remoteFolder(dir), window: nil)
         let activity = try #require(c.activities.last)
-        #expect(
+        defer { c.cancel(activity); gate.release.signal() }
+        // Hold the second upload mid-stream in real SSH staging. File size is not a clock:
+        // even a fast loopback transfer must still be in flight when Pause and Stop arrive.
+        try #require(
             await eventually {
-                let names = (try? self.fm.contentsOfDirectory(atPath: dir.path)) ?? []
-                return self.fm.fileExists(atPath: dir.appendingPathComponent("first.txt").path)
-                    && names.contains { $0.hasPrefix(".porpoise-transfer-") }
+                guard gate.staged.isSet, let names = try? self.fm.contentsOfDirectory(atPath: dir.path) else { return false }
+                return names.filter { $0.hasPrefix(".porpoise-transfer-") }.contains { name in
+                    let file = dir.appendingPathComponent(name).appendingPathComponent("large.bin")
+                    return self.fm.fileExists(atPath: file.path)
+                }
             })
+        #expect(fm.fileExists(atPath: dir.appendingPathComponent("first.txt").path))
+        #expect(gate.firstBytes.value > 0 && gate.firstBytes.value < bytes.count)
+        #expect(!fm.fileExists(atPath: dir.appendingPathComponent("large.bin").path))
         c.pause(activity)
         await expectEventually { activity.state == .paused }
         let first = JobJournal.Fingerprint(dir.appendingPathComponent("first.txt"))
         c.cancel(activity)
+        gate.release.signal()
         #expect(await eventually { activity.state == .cancelled })
-        #expect(try fm.contentsOfDirectory(atPath: dir.path) == ["first.txt"])
+        let remaining = try fm.contentsOfDirectory(atPath: dir.path)
+        #expect(remaining == ["first.txt"])
         c.resume(activity)
         let resumed = try #require(c.activities.last)
         #expect(await eventually { resumed.state.isEnded })
         #expect(resumed.state == .completed)
         #expect(JobJournal.Fingerprint(dir.appendingPathComponent("first.txt")) == first)
-        #expect(JobJournal.Fingerprint(dir.appendingPathComponent("large.bin"))?.size == 256 << 20)
+        #expect(JobJournal.Fingerprint(dir.appendingPathComponent("large.bin"))?.size == 512 << 10)
+        #expect(try Data(contentsOf: dir.appendingPathComponent("large.bin")) == bytes)
     }
 
     @Test func copiesAndMovesWithinOneHost() async throws {

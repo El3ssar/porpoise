@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseCore
 import PorpoiseServices
 
-protocol BreadcrumbDelegate: AnyObject {
+@MainActor protocol BreadcrumbDelegate: AnyObject {
     func breadcrumb(_ b: BreadcrumbView, navigateTo url: URL, newTab: Bool)
     func breadcrumbActivated(_ b: BreadcrumbView)
     func breadcrumb(_ b: BreadcrumbView, drop urls: [URL], onto folder: URL, operation: NSDragOperation)

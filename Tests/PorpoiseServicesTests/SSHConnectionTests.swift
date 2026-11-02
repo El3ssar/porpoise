@@ -139,12 +139,12 @@ struct SSHConnectionTests {
         let started = dir.appendingPathComponent("started"), release = dir.appendingPathComponent("release")
         defer { try? Data().write(to: release) }
         // A command still running on the old connection when it is retired finishes there.
-        nonisolated(unsafe) var running: Data?
-        let done = DispatchSemaphore(value: 0)
-        Thread.detachNewThread {
-            running = try? p.exec(
-                "touch \(RemoteParsing.quote(started.path)); while [ ! -e \(RemoteParsing.quote(release.path)) ]; do sleep 0.01; done; echo finished")
-            done.signal()
+        let running = Task {
+            await offThePool {
+                try? p.exec(
+                    "touch \(RemoteParsing.quote(started.path)); while [ ! -e \(RemoteParsing.quote(release.path)) ]; do sleep 0.01; done; echo finished"
+                )
+            }
         }
         try #require(await poll { fm.fileExists(atPath: started.path) })
         RemoteFS.use(p, for: server.url("/"))
@@ -153,8 +153,10 @@ struct SSHConnectionTests {
         _ = try p.list(server.url(dir.path, isDirectory: true))
         #expect(server.logins == before + 1)
         try Data().write(to: release)
-        #expect(await offThePool { done.wait(timeout: .now() + eventualTimeout) == .success })
-        #expect(running.map { String(decoding: $0, as: UTF8.self) } == "finished\n")
+        let output: Data? = try await awaitCallback { callback in
+            Task { callback.resume(returning: await running.value) }
+        }
+        #expect(output.map { String(decoding: $0, as: UTF8.self) } == "finished\n")
     }
 
     @Test func aFirstConnectionThatFailsIsNotRetried() throws {

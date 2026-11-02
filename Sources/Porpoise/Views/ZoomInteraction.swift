@@ -2,7 +2,7 @@ import AppKit
 import PorpoiseCore
 
 /// A view that zooms like the Icons view: a size shown live, then saved.
-protocol ZoomableView: AnyObject {
+@MainActor protocol ZoomableView: AnyObject, Sendable {
     var iconSize: CGFloat { get }
     func previewZoom(_ size: CGFloat, anchor: CGPoint?, commitAfter delay: TimeInterval?)
     func animateZoom(to size: CGFloat)

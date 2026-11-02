@@ -11,6 +11,10 @@ struct LocalRecoveryRunner {
     let control: JobControl
     /// Called on the worker as it goes: what it looks at now, how many steps are done.
     var progress: (String, Int) -> Void = { _, _ in }
+    /// The same durable claimed-source checkpoints as ordinary moves.
+    var stageJournal: TransferStageJournal?
+    var removalCheckpoint: (LocalMoveRemovalReceipt.Checkpoint) throws -> Void = { _ in }
+    var removalRead: (Int64) -> Void = { _ in }
 
     struct Outcome {
         /// The journal as it is now (moves finished, partials removed); written before the rest is handed on.
@@ -81,19 +85,31 @@ struct LocalRecoveryRunner {
     /// Removes `source` once `target` is verified to be its complete copy and `source` hasn't changed while it was
     /// compared.
     private func finishMove(_ source: URL, _ target: URL, into out: inout Outcome) {
-        let before = JobJournal.Fingerprint(source)
-        let check = CopyVerification.verify(source, target, cancelled: { stopped })
-        if check.incomplete { return out.stopped = true }
-        guard check.ok else {
-            return out.errors.append("“\(source.lastPathComponent)” wasn't removed: its moved copy differs (\(check.summary))")
+        guard let expected = plan.identities[source], JobJournal.Fingerprint(source) == expected else {
+            out.errors.append("“\(source.lastPathComponent)” wasn't removed: its original identity is missing or changed since the interrupted move.")
+            return
         }
-        guard let before, JobJournal.Fingerprint(source) == before else {
-            return out.errors.append("“\(source.lastPathComponent)” wasn't removed: it changed while its moved copy was checked.")
-        }
+        var holdings: Set<URL> = []
+        defer { for holding in holdings { stageJournal?.release(holding) } }
         do {
-            try FileManager.default.removeItem(at: source)
+            let receipt = try LocalMoveRemovalReceipt(
+                source: source, cancellation: control.asDiskCancellation(), onRead: removalRead,
+                onCheckpoint: { checkpoint in
+                    if case .claimed(let holding, _, _, _) = checkpoint { holdings.insert(holding) }
+                    try stageJournal?.checkpoint(checkpoint)
+                    try removalCheckpoint(checkpoint)
+                })
+            // Do not grant deletion authority to a replacement that arrived between the first check and capture.
+            guard JobJournal.Fingerprint(source) == expected else {
+                throw FileOperationError.failed("The source changed while its recovery identity was captured.")
+            }
+            try receipt.removeSource(afterVerifying: target)
         } catch {
-            return out.errors.append((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            if stopped { out.stopped = true }
+            // A retained receipt reports the actual holding location; never retry deletion by the old path.
+            out.errors.append(
+                "“\(source.lastPathComponent)” wasn't removed: its moved copy differs or changed while checked. \(error.localizedDescription)")
+            return
         }
         out.removedOriginals.append(source)
         if let i = out.journal?.items.firstIndex(where: { $0.source == source && $0.state == .placed }) {

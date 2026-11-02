@@ -55,7 +55,7 @@ public enum PreviewSource {
         _ url: URL, context: CloudTransferContext, onPreview: @escaping @MainActor (URL) async throws -> Void
     ) async throws {
         guard let cloud = RemoteFS.provider(for: url) as? CloudFileProvider else { throw CocoaError(.featureUnsupported) }
-        try await cloud.progressivePreview(url, context: context, onPreview: onPreview)
+        _ = try await cloud.progressivePreview(url, context: context, onPreview: onPreview)
     }
 
     /// A slow connection holds up only its own previews. Keep each provider's queue until all its work has ended,

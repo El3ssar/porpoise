@@ -290,6 +290,24 @@ final class SSHProvider: RemoteProvider {
         try check(r, fallback: "Could not upload “\(local.lastPathComponent)”.")
     }
 
+    func createFolder(_ remote: URL) throws {
+        try RemoteFS.checkName(remote.lastPathComponent)
+        let result = try run("mkdir -p -- \(shellPath(remote.deletingLastPathComponent())) && mkdir -- \(shellPath(remote))", idempotent: false)
+        try check(result, fallback: "Could not create “\(remote.lastPathComponent)”; its name may already be in use.")
+    }
+
+    func createFile(_ remote: URL, contents: Data) throws {
+        try RemoteFS.checkName(remote.lastPathComponent)
+        let target = shellPath(remote)
+        // POSIX noclobber opens the leaf exclusively, including when another writer wins after the preflight.
+        // Never retry a possibly committed creation after a lost connection.
+        let result = try run(
+            "if [ -e \(target) ] || [ -L \(target) ]; then exit \(Self.existsStatus); fi; set -C; cat > \(target)",
+            stdin: contents, idempotent: false)
+        if result.status == Self.existsStatus { throw RemoteError.exists(remote.lastPathComponent) }
+        try check(result, fallback: "Could not create “\(remote.lastPathComponent)” without replacing an existing item.")
+    }
+
     func delete(_ remote: [URL]) throws {
         if let top = remote.first(where: isTopFolder) { throw RemoteError.failed("“\(top.path)” is a top folder and can't be deleted.") }
         try exec("rm -rf -- " + remote.map(shellPath).joined(separator: " "))

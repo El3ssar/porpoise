@@ -12,11 +12,7 @@ import Testing
 /// panes laid out at their real widths, and it looks like the window's other hairlines (W-214).
 @Suite(.serialized, .isolatedSettings) @MainActor final class SplitDividerTests {
     private func settle(_ seconds: Double) async throws {
-        let end = Date().addingTimeInterval(seconds)
-        while Date() < end {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await Task.sleep(for: .seconds(seconds))
     }
 
     @discardableResult private func settle(until condition: () -> Bool) async throws -> Bool {
