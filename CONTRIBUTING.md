@@ -81,22 +81,53 @@ python3 scripts/coverage.py --min 92
 
 ### CI and release validation
 
-CI runs the optimized shipping build and the **entire** instrumented test suite on separate macOS runners.
-The test job still runs the watchdog's isolated BusyPool/MemoryBudget pass, all test targets, workflow integrity,
-formatting, helper freshness, and the combined logic-layer coverage gate (92%). No changed-module selection is
-used. The existing `build-and-test` status aggregates both jobs and fails if either fails or is cancelled. `ci/**` branches and manual CI dispatch support timing
+CI checks the portable workflow, evidence, watchdog and budget-policy fixtures on Ubuntu before queuing macOS jobs.
+The macOS gates cover the optimized shipping build, the **entire** instrumented test suite, UI acceptance and app
+performance. The test job runs BusyPool, MemoryBudget and ScannerStarvation serially in their own process before
+the ordinary suite, plus formatting, helper freshness and the combined logic-layer coverage gate (92%).
+`build-and-test` aggregates every required gate and fails if a required job fails or is cancelled. `ci/**` branches and manual CI dispatch support timing
 experiments without pushing main. For a nonpublishing release packaging probe, run
 `gh workflow run ci.yml --ref ci/<branch> -f release_benchmark=true` after its shipping job has populated the cache.
 This probe uses production compile flags, ad hoc signing and the DMG scan, with no release credentials.
 Pull requests always run CI so required checks are reported.
 
-Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, or `docs/**` skip CI; the website has its
-own workflow. All other paths, including licenses, resources, scripts, tests and workflows, require full CI.
-Before release, `scripts/ci-proof.py` looks through the latest 100 main-push CI runs. It accepts a successful run
-from this repository only when its commit is an ancestor and `git diff --no-renames` shows no differences outside
-that exact documentation allowlist. A newer failed or running attempt supersedes an older success for the same
-commit. PR/dispatch/other-branch runs cannot certify a release. No matching proof or an API error runs full local
-release validation, including coverage; releases never wait for a second documentation-only CI run.
+Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, or `docs/**` skip CI; the website has its own workflow.
+Before release, `scripts/ci-proof.py` searches a bounded history of successful main pushes and maintainer-merged PRs.
+It binds paths, modes and object IDs for every build, test and security input, ignoring only that documentation
+allowlist. PR proof additionally binds the immutable tested merge checkout, its actual base, the merged GitHub PR,
+and successful product gates. Squash and rebase merges can reuse the same tested contents even though their commit
+identities differ. Changes to `.github/` or `scripts/` cannot certify their own evidence machinery: their first
+landing still needs fresh main validation. Newer relevant failed or incomplete evidence prevents older greens
+from certifying the same inputs. Missing or ambiguous metadata and API errors fall back to full validation.
+History is limited to the latest 100 runs; reruns are ordered by their latest recorded activity, with unresolved
+results winning ambiguous ties. Release signing, disk-image scans and Sparkle signature verification always run.
+
+Performance checks separately fingerprint app and benchmark inputs. An unchanged reviewed package graph permits
+ordinary test-source and documentation changes to reuse a trusted, actually measured main result. Fixtures,
+resources, build scripts, benchmark controls and unknown paths still require measurements. The scope artifact
+records the decision and measured origin; an evidence-only job is explicitly identified and cannot create a new
+measurement receipt. Unresolved regressions stay blocked. A noisy comparison retries against its original base,
+so comparing an app with its identical parent cannot erase a regression. Missing or ambiguous failed evidence
+blocks reuse. Manual performance dispatch always requests fresh measurements.
+
+Cold-launch-only recalibration skips unrelated listing and search workloads after the same readiness check.
+The seven-pair calibration and comparison cohorts, idle check, performance budgets and noise caps are unchanged.
+
+For local feedback before pushing, run the relevant focused Swift tests and the portable checks you changed:
+
+```sh
+scripts/test-with-watchdog.sh --filter 'InformationThumbnailTests|AppearanceLayoutTests/foldersPanelListsLocalFoldersOffTheMainThread'
+python3 scripts/test-ci-proof.py
+python3 scripts/test-test-completion.py
+python3 scripts/test-workflow-pins.py
+python3 scripts/test-performance-budgets.py
+python3 scripts/test-performance-inputs.py
+```
+
+The Python suites use synthetic fixtures and do not launch Porpoise. A filtered Swift run proves only its selected
+cases; it is not a full-suite or coverage receipt. Keep full covered runs separate so a later filtered run cannot
+overwrite their profiles. Use `scripts/ci-like.sh` for an explicit loaded reproduction when necessary, rather than
+waiting for a timing-dependent failure on the hosted runner.
 
 Test and shipping SwiftPM caches are separate and keyed by OS, architecture, toolchain/OS version, manifest and
 lockfile, then commit, with compatible earlier commits as fallbacks. The release reuses the shipping cache with
@@ -117,7 +148,11 @@ The warm run reduced this measured wall time by 63%; all 1,489 main and 9 isolat
 coverage stayed at 93.7% of 36,527 lines. These are individual runner observations, including cache upload and
 the final gate, rather than a statistical latency guarantee. The [nonpublishing packaging probe](https://github.com/El3ssar/porpoise/actions/runs/39171385028)
 passed in 1:46 including DMG scanning: the cached shipping build took 10.26 seconds (previous release: 342.60),
-and ffmpeg verification took under a second (previous source build: 4:00). Ad hoc packaging excludes production
+and ffmpeg verification took under a second (previous source build: 4:00). These October timings predate the expanded
+suite. On November 2, [main's failing baseline](https://github.com/El3ssar/porpoise/actions/runs/41483385421) took
+19:57, including 17:17 for the test job and 14:02 for performance; failed waits and queue time are included.
+The cold-only retry fix removes 227.65 seconds of unrelated measured workloads from one retained historical trace;
+that is avoided work, not a measured hosted after-time. Ad hoc packaging excludes production
 identity import, Sparkle signing and publication, so it is separate evidence from an actual published release.
 
 Without a signing identity, `make-app.sh` signs the app ad hoc. That's fine for development, but macOS forgets

@@ -143,6 +143,9 @@ jobs:
   performance-budgets:
     needs: proof
     if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/performance-budgets.yml
     with:
       # Reopened PR event payloads can carry an older base SHA. The tested merge's first parent is its actual base.
