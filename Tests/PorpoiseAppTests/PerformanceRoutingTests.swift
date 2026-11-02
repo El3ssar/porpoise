@@ -1,5 +1,6 @@
 import AppKit
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
@@ -122,6 +123,23 @@ import Testing
         // Breeze's box in a palette theme; AppKit's own checkbox in the native theme (W-270 UI-1).
         #expect((locked.image is ChoiceImage) == !Tokens.isNative)
         controller.window?.close()
+    }
+
+    @Test func propertiesMarksUnreadableItemsAsAPartialSize() {
+        var total = TreeMeasure.Progress()
+        total.bytes = 123
+        total.files = 2
+        total.folders = 3
+        let complete = PropertiesWindow.sizeDescription(total, selectionCount: 1)
+        #expect(!complete.hasPrefix("At least "))
+        #expect(complete.contains("2 files, 2 subfolders"))
+        total.errors = ["unreadable"]
+        let partial = PropertiesWindow.sizeDescription(total, selectionCount: 1)
+        #expect(partial.hasPrefix("At least "))
+        #expect(partial.contains("2 files, 2 subfolders"))
+        #expect(partial.hasSuffix("some items couldn’t be read)"))
+        #expect(!partial.contains("unreadable"))  // No raw filesystem errors in the summary.
+        #expect(PropertiesWindow.sizeDescription(total, selectionCount: 2).contains("2 files, 3 subfolders"))
     }
 
     private final class Reads: @unchecked Sendable {
