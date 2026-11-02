@@ -139,7 +139,8 @@ jobs:
     if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
     uses: ./.github/workflows/performance-budgets.yml
     with:
-      base_ref: ${{ github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || format('{0}^', github.sha) }}
+      # Reopened PR event payloads can carry an older base SHA. The tested merge's first parent is its actual base.
+      base_ref: ${{ (github.event_name == 'pull_request' && format('{0}^1', github.sha)) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || format('{0}^', github.sha) }}
 
   # UI state/byte acceptance runs for normal CI, including ordinary UI source changes.
   # Captures remain review artifacts; absent screen access is never mislabeled a visual pass.
