@@ -167,6 +167,18 @@ runner edits can restore compiler state with the same toolchain, package, build 
 Both apps are still built and staged afresh, source mtimes are restored only for identical content, and no old
 measurement or staged app is reused. Bump the cache namespace if preparation or instrumentation contracts change.
 
+Measured warm compiler reuse on 2026-11-02:
+
+| Observed product build | Time |
+| --- | ---: |
+| [Before: cache restored, but changing SwiftTerm metadata rebuilt the app](https://github.com/El3ssar/porpoise/actions/runs/41496252362/job/125452149814) | 238.70 s |
+| [After: content checked and vendored metadata stable](https://github.com/El3ssar/porpoise/actions/runs/41503685932/job/125478026171) | 15.26 s |
+
+The latter run's covered test prebuild took 15.18 s; all 2,439 executed tests passed with 94.3% logic coverage.
+The full suite and strict performance jobs still take minutes. These individual compiler observations do not
+measure warm fast-PR latency or guarantee overall CI time. One existing `RemoteProvider` sendability warning
+remains for a provider-contract audit; the Node 20 action runtime warnings are resolved.
+
 Measured on 2026-10-18 with identical application/test sources on `ci/ciperf`:
 
 | Run | CI critical path, including the aggregate gate |

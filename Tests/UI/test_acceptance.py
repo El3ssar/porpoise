@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Self-tests for Tests/UI/acceptance.py's bounds, without the app: waits end at their deadline, failed steps are kept
 and capped, only the runner's own process is stopped, and the summary keeps structural, visual and attended apart."""
+import gc
 import json
 import os
+from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import warnings
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import acceptance  # noqa: E402
@@ -26,6 +31,36 @@ class FakeBridge:
         pass
 
 
+class DelayedBackBridge:
+    """Back reaches its parent URL before the listing restores the current row."""
+
+    def __init__(self, demo, restore_after=3):
+        self.demo = demo
+        self.restore_after = restore_after
+        self.location = "parent"
+        self.mode = "icons"
+        self.back_reads = 0
+
+    def send(self, command, argument):
+        if command == "navigate":
+            self.location = "photos"
+        elif command == "action" and argument == "goBack:":
+            self.location = "back"
+        elif command == "mode":
+            self.mode = argument
+
+    def state(self):
+        parent_rows = ["Copies", "Photos", "Projects", "Archive.bin"]
+        if self.location == "photos":
+            return {"url": os.path.join(self.demo, "Photos"), "rows": ["2026"], "current": "", "mode": self.mode}
+        current = ""
+        if self.location == "back":
+            self.back_reads += 1
+            if self.restore_after is not None and self.back_reads >= self.restore_after:
+                current = "Photos"
+        return {"url": self.demo, "rows": parent_rows, "current": current, "mode": self.mode}
+
+
 def make_run(out, **overrides):
     args = dict(app="/nonexistent", looks="light", out=out, run_id="selftest", launch_timeout=1, step_timeout=1, max_failures=2)
     args.update(overrides)
@@ -36,6 +71,34 @@ def make_run(out, **overrides):
 
 
 class AcceptanceRunnerTests(unittest.TestCase):
+    def test_back_waits_for_current_row_after_url_returns(self):
+        with tempfile.TemporaryDirectory() as out:
+            run = make_run(out)
+            self.addCleanup(shutil.rmtree, run.scratch, True)
+            run.demo = os.path.join(out, "Demo")
+            run.bridge = DelayedBackBridge(run.demo)
+            run.capture = lambda *args: None
+            with patch.object(acceptance, "wait_until", wraps=acceptance.wait_until) as waiting:
+                run.browse()
+            back = [row for row in run.results if row["check"] == "browse: Back returns with the folder current"]
+            self.assertEqual([row["ok"] for row in back], [True])
+            self.assertGreaterEqual(run.bridge.back_reads, 3)
+            back_wait, = [call for call in waiting.call_args_list if call.args[2].startswith("Back")]
+            self.assertEqual(back_wait.args[1], run.args.step_timeout)
+
+    def test_back_that_never_restores_current_row_still_fails_at_existing_deadline(self):
+        with tempfile.TemporaryDirectory() as out:
+            run = make_run(out, step_timeout=0.05)
+            self.addCleanup(shutil.rmtree, run.scratch, True)
+            run.demo = os.path.join(out, "Demo")
+            run.bridge = DelayedBackBridge(run.demo, restore_after=None)
+            run.capture = lambda *args: None
+            started = time.monotonic()
+            with self.assertRaisesRegex(acceptance.StepFailed, "Back to restore Photos as current"):
+                run.browse()
+            self.assertLess(time.monotonic() - started, 1)
+            self.assertFalse(any(row["check"] == "browse: Back returns with the folder current" for row in run.results))
+
     def test_wait_until_returns_the_value_or_fails_at_its_deadline(self):
         self.assertEqual(acceptance.wait_until(lambda: 42, 1, "a value"), 42)
         started = time.monotonic()
@@ -70,11 +133,11 @@ class AcceptanceRunnerTests(unittest.TestCase):
             # What the app showed is kept for each failed step (here: that it didn't answer).
             self.assertTrue(os.path.exists(os.path.join(out, "failures", "light-step0-error.txt")))
             run.write_summary()
-            summary = open(os.path.join(out, "SUMMARY.md")).read()
+            summary = Path(out, "SUMMARY.md").read_text(encoding="utf-8")
             for part in ["## Structural checks", "## Visual review", "## Attended checks"]:
                 self.assertIn(part, summary)
             self.assertIn("FAIL [light] always fails: on purpose", summary)
-            self.assertEqual(json.load(open(os.path.join(out, "results.json")))["run"], "selftest")
+            self.assertEqual(json.loads(Path(out, "results.json").read_text(encoding="utf-8"))["run"], "selftest")
 
     def test_a_wait_that_times_out_fails_the_run(self):
         with tempfile.TemporaryDirectory() as out:
@@ -117,8 +180,12 @@ class AcceptanceRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             run = make_run(out)
             run.dbg = "/usr/bin/true"
-            self.assertEqual(run.run(), 1)
-            results = json.load(open(os.path.join(out, "results.json")))["results"]
+            with warnings.catch_warnings(record=True) as captured:
+                warnings.simplefilter("always", ResourceWarning)
+                self.assertEqual(run.run(), 1)
+                gc.collect()
+            self.assertFalse([warning for warning in captured if issubclass(warning.category, ResourceWarning)])
+            results = json.loads(Path(out, "results.json").read_text(encoding="utf-8"))["results"]
             self.assertEqual([(r["check"], r["ok"]) for r in results], [("launch", False)])
             # Its defaults suite is gone again.
             self.assertFalse(os.path.exists(os.path.expanduser("~/Library/Preferences/app.porpoise.acceptance.selftest-light.plist")))

@@ -21,6 +21,7 @@ import argparse
 import datetime
 import json
 import os
+from pathlib import Path
 import shutil
 import signal
 import struct
@@ -88,7 +89,7 @@ class Bridge:
         def read():
             if not os.path.exists(path) or os.path.getsize(path) == 0:
                 return None
-            text = open(path, encoding="utf-8").read()
+            text = Path(path).read_text(encoding="utf-8")
             return (parse or (lambda t: t))(text)
 
         return wait_until(read, timeout, f"the answer to `{command}`")
@@ -147,9 +148,10 @@ class Run:
             os.environ, PORPOISE_DEFAULTS_SUITE=self.suite, PORPOISE_BRIDGE=self.bridge.channel, PORPOISE_FORCE_ONBOARDING="1"
         )
         exe = os.path.join(os.path.abspath(self.args.app), "Contents", "MacOS", "Porpoise")
-        log = open(os.path.join(self.out, f"app-{look}.log"), "w")
         # No "reopen windows?" alert after an earlier instance was stopped: it would block the app until answered.
-        self.app = subprocess.Popen([exe, "-ApplePersistenceIgnoreState", "YES"], env=env, stdout=log, stderr=subprocess.STDOUT)
+        # Popen gives the child its own descriptor; the parent's copy closes even if launch fails.
+        with open(os.path.join(self.out, f"app-{look}.log"), "w", encoding="utf-8") as log:
+            self.app = subprocess.Popen([exe, "-ApplePersistenceIgnoreState", "YES"], env=env, stdout=log, stderr=subprocess.STDOUT)
         # Ready: the bridge answers, and the browser window shows the folder.
         wait_until(lambda: self.app.poll() is None and any("MainWindowController" in w for w in self.bridge.windows()),
                    self.args.launch_timeout, "the browser window")
@@ -257,7 +259,15 @@ class Run:
         wait_until(lambda: b.state()["url"].endswith("/Photos"), self.args.step_timeout, "Photos to open")
         self.check("browse: into a folder", b.state()["rows"] == ["2026"], b.state()["rows"])
         b.send("action", "goBack:")
-        s = wait_until(lambda: (lambda s: s if not s["url"].endswith("/Photos") else None)(b.state()), self.args.step_timeout, "Back")
+
+        def back_state():
+            state = b.state()
+            # Navigation changes the URL before the asynchronous listing restores its current row.
+            ready = (os.path.realpath(state["url"]) == os.path.realpath(self.demo)
+                     and state["current"] == "Photos" and "Photos" in state["rows"])
+            return state if ready else None
+
+        s = wait_until(back_state, self.args.step_timeout, "Back to restore Photos as current")
         self.check("browse: Back returns with the folder current", s["current"] == "Photos", s)
         for mode in ["details", "compact", "columns", "icons"]:
             b.send("mode", mode)
@@ -304,7 +314,7 @@ class Run:
     def connect_page(self):
         path = os.path.join(self.scratch, f"page-{uuid.uuid4().hex}")
         self.bridge.send("cloud", f"page {path}")
-        return wait_until(lambda: open(path).read().strip() if os.path.exists(path) else None, 10, "the Connect page")
+        return wait_until(lambda: Path(path).read_text(encoding="utf-8").strip() if os.path.exists(path) else None, 10, "the Connect page")
 
     def settings(self):
         b = self.bridge
