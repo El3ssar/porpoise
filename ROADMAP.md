@@ -4,7 +4,7 @@ Porpoise is a native Mac file manager with Dolphin's browsing model, familiar Ma
 and tools for local, server and cloud files. The immediate goal is an excellent daily file
 workspace: precise interactions, a polished appearance and measured responsiveness.
 
-Reviewed 2026-11-02 against release **0.18.0** (`efd41202`). This is the current planning
+Reviewed 2026-11-02 against **0.19.0 source** (`98e1c881`), after the polish changes passed full CI. This is the current planning
 entry point. [CHANGELOG.md](CHANGELOG.md) records shipped behavior; the
 [documentation index](docs/README.md) separates current contracts from historical designs
 and verification receipts. A plan is not a promise that a feature has shipped.
@@ -41,8 +41,9 @@ validated. The contracts and dated receipts describe their actual evidence bound
 
 ### Transfers
 
-Refine the compact progress window with a design review against Dolphin's clear hierarchy.
-Keep the current filename, honest processed/total file and folder counts, progress, speed,
+Implemented in 0.19.0: a live-only Dolphin-inspired window, automatic dismissal after successful
+or cleanly cancelled transfers, an in-place speed graph and separate custom-tool output.
+The compact/expanded light/dark fixtures and hosted completion checks passed. Keep the current filename, honest processed/total file and folder counts, progress, speed,
 remaining time and useful Pause/Cancel/error actions easy to scan. The expanded detail is a
 speed history, not a queue of filenames. Successful and cancelled operations leave the
 progress surface; it hides when no live operation or unresolved failure needs it. Past-transfer
@@ -50,29 +51,38 @@ history is not part of this UI. Internal Undo and recovery records remain. The c
 contract belongs in [TRANSFER-PROGRESS.md](docs/TRANSFER-PROGRESS.md); the old toolbar/popover
 proposal is superseded. Automatic presentation must preserve the user's focus.
 
-**Done when:** light/dark, long names, preparation, pause, conflicts, failure, completion and
+**Remaining finish validation:** beyond those fixtures, long names, preparation, pause, conflicts, failure, completion and
 multiple operations have deliberate layouts; controls remain usable at the compact size;
 progress does not activate Porpoise or take over another app.
 
 ### Location bar
 
-Make each breadcrumb's padded segment a clear click target, including shortened paths.
-Preserve the distinction between opening a parent and opening its child-folder menu; retain
+Implemented in 0.19.0: padded full-height folder targets, balanced name shortening that retains
+the parent/current folders and overflow, and Down Arrow access to children. Pointer and layout
+fixtures passed; hosted main-window captures passed in both appearances. Preserve the distinction between opening a parent and opening its child-folder menu; retain
 full-path editing, overflow access, drag behavior, keyboard navigation and accessibility.
 
-**Done when:** reaching a parent does not require aiming at its letters; hover/focus makes the
+**Remaining finish validation:** attended pointer/keyboard/VoiceOver use confirms that hover/focus makes the
 target clear; shortened, deep, long-name and narrow split-pane paths remain fully reachable.
 
 ### Documentation
 
-Maintain one current roadmap and one documentation index. Correct live settings paths,
+The 0.19.0 refresh reconciled shipped status, indexed the existing documents and corrected live
+contracts while preserving historical evidence. Maintain this roadmap and the documentation index.
+Correct live settings paths,
 architecture, security and feature contracts alongside code. Preserve dated plans, audit
 findings and test receipts with an explicit historical scope, rather than presenting old
 findings as a fresh defect list. Screenshots need their own current-build visual review.
 
 ## Now: measured performance
 
-Start with the reported **Get Info on large folders** delay. Establish release-build baselines
+Implemented in 0.19.0 for **Get Info on large folders**: streamed metadata batches, lower temporary
+memory, earlier counts and explicit partial-result labels. The five-pair optimized local 100k-file
+comparison improved first useful count from 1.765 s to 0.256 s, completion from 1.846 s to 1.515 s,
+and process peak RSS from 72.4 MB to 23.0 MB. Deep/wide fixtures establish no throughput improvement.
+See [the measurement receipt](docs/validation/FOLDER-INFO-PERFORMANCE.md) for warm-cache and non-GUI limits.
+
+Next establish whole-app release-build baselines
 for time to first useful information, incremental count updates, complete totals, cancellation,
 CPU and memory. Include many small files, deep trees, packages, hard links, symlinks, removable
 filesystems and slow/unreadable locations. Cached or partial values must say what they represent.
