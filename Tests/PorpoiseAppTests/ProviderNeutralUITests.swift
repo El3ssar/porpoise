@@ -8,7 +8,7 @@ import Testing
 @testable import Porpoise
 
 /// Shared cloud UI words and rules come from the service the item is in, never Google Drive's by default.
-@MainActor @Suite(.serialized) struct ProviderNeutralUITests {
+@MainActor @Suite(.serialized, .isolatedSettings) struct ProviderNeutralUITests {
     private let account = UUID()
     private var dropboxRoot: URL { DropboxLocation(accountID: account).url }
     private var dropboxFolder: URL { DropboxLocation(accountID: account, itemID: "id:folder").url }
