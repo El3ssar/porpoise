@@ -20,6 +20,7 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'release:minor') ||
        contains(github.event.pull_request.labels.*.name, 'release:major'))
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     outputs:
       version: ${{ steps.bump.outputs.version }}
     steps:
@@ -27,6 +28,29 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
+      - name: Check existing full validation
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-proof.py
+      - name: Wait for full main CI before releasing
+        if: steps.proof.outputs.passed != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          # The merge event can arrive before Actions creates its main-push run.
+          RUN=''
+          for ((attempt=0; attempt<12; attempt++)); do
+            RUN=$(gh run list --workflow ci.yml --branch main --event push --commit "$COMMIT" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            if [ -n "$RUN" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$RUN" ]; then
+            echo '::error::No full main CI run or trusted proof for this merge. Complete full main CI, then rerun Release on merge.'
+            exit 1
+          fi
+          gh run watch "$RUN" --interval 30 --exit-status
       - id: bump
         env:
           LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}

@@ -83,10 +83,20 @@ jobs:
 
       # Reuse successful main-push CI or attested CI from an approved, merged PR with unchanged trusted controls.
       # Every build/test/security input must match; only unshipped documentation may differ.
-      # No proof, failed API lookup or changed build/test/security input means all checks run here.
+      # Publishing requires full proof; a fast PR pass cannot certify a release.
       - name: Find trusted CI proof
         id: ci
         run: python3 scripts/ci-proof.py
+
+      - name: Require full CI before publication
+        if: inputs.dry_run != true && steps.ci.outputs.passed != 'true'
+        run: |
+          echo '::error::No trusted full CI proof. Wait for or rerun full CI on this exact main commit, then rerun Release. Fast PR checks cannot certify a release.'
+          exit 1
+
+      - name: Identify packaging-only dry run
+        if: inputs.dry_run == true
+        run: echo 'Packaging dry run; this does not certify full UI or performance validation for a release.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Restore file times
         uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2

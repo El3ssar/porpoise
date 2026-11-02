@@ -26,13 +26,26 @@ jobs:
       actions: read
     outputs:
       passed: ${{ steps.proof.outputs.passed }}
+      profile: ${{ steps.scope.outputs.mode }}
+      test_filter: ${{ steps.scope.outputs.filter }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Workflow integrity
-        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py
+        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py && python3 scripts/test-pr-test-scope.py && python3 scripts/test-ci-profiles.py
+      - name: Select relevant PR tests; full validation on main
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/pr-test-scope.py --base HEAD^1 --head HEAD
+          else
+            echo 'mode=full' >> "$GITHUB_OUTPUT"
+            echo 'Main and manual CI run every gate.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Reuse verification only for identical tested inputs
         id: proof
         env:
@@ -59,8 +72,8 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests-${{ hashFiles('Package.resolved', 'Package.swift') }}-
+          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-${{ github.sha }}
+          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-tests${{ needs.proof.outputs.profile == 'filtered' && '-fast' || '' }}-${{ hashFiles('Package.resolved', 'Package.swift') }}-
       - name: Bundled tool cache integrity
         run: python3 scripts/test-bundled-tools.py && python3 scripts/test-workflow-pins.py BundledToolTests
       - name: Crash symbol tooling
@@ -96,8 +109,17 @@ jobs:
           # Hosted macOS does not reliably write .ips reports; retain the trapping stack in the job log.
           # System SSH cannot use the backtracer; its startup diagnostic must not contaminate the SSH protocol.
           SWIFT_BACKTRACE: enable=yes,interactive=no,output-to=stderr,warnings=suppressed
-        run: scripts/test-with-watchdog.sh --enable-code-coverage
+          PROFILE: ${{ needs.proof.outputs.profile }}
+          TEST_FILTER: ${{ needs.proof.outputs.test_filter }}
+        run: |
+          if [ "$PROFILE" = filtered ]; then
+            test -n "$TEST_FILTER"
+            scripts/test-with-watchdog.sh --filter "$TEST_FILTER"
+          else
+            scripts/test-with-watchdog.sh --enable-code-coverage
+          fi
       - name: Coverage of the logic layers
+        if: needs.proof.outputs.profile == 'full'
         run: python3 scripts/coverage.py --min 92
       - name: Save test compiler state even after a failed check
         if: ${{ !cancelled() && steps.test-cache.outputs.cache-primary-key != '' && steps.test-cache.outputs.cache-matched-key != steps.test-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
@@ -109,7 +131,7 @@ jobs:
   # The optimized shipping compile and the entire instrumented test suite use independent runners.
   shipping-build:
     needs: proof
-    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' && needs.proof.outputs.profile == 'full' }}
     runs-on: macos-26
     timeout-minutes: 25
     steps:
@@ -142,7 +164,7 @@ jobs:
 
   performance-budgets:
     needs: proof
-    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' && needs.proof.outputs.profile == 'full' }}
     permissions:
       contents: read
       actions: read
@@ -155,7 +177,7 @@ jobs:
   # Captures remain review artifacts; absent screen access is never mislabeled a visual pass.
   ui-acceptance:
     needs: proof
-    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' }}
+    if: ${{ !inputs.release_benchmark && needs.proof.outputs.passed != 'true' && needs.proof.outputs.profile == 'full' }}
     uses: ./.github/workflows/ui-acceptance.yml
 
   # Preserve the existing required-check name: it must cover every required job.
@@ -174,17 +196,25 @@ jobs:
           UI: ${{ needs.ui-acceptance.result }}
           PROOF: ${{ needs.proof.outputs.passed }}
           PROOF_STATUS: ${{ needs.proof.result }}
+          PROFILE: ${{ needs.proof.outputs.profile }}
         run: |
-          { test "$PROOF" = true && test "$PROOF_STATUS" = success; } || {
-            test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success && test "$UI" = success
-          }
+          test "$PROOF_STATUS" = success
+          if [ "$PROOF" = true ]; then
+            echo 'Reused trusted full CI evidence.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$PROFILE" = filtered ]; then
+            { test "$TESTS" = success && test "$SHIPPING" = skipped && test "$PERFORMANCE" = skipped && test "$UI" = skipped; } || exit 1
+            echo 'Fast PR checks passed. Full coverage, shipping, UI and performance validation run on main before release.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            test "$PROFILE" = full
+            { test "$TESTS" = success && test "$SHIPPING" = success && test "$PERFORMANCE" = success && test "$UI" = success; } || exit 1
+          fi
       - name: Attest the tested source tree
-        if: needs.proof.outputs.passed != 'true'
+        if: needs.proof.outputs.passed != 'true' && needs.proof.outputs.profile == 'full'
         env:
           CI_RESULTS: ${{ toJSON(needs) }}
         run: python3 scripts/ci-proof.py --attest ci-proof.json
       - name: Retain trusted CI evidence
-        if: needs.proof.outputs.passed != 'true'
+        if: needs.proof.outputs.passed != 'true' && needs.proof.outputs.profile == 'full'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ci-proof-${{ github.run_id }}-${{ github.run_attempt }}

@@ -82,10 +82,19 @@ python3 scripts/coverage.py --min 92
 ### CI and release validation
 
 CI checks the portable workflow, evidence, watchdog and budget-policy fixtures on Ubuntu before queuing macOS jobs.
-The macOS gates cover the optimized shipping build, the **entire** instrumented test suite, UI acceptance and app
-performance. The test job runs BusyPool, MemoryBudget and ScannerStarvation serially in their own process before
+Ordinary PRs changing reviewed app inputs or individual test files get a cached debug build and relevant test
+suites, without coverage instrumentation or the separate shipping, UI-acceptance and strict benchmark jobs.
+Reviewed preview, folder and transfer UI paths have explicit suite groups; other app Swift changes run all app
+tests. Library, resource, support, package, CI-control, unknown, deleted and renamed paths require full checks.
+The selector validates the actual PR merge and reviewed package graph, and logs its selection. This first version
+is conservative: not every PR qualifies, and a cold debug build still takes time. Fast and covered build caches are
+separate. A fast PR success cannot create a full CI attestation.
+
+Main, manual CI and conservative PR fallbacks cover the optimized shipping build, the **entire** instrumented test
+suite, UI acceptance and app performance. The test job runs BusyPool, MemoryBudget and ScannerStarvation serially in their own process before
 the ordinary suite, plus formatting, helper freshness and the combined logic-layer coverage gate (92%).
-`build-and-test` aggregates every required gate and fails if a required job fails or is cancelled. `ci/**` branches and manual CI dispatch support timing
+`build-and-test` requires the selected tier's gates and fails if a required job fails or is cancelled. A fast pass
+explicitly reports that full validation remains for main. `ci/**` branches and manual CI dispatch support timing
 experiments without pushing main. For a nonpublishing release packaging probe, run
 `gh workflow run ci.yml --ref ci/<branch> -f release_benchmark=true` after its shipping job has populated the cache.
 This probe uses production compile flags, ad hoc signing and the DMG scan, with no release credentials.
@@ -98,9 +107,12 @@ allowlist. PR proof additionally binds the immutable tested merge checkout, its 
 and successful product gates. Squash and rebase merges can reuse the same tested contents even though their commit
 identities differ. Changes to `.github/` or `scripts/` cannot certify their own evidence machinery: their first
 landing still needs fresh main validation. Newer relevant failed or incomplete evidence prevents older greens
-from certifying the same inputs. Missing or ambiguous metadata and API errors fall back to full validation.
+from certifying the same inputs. Missing or ambiguous metadata and API errors cause CI to run full validation.
 History is limited to the latest 100 runs; reruns are ordered by their latest recorded activity, with unresolved
-results winning ambiguous ties. Release signing, disk-image scans and Sparkle signature verification always run.
+results winning ambiguous ties. Publishing requires trusted full CI proof before signing credentials are imported;
+if missing, complete full main CI on the same inputs and rerun Release. The packaging-only dry run retains its
+local test/coverage fallback, and cannot certify UI or performance. Release signing, disk-image scans and Sparkle
+signature verification always run when publishing.
 
 Performance checks separately fingerprint app and benchmark inputs. An unchanged reviewed package graph permits
 ordinary test-source and documentation changes to reuse a trusted, actually measured main result. Fixtures,
@@ -122,6 +134,8 @@ python3 scripts/test-test-completion.py
 python3 scripts/test-workflow-pins.py
 python3 scripts/test-performance-budgets.py
 python3 scripts/test-performance-inputs.py
+python3 scripts/test-pr-test-scope.py
+python3 scripts/test-ci-profiles.py
 ```
 
 The Python suites use synthetic fixtures and do not launch Porpoise. A filtered Swift run proves only its selected
@@ -214,7 +228,8 @@ legacy-helper symbol gap and a non-publishing release workflow rehearsal.
 There are three ways to cut a release. Use whichever fits:
 
 - **Label a pull request.** Before merging, add `release:patch`, `release:minor` or `release:major`. On merge, the
-  latest tag is bumped (v0.1.0 + `release:minor` → v0.2.0) and the release is published. Unlabelled pull requests
+  workflow waits for successful full main CI if no trusted full proof exists, then bumps the latest tag
+  (v0.1.0 + `release:minor` → v0.2.0) and publishes. A failed full run prevents publication. Unlabelled pull requests
   don't release anything, so several changes can pile up before you ship one.
 - **Push a tag.** `git tag v0.2.0 && git push origin v0.2.0`.
 - **By hand.** Actions › Release › *Run workflow*, then enter the version. It tags the chosen branch.
