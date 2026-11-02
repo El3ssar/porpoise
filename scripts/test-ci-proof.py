@@ -317,6 +317,53 @@ class ProofTests(unittest.TestCase):
         self.assertIsNone(proof.find_proof([run], self.repository, load_attestation=lambda _: value,
                                           load_pr=lambda _: pr, load_jobs=lambda _: []))
 
+    def test_real_shallow_checkout_needs_two_levels_to_attest_pr_merge_parents(self):
+        run, expected, _ = self.merged_fixture()
+        source = Path.cwd().resolve()
+        checkout = self.git('rev-parse', 'HEAD')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            event = root / 'event.json'
+            # GitHub's event base may be stale; only the checked-out merge's first parent is trusted.
+            event.write_text(json.dumps(dict(number=7, pull_request=dict(
+                head=dict(sha=run['head_sha']), base=dict(sha='0' * 40)))))
+            environment = dict(GITHUB_SHA=checkout, GITHUB_REPOSITORY=self.repository,
+                               GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
+                               GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='2',
+                               CI_RESULTS=json.dumps({name: dict(result='success') for name in proof.GATES}))
+            for depth in [1, 2]:
+                with self.subTest(depth=depth):
+                    clone = root / f'depth-{depth}'
+                    # A file:// transport is essential: ordinary local clones ignore --depth.
+                    subprocess.run(['git', 'clone', '--quiet', '--no-local', '--depth', str(depth),
+                                    source.as_uri(), str(clone)], check=True, capture_output=True)
+                    os.chdir(clone)
+                    try:
+                        self.assertEqual(self.git('rev-parse', '--is-shallow-repository'), 'true')
+                        self.assertEqual(self.git('rev-parse', 'HEAD'), checkout)
+                        parents = self.git('show', '-s', '--format=%P', 'HEAD').split()
+                        output = clone / 'attestation.json'
+                        with patch.dict(os.environ, environment):
+                            if depth == 1:
+                                self.assertEqual(parents, [])
+                                with self.assertRaisesRegex(ValueError, 'tested base/head merge'):
+                                    proof.attest(output)
+                                self.assertFalse(output.exists())
+                            else:
+                                self.assertEqual(parents, [expected['base'], run['head_sha']])
+                                proof.attest(output)
+                                value = json.loads(output.read_text())
+                                self.assertEqual(value['checkout'], checkout)
+                                self.assertEqual(value['base'], expected['base'])
+                                self.assertEqual(value['head'], run['head_sha'])
+                                self.assertEqual(value['application_tree'], expected['application_tree'])
+                                event.write_text(json.dumps(dict(number=7, pull_request=dict(
+                                    head=dict(sha=expected['base']), base=dict(sha=expected['base'])))))
+                                with self.assertRaisesRegex(ValueError, 'tested base/head merge'):
+                                    proof.attest(clone / 'wrong-head.json')
+                    finally:
+                        os.chdir(source)
+
     def test_attestation_creation_requires_exact_checkout_and_every_gate(self):
         run, _, _ = self.merged_fixture()
         event = Path('event.json').resolve()
