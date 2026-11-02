@@ -44,6 +44,7 @@ import Testing
     @Test(.isolatedSettings) func detailsExpandOnlyTheSpeedGraphAndPreserveMeasuredSamples() throws {
         let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/source")], destination: nil, job: nil)
         activity.state = .running
+        activity.startedAt = Date().addingTimeInterval(-11)
         activity.speedHistory.add(bytes: 0, at: 0)
         activity.speedHistory.add(bytes: 1024, at: 1)
         activity.speedHistory.interrupt()
@@ -57,6 +58,7 @@ import Testing
         #expect(card.isExpanded && card.preferredHeight == 268 && !card.speedHistory.isHidden)
         #expect(descendants(card, as: ThinProgressView.self).allSatisfy { $0.isHidden })
         #expect(card.speedHistory.samples == activity.transferSummary.speedSamples)
+        #expect(card.speedHistory.averageSpeed != nil)
         #expect(Set(card.speedHistory.samples.map(\.segment)).count == 2)
         #expect(descendants(card, as: NSTableView.self).isEmpty)
         disclosure.performClick(nil)
@@ -114,7 +116,7 @@ import Testing
         defer { app.appearance = previous; Theme.lookChanged() }
         let activity = Activity(
             kind: .copy, sources: [URL(fileURLWithPath: "/fixture/Photo Library")], destination: URL(fileURLWithPath: "/fixture/Backup"), job: nil)
-        activity.state = .running
+        activity.state = .running; activity.startedAt = Date().addingTimeInterval(-72)
         var bytes: Int64 = 0
         for second in 0...64 {
             if second == 30 { activity.speedHistory.interrupt(); activity.rate.reset() }
