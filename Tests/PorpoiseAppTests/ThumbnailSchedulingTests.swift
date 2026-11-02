@@ -170,13 +170,15 @@ import Testing
         let frame = scratch.url.appendingPathComponent("frame.png")
         try Self.png.write(to: frame)
         let log = scratch.url.appendingPathComponent("runs.log")
-        // Stands in for ffmpeg: logs its run, takes a while, then writes the frame to its last argument.
+        let release = scratch.url.appendingPathComponent("release")
+        defer { try? Data().write(to: release) }
+        // Hold the actual processes until the viewport has changed; file size and sleeps are not a clock.
         let tool = scratch.url.appendingPathComponent("fake-ffmpeg")
         try """
         #!/bin/sh
         for last; do :; done
         echo "start $$" >> '\(log.path)'
-        sleep 0.4
+        while [ ! -f '\(release.path)' ]; do sleep 0.01; done
         cp '\(frame.path)' "$last"
         """.write(to: tool, atomically: true, encoding: .utf8)
         #expect(chmod(tool.path, 0o755) == 0)
@@ -192,11 +194,12 @@ import Testing
         let thumbnails = Thumbnails(cache: cache)
         let viewport = Viewport()
         var ready: [Int] = [], peak = 0
+        var publicationCounts: [(stored: Int, ready: Int)] = []
         let observer = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { n in
             MainActor.assumeIsolated {
                 guard let url = n.object as? URL, let row = items.firstIndex(where: { $0.url == url }) else { return }
                 ready.append(row)
-                #expect(cache.stored.count == ready.count, "every ready follows its frame's cache insertion")
+                publicationCounts.append((cache.stored.count, ready.count))
                 // NSCache can evict under pressure. Force it here, after publication, instead of relying on load.
                 cache.removeAllObjects()
             }
@@ -206,16 +209,19 @@ import Testing
         for row in viewport.shown { _ = thumbnails.thumbnail(for: items[row], size: 64, owner: viewport) }
         await expectEventually {
             peak = max(peak, thumbnails.scheduler.runningCount(.video))
-            return thumbnails.scheduler.runningCount(.video) == 2
+            let runs = (try? String(contentsOf: log, encoding: .utf8))?.split(separator: "\n").count ?? 0
+            return thumbnails.scheduler.runningCount(.video) == 2 && runs == 2
         }
         viewport.shown = 15..<20
         for row in viewport.shown { _ = thumbnails.thumbnail(for: items[row], size: 64, owner: viewport) }
+        try Data().write(to: release)
         await expectEventually {
             peak = max(peak, thumbnails.scheduler.runningCount(.video))
             return thumbnails.outstanding == 0
         }
         #expect(peak <= 2)
         #expect(Set(ready) == Set(15..<20), "published \(ready.sorted())")
+        #expect(publicationCounts.allSatisfy { $0.stored == $0.ready }, "every ready follows its frame's cache insertion")
         // Check generation independently of an evictable cache. The observer checks store-before-publication.
         #expect(cache.stored.count == 5)
         #expect(cache.stored.allSatisfy { $0.image.size == NSSize(width: 64, height: 64) })
@@ -226,7 +232,7 @@ import Testing
         #expect((5...2 + 5 + 2).contains(runs), "\(runs) ffmpeg runs")
     }
 
-    @Test(.timeLimit(.minutes(2))) func cancellingAVideoFrameStopsFfmpeg() async throws {
+    @Test(.isolatedSettings, .timeLimit(.minutes(2))) func cancellingAVideoFrameStopsFfmpeg() async throws {
         let scratch = try Scratch()
         let tool = scratch.url.appendingPathComponent("stuck-ffmpeg")
         let pidFile = scratch.url.appendingPathComponent("ffmpeg.pid")
