@@ -87,9 +87,15 @@ public final class GitStatusService: @unchecked Sendable {
                 guard try resolved.resourceValues(forKeys: [.volumeIsLocalKey]).volumeIsLocal == true else { throw GitCommand.Failure.command }
                 // Ordinary folders need no subprocess; .git can be a directory or a worktree/submodule pointer.
                 var candidate = resolved
-                while !FileManager.default.fileExists(atPath: candidate.appendingPathComponent(".git").path) {
-                    let parent = candidate.deletingLastPathComponent()
-                    guard parent != candidate else { throw GitCommand.Failure.command }
+                while true {
+                    guard observation.isActive else { return }
+                    guard ProcessInfo.processInfo.systemUptime < deadline else { throw GitCommand.Failure.budget }
+                    if FileManager.default.fileExists(atPath: candidate.appendingPathComponent(".git", isDirectory: false).path) { break }
+                    // The parent URL of / can contain additional .. components.
+                    // Stop the search at /. Compare the file paths.
+                    guard candidate.path != "/" else { throw GitCommand.Failure.command }
+                    let parent = candidate.deletingLastPathComponent().standardizedFileURL
+                    guard parent.path != candidate.path else { throw GitCommand.Failure.command }
                     candidate = parent
                 }
                 try Self.validateLocalMetadata(candidate.appendingPathComponent(".git"))
