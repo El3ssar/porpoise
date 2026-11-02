@@ -47,6 +47,7 @@ final class TransferProgressView: NSView {
         disclosure.setAccessibilityLabel("Show transfer details")
         disclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
         disclosure.imagePosition = .imageLeading
+        disclosure.toolTip = "Show transfer speed and timing"
         for view in [progress, controls, disclosure, speedHistory] as [NSView] { addSubview(view) }
         speedHistory.isHidden = true
         Theme.whenChanged(self) { [weak self] in self?.applyTheme() }
@@ -95,6 +96,7 @@ final class TransferProgressView: NSView {
         percentage.isHidden = isExpanded || progress.isIndeterminate
         disclosure.image = NSImage(systemSymbolName: isExpanded ? "chevron.up" : "chevron.down", accessibilityDescription: nil)
         disclosure.setAccessibilityLabel(isExpanded ? "Hide transfer details" : "Show transfer details")
+        disclosure.toolTip = isExpanded ? "Hide transfer speed and timing" : "Show transfer speed and timing"
         disclosure.setAccessibilityValue(isExpanded ? 1 : 0)
         needsLayout = true
         onHeightChanged?()
@@ -150,8 +152,9 @@ final class TransferProgressView: NSView {
             disclosure.setAccessibilityValue(0)
             onHeightChanged?()
         }
-        let actions =
+        var actions =
             presentation.hasFailures && !presentation.actions.contains(.failures) ? [.failures] + presentation.actions : presentation.actions
+        if activity.state == .interrupted, !actions.contains(.retry) { actions.insert(.retry, at: 0) }
         setActions(actions, allowsDismissal: activity.state.isEnded)
         setAccessibilityLabel(activity.title + ". " + counts.stringValue + ". " + current.stringValue)
         needsLayout = true
@@ -175,8 +178,9 @@ final class TransferProgressView: NSView {
             default: label = "Retry"
             }
             let button = ClosureButton(title: label) { [weak self] _ in self?.run(action) }
-            button.controlSize = .small; button.bezelStyle = .rounded; button.toolTip = action.help
-            button.setAccessibilityLabel(action.help); controls.addArrangedSubview(button)
+            button.controlSize = .small; button.bezelStyle = .rounded
+            button.toolTip = action == .cancel ? "Cancel this transfer" : action.help
+            button.setAccessibilityLabel(label); controls.addArrangedSubview(button)
         }
         if !secondary.isEmpty {
             let more = NSPopUpButton(frame: .zero, pullsDown: true)
