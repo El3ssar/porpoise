@@ -257,7 +257,15 @@ class Run:
         wait_until(lambda: b.state()["url"].endswith("/Photos"), self.args.step_timeout, "Photos to open")
         self.check("browse: into a folder", b.state()["rows"] == ["2026"], b.state()["rows"])
         b.send("action", "goBack:")
-        s = wait_until(lambda: (lambda s: s if not s["url"].endswith("/Photos") else None)(b.state()), self.args.step_timeout, "Back")
+
+        def back_state():
+            state = b.state()
+            # Navigation changes the URL before the asynchronous listing restores its current row.
+            ready = (os.path.realpath(state["url"]) == os.path.realpath(self.demo)
+                     and state["current"] == "Photos" and "Photos" in state["rows"])
+            return state if ready else None
+
+        s = wait_until(back_state, self.args.step_timeout, "Back to restore Photos as current")
         self.check("browse: Back returns with the folder current", s["current"] == "Photos", s)
         for mode in ["details", "compact", "columns", "icons"]:
             b.send("mode", mode)
