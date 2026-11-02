@@ -1,5 +1,8 @@
 # W-55 Google Drive M1 engine handoff
 
+> Historical worker receipt for the commits named below; not current release or live-account certification.
+> Current functionality is described in [cloud provider contracts](../design/CLOUD_PROVIDERS.md) and [CHANGELOG.md](../../CHANGELOG.md).
+
 Validated 2026-10-16 in the isolated `hteam/porpoise-drive` worktree. Implementation commits: `4018ba7`, `a39493f`, `381fab8`. Lead integrates; nothing was pushed, merged into main, or released.
 
 ## Delivered

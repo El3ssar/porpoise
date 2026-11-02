@@ -80,7 +80,7 @@ import Testing
         #expect(run.exitStatus == 0 && run.output == names.map { "<" + scratch.path($0).path + ">\n" }.joined())
         #expect(!FileManager.default.fileExists(atPath: scratch.path("INJECTED").path))
         ActivityWindowController.shared.showTools()
-        defer { ActivityWindowController.shared.window?.close(); CustomToolRunner.shared.clearFinished() }
-        try await capture(try #require(ActivityWindowController.shared.window), name: "activity")
+        defer { CustomToolOutputWindowController.shared.window?.close(); CustomToolRunner.shared.clearFinished() }
+        try await capture(try #require(CustomToolOutputWindowController.shared.window), name: "tool-output")
     }
 }

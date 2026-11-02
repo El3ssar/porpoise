@@ -1,6 +1,9 @@
 # Swift concurrency migration
 
-Porpoise currently builds in Swift 5 language mode. W-188 enables complete checking in an **independent source snapshot**, rather than changing release settings. A successful checked build means the compiler finished; it does not mean warning-free or race-free. The remaining diagnostics are migration work, including warnings in test fixtures and SwiftTerm.
+> Migration guide with historical W-188 complete-checking evidence. Its warning inventory is not the
+> current normal-build warning count or a count of proven races. Re-run the isolated audit before prioritizing individual old diagnostics.
+
+Porpoise currently builds in Swift 5 language mode. W-188 enables complete checking in an **independent source snapshot**, rather than changing release settings. A successful checked build means the compiler finished; it does not mean warning-free or race-free. The complete-checking inventory below is historical migration evidence. It is separate from normal shipping-build diagnostics; for example, the remote-provider capture in `RemoteOpener.swift` needs an explicit worker/Sendable contract, not warning suppression.
 
 ## Reproduce and retain evidence
 
@@ -28,7 +31,7 @@ The parser's routing is conservative prioritization, not proof that a warning is
 
 These changes add no blanket unchecked conformances, preconcurrency imports, global strict-checking suppression or language-mode switch.
 
-## Ranked remaining work
+## W-188 remaining-work inventory (historical; recheck before scheduling)
 
 1. **P1: service facades and worker handoffs.** `Sources/PorpoiseServices/FileOperations/FileOperationsController.swift:7` and extensions, `Locations/SearchRunner.swift:8`, `DirectoryModel`, `CloudEditCoordinator`, `Cloud/Offline/CloudOffline.swift:41`, and the cloud backend facades carry mutable state between queues and actor tasks. Their main-thread conventions need compiler-visible ownership. Split each operation into a MainActor coordinator and immutable Sendable request/result; snapshot captured `var` values before dispatch. Cancellation, generation checks, progress and conflict replies must survive the split. Audit backend provider/quotas dictionaries and callback registration alongside the facade: annotating only its initializer does not establish ownership of later reads. Verify with fake servers, stale-completion/cancel/retry tests, then the full watchdog.
 2. **P1: public global configuration and callback storage.** `Settings.shared/store/isTesting`, `ConnectionCredentials.s3Store`, `RemoteOpener.openFile/rewatchOnMain`, app roots and test overrides are not made safe by `nonisolated(unsafe)`. Separate immutable startup configuration from mutable runtime settings. Actor-isolate UI callbacks; use a locked value for configuration accessed by workers. Test overrides must be restored and tests serialized where ownership is process-wide. Do not claim an injected closure is Sendable without auditing its captures.

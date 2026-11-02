@@ -1,5 +1,8 @@
 # R-16 module split validation
 
+> Historical validation receipt for the named commits and fixtures. Recorded counts, timings and local-only
+> integration statements are not a fresh result for main. See the [documentation index](../README.md) for current contracts.
+
 Base: `3a0f6e1` (R-13/R-14/R-15 and the preceding small refactors integrated).
 Worker branch: `hteam/porpoise-modsplit`. No push, merge or publication.
 

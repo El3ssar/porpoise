@@ -1,8 +1,12 @@
 # Design audit and direction
 
+> Design direction with an early audit retained below. The old problem/fix table is historical, not a current
+> defect inventory or a literal shortcut map. Use [the design system](../design/DESIGN-SYSTEM.md), [ROADMAP.md](../ROADMAP.md)
+> and the current source for accepted behavior.
+
 Goal: Dolphin's structure and behavior, presented the way a current macOS app (Finder, Mail, Xcode 26+) presents itself.
 
-## Audit of the current app
+## Historical early audit
 
 | # | Problem | Why it feels un-Mac | Fix |
 |---|---|---|---|
@@ -11,7 +15,7 @@ Goal: Dolphin's structure and behavior, presented the way a current macOS app (F
 | 3 | Flat hover buttons, one per icon | macOS 26+ groups toolbar controls in **Liquid Glass capsules** (Back/Forward together, trailing actions together) | `NSGlassEffectView` groups: Back+Forward, View mode, location field, Split+Search+Menu |
 | 4 | Two different bottom elements (Dolphin's corner box + floating zoom pill) | Inconsistent; the pill floats over content | One **full-width status bar** like Dolphin's "Full width" mode, done Mac-style: thin, translucent, hairline on top. Left: folder/selection info; right: icon-size slider and a disk-space capsule bar |
 | 5 | Option+←/→ is Back/Forward (Dolphin's Alt) | Mac users expect ⌘[ / ⌘] for history; Option+arrows are free | ⌥← / ⌥→ switch between split panes; ⌘[ / ⌘] and ⌘← / ⌘→ Back/Forward (not while a text field is edited); ⌫ still Back; tabs on ⌃Tab and ⇧⌘[ / ⇧⌘] (bound as ⌘{ / ⌘}) |
-| 8 | Dolphin's keys by default: ⌘H showed hidden files, ⌘I filtered, Return opened, F2 (fn on a Mac keyboard) renamed, ⌦ trashed | Every Mac app hides on ⌘H; Finder, Path Finder and ForkLift use ⌘I for Get Info and Return to rename | Finder's keys by default: ⌘H Hide, ⇧⌘. hidden files, ⌘I Get Info, Return renames (F2 too), ⌘⌫ / ⌥⌘⌫ trash and delete, ⌥⌘F filter, ⌘1 / ⌘2 / ⌘3 Icons / Details / Compact. Dolphin's map is one click away in Settings › Shortcuts › Key set; Help › Keyboard Shortcuts (⌘?) lists what's in effect |
+| 8 | Dolphin's keys by default: ⌘H showed hidden files, ⌘I filtered, Return opened, F2 (fn on a Mac keyboard) renamed, ⌦ trashed | Every Mac app hides on ⌘H; Finder, Path Finder and ForkLift use ⌘I for Get Info and Return to rename | Finder's keys by default: ⌘H Hide, ⇧⌘. hidden files, ⌘I Get Info, Return renames (F2 too), ⌘⌫ / ⌥⌘⌫ trash and delete, ⌥⌘F filter, ⌘1 / ⌘2 / ⌘3 Icons / Details / Compact. Dolphin's map is one click away in Settings › Keyboard › Key set; Help › Keyboard Shortcuts (⌘?) lists what's in effect |
 | 6 | Terminal spans under the sidebar | With a full-height sidebar the panel belongs to the content column (like Xcode/VS Code panels) | Terminal docks at the bottom of the content column |
 | 7 | Information panel is a plain view | Mac inspectors share the sidebar's material | Inspector material on the right |
 

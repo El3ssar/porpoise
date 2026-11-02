@@ -1,5 +1,10 @@
 # Audit verification — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Baseline: `25c5fa7caae671e90d8eeca3d52308560c29869f`. Full local evidence is under `/tmp/porpoise-audit-2026-11-01/`; temporary artifacts may not survive machine cleanup. No product source or normal application settings were changed. Builds use build/; test fixtures use scratch storage and isolated defaults/bridge channels.
 
 ## Completed

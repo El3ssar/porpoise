@@ -4,6 +4,11 @@ Keep synchronous layout/drawing costs separate from presented-frame delivery. Th
 `PORPOISE_TEST_HOOKS` bridge's `perfbench` command flushes layout, drawing and Core Animation;
 it does not measure when frames reach the display.
 
+The measured results below are historical receipts for named workloads/revisions, not a
+new performance certification. Current policy comes from `Benchmarks/PerformanceBudgets/policy.json`
+and `.github/workflows/performance-budgets.yml`. Get Info scan time, full-session energy
+and presented frames remain separate workloads in [ROADMAP.md](../ROADMAP.md).
+
 ## Motion
 
 Every animation runs on `FrameClock` (`Theme/Motion.swift`), most of them through `Animator`, and each clock has
@@ -123,9 +128,14 @@ its frame trace demonstrates the strict budget.
 
 ## CI app budgets: paired latency and candidate-only idle
 
-`performance-budgets` is required by CI's existing `build-and-test` aggregate.
-It compares the PR base (or previous main-push commit) with the candidate on the
-same runner. Missing builds, unsupported probe APIs, incomplete workloads,
+Full CI requires `performance-budgets` through `build-and-test`. Reviewed fast PR profiles
+run relevant tests and integrity checks; they do not certify full performance or a release.
+Main/manual full validation can reuse approved, successful evidence only for matching
+trusted inputs. `performance-inputs.py` separately decides whether unchanged app/benchmark
+inputs have valid measured main evidence, need measurement or are blocked by a regression.
+The retained scope artifact records that decision; evidence reuse never means a fresh trial ran.
+
+A measured run compares its resolved base and candidate on the same runner. Missing builds, unsupported probe APIs, incomplete workloads,
 invalid data and unstable latency calibration fail the job. Release CI proof
 remains tied to the successful aggregate.
 
@@ -143,10 +153,11 @@ The checked protocol is `Benchmarks/PerformanceBudgets/policy.json`, schema 2:
   latency metrics. Their original A/B measurements are fixed; first valid
   verdicts freeze. Any primary regression stops retries immediately.
 
-A normal run launches 30 latency processes and3 idle processes. With both retry
-rounds it launches 58 latency processes and the same 3 idle processes. Only the
+A normal measured run launches 30 latency processes and 3 idle processes. With both retry
+rounds it launches at most 58 latency processes and the same 3 idle processes. A cold-launch-only
+recalibration keeps the same seven pairs/readiness checks but skips unscored listing/search work. Only the
 three idle processes take CPU windows: **45 seconds total**, compared with the
-previous protocol's30–58 minutes of windows. The seven latency pairs and two-round
+previous protocol's 30–58 minutes of windows. The seven latency pairs and two-round
 bound remain: the retained hosted run 39941766200 needed one search recalibration
 (initial band 1.5541, then 1.3272). There is no evidence to justify discarding pairs
 or selecting a shorter favorable subset. Runtime savings come from separating
@@ -229,6 +240,13 @@ Candidate compilation cannot overwrite the staged base; failed/mutated builds
 cannot fall back to it. Actual builds always run for both revisions—cache reuse
 never substitutes a labeled base executable for a failed candidate.
 
+The private `.build-budgets` compiler cache uses content-checked source restoration.
+Its key separates compile/instrumentation inputs from the measurement runner, so a
+measurement-only edit can reuse compatible compiler state. Source preparation still
+builds/stages both apps; staged apps and benchmark results are not compiler-cache entries.
+Normal test/shipping caches likewise restore timestamps only after verifying tracked
+content/mode through `cache-source-times.py`; old timestamp collisions cannot certify reuse.
+
 CI restores the same approved ffmpeg cache used by other jobs, keyed by OS,
 architecture, upstream source, build identity and script hashes. Every hit is
 verified by `scripts/build-ffmpeg.sh`; checksum, identity and license files travel
@@ -240,7 +258,7 @@ The target is **under 20 minutes typical and under 30 with retries**. The job ha
 artifact retention have cleanup time. The prior run spent 69 minutes, including
 44 minutes of idle windows and about 16.8 minutes of preparation. The new protocol
 removes repeated idle waits, shares the incremental build workspace and restores
-verified tool inputs; hosted duration must still be measured on the new source.
+verified tool inputs; actual hosted duration depends on cache state and calibration and must be reported for the measured run.
 
 ### Retained evidence and replay
 

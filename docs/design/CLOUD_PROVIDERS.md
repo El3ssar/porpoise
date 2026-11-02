@@ -75,7 +75,7 @@ separate evidence; fake-server tests do not authorize real-account probing.
 ## Dropbox engine (W-73)
 
 `CloudProviderDescriptor` drives Connect, sidebar roots, Settings, browser links and deletion/Undo policy.
-`CompositeCloudBackend` composes Drive and Dropbox account adapters. `CloudFileProvider` supplies cached
+`CompositeCloudBackend` composes Drive, Dropbox, OneDrive and Box account adapters. `CloudFileProvider` supplies cached
 browsing, previews and playback; `CloudTransferProvider` preserves opaque destination IDs in Activity.
 Dropbox Connect is enabled only when a nonblank app key resolves from env, Settings or Info.plist; without it
 the tile remains Coming soon. URL routing and the Settings key field remain available independently.
@@ -119,8 +119,9 @@ UI's capabilities and confirmation flow. The engine never calls permanent-delete
 
 `DropboxCloudBackend` owns explicit foreground/check lifecycle, retained namespace providers and shared offline
 sources. Cloud editing routes through `CloudEditing` with durable conditional Dropbox save-back. Deletes
-require confirmation and offer no automatic Undo. Transfers between Dropbox and other remote protocols
-currently require an intermediate local folder; local copy in/out and same-account native copies are supported.
+require confirmation and offer no automatic Undo. Cross-provider transfers use `RemoteTransferJob.transferCloud`: the shared journal coordinates verified local
+staging and destination publication; callers do not need to create an intermediate local folder themselves.
+Same-account native copies are used when the provider supports them.
 Settings accepts the public Dropbox app key; app packaging embeds `PORPOISE_DROPBOX_APP_KEY` as `DropboxAppKey`.
 
 The loopback fixture is `scripts/fake-dropbox-server.py`. It supports latency, per-response bandwidth, aggregate bandwidth,

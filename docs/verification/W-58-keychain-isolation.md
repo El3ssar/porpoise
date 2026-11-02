@@ -1,5 +1,8 @@
 # W-58: test and review credential isolation
 
+> Historical validation receipt for the named commits and fixtures. Recorded counts, timings and local-only
+> integration statements are not a fresh result for main. See the [documentation index](../README.md) for current contracts.
+
 Validated 2026-10-16 on `hteam/porpoise-keychain2`, rebased onto UI-integrated main `7ec213f`. Lead integrates; no push or merge into main.
 
 ## Change

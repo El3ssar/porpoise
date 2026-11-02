@@ -296,11 +296,16 @@ class Run:
         with open(source, "rb") as a, open(target, "rb") as c:
             self.check("copy: the copy matches its source", a.read() == c.read())
         jobs = wait_until(lambda: (lambda j: j if j and all(x["state"] == "completed" for x in j) else None)(
-            b.ask("transferstate", parse=json.loads)), self.args.step_timeout, "the copy to finish in Activity")
-        self.check("copy: Activity shows it completed", jobs[-1]["state"] == "completed", jobs)
+            b.ask("transferstate", parse=json.loads)), self.args.step_timeout, "the copy to finish")
+        self.check("copy: the operation completed", jobs[-1]["state"] == "completed", jobs)
+        wait_until(lambda: not any(w.startswith("Transfers") for w in b.windows()),
+                   self.args.step_timeout, "successful transfer progress to close")
+        self.check("copy: successful progress closes automatically", True)
         b.send("action", "showActivity:")
-        wait_until(lambda: any(w.startswith("Transfers") for w in b.windows()), self.args.step_timeout, "the Transfers window")
-        self.capture("30-activity", window="Transfers")
+        b.state()  # Let the app process the explicit command before checking its empty state.
+        self.check("copy: completed jobs do not reopen Transfers",
+                   not any(w.startswith("Transfers") for w in b.windows()))
+        self.capture("30-copy-complete")
 
     def connect(self):
         b = self.bridge

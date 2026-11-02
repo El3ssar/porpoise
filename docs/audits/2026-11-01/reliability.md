@@ -1,5 +1,10 @@
 # Porpoise reliability, safety and Finder parity audit — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Scope: read-only source inspection of filesystem operations, recovery/undo, remote adapters, shared cloud lifecycle/transfer services, helper policy/mechanics, automation endpoint, provider contracts and CI/UI acceptance. No product source edits, application launches, live accounts, hardware operations or tests were performed by this reviewer. Findings below are source-confirmed control-flow defects; concurrent scenarios have not been reproduced in a running app. Main paths are absolute to make evidence easy to inspect.
 
 ## Highest priority findings

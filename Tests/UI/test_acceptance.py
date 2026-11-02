@@ -61,6 +61,33 @@ class DelayedBackBridge:
         return {"url": self.demo, "rows": parent_rows, "current": current, "mode": self.mode}
 
 
+class CompletedTransferBridge:
+    """A successful real-file copy whose progress popup can lag behind completion."""
+
+    def __init__(self, close_after=3):
+        self.close_after = close_after
+        self.window_reads = 0
+        self.commands = []
+
+    def send(self, command, argument):
+        self.commands.append((command, argument))
+        if command == "transfercopy":
+            source, folder = argument.split("|")
+            shutil.copyfile(source, os.path.join(folder, os.path.basename(source)))
+
+    def ask(self, command, parse=None):
+        return [{"state": "completed"}]
+
+    def windows(self):
+        self.window_reads += 1
+        if self.close_after is None or self.window_reads < self.close_after:
+            return ["Transfers"]
+        return ["Porpoise"]
+
+    def state(self):
+        return {"mode": "icons"}
+
+
 def make_run(out, **overrides):
     args = dict(app="/nonexistent", looks="light", out=out, run_id="selftest", launch_timeout=1, step_timeout=1, max_failures=2)
     args.update(overrides)
@@ -71,6 +98,31 @@ def make_run(out, **overrides):
 
 
 class AcceptanceRunnerTests(unittest.TestCase):
+    def test_successful_copy_waits_for_progress_to_close(self):
+        with tempfile.TemporaryDirectory() as out:
+            run = make_run(out)
+            self.addCleanup(shutil.rmtree, run.scratch, True)
+            run.demo = os.path.join(out, "Demo")
+            run.fixtures(run.demo)
+            run.bridge = CompletedTransferBridge()
+            run.capture = lambda *args: None
+            run.copy_and_activity()
+            self.assertGreaterEqual(run.bridge.window_reads, 3)
+            self.assertTrue(all(row["ok"] for row in run.results))
+            self.assertIn(("action", "showActivity:"), run.bridge.commands)
+            self.assertTrue(any(row["check"] == "copy: successful progress closes automatically" for row in run.results))
+
+    def test_successful_copy_with_lingering_progress_fails(self):
+        with tempfile.TemporaryDirectory() as out:
+            run = make_run(out, step_timeout=0.05)
+            self.addCleanup(shutil.rmtree, run.scratch, True)
+            run.demo = os.path.join(out, "Demo")
+            run.fixtures(run.demo)
+            run.bridge = CompletedTransferBridge(close_after=None)
+            run.capture = lambda *args: None
+            with self.assertRaisesRegex(acceptance.StepFailed, "successful transfer progress to close"):
+                run.copy_and_activity()
+
     def test_back_waits_for_current_row_after_url_returns(self):
         with tempfile.TemporaryDirectory() as out:
             run = make_run(out)

@@ -1,5 +1,8 @@
 # Command palette and custom controls
 
+> Implementation contract with historical verification notes. Test totals, captures and measurements below
+> are receipts for their original checkpoints, not new verification of this checkout. Current work is tracked in [ROADMAP.md](../../ROADMAP.md).
+
 Core's `CommandSearch` normalizes case and diacritics, then ranks exact matches, prefixes, substrings and fuzzy
 subsequences. Subsequence scoring rewards adjacency and word boundaries, using dynamic programming to avoid an early
 poor match masking a better alignment. Multiword queries may use title, category, path and keywords; title matches rank

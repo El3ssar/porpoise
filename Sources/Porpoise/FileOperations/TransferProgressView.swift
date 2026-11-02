@@ -9,43 +9,45 @@ final class TransferProgressView: NSView {
     private let current = NSTextField(labelWithString: "")
     private let progress = ThinProgressView(thickness: 6, label: "Transfer progress")
     private let amount = NSTextField(labelWithString: "")
-    private let speed = NSTextField(labelWithString: "")
+    private let percentage = NSTextField(labelWithString: "")
     private let remaining = NSTextField(labelWithString: "")
     private let controls = NSStackView()
-    private let disclosure = NSButton(title: "Show Speed", target: nil, action: nil)
+    private let disclosure = NSButton(title: "Details", target: nil, action: nil)
     let speedHistory = SpeedHistoryView(frame: .zero)
     private weak var activity: Activity?
     private weak var parentWindow: NSWindow?
     private var actions: [ActivityAction] = []
     private(set) var isExpanded = false
     var onHeightChanged: (() -> Void)?
-    var preferredHeight: CGFloat { isExpanded ? 278 : 168 }
+    var onDismiss: (() -> Void)?
+    var preferredHeight: CGFloat { isExpanded ? 268 : 164 }
     override var isFlipped: Bool { true }
 
     init(window: NSWindow?) {
         parentWindow = window
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Tokens.Radius.small
-        layer?.borderWidth = 1
         title.font = Tokens.font(.headline)
         counts.font = Tokens.font(.body, digits: true)
-        current.font = Tokens.font(.footnote)
+        current.font = Tokens.font(.callout)
         amount.font = Tokens.font(.footnote, digits: true)
-        speed.font = Tokens.font(.footnote, digits: true)
+        percentage.font = Tokens.font(.footnote, digits: true)
         remaining.font = Tokens.font(.footnote)
-        for label in [title, counts, current, amount, speed, remaining] {
+        for label in [title, counts, current, amount, percentage, remaining] {
             label.lineBreakMode = .byTruncatingMiddle
             addSubview(label)
         }
-        speed.alignment = .right
+        percentage.alignment = .right
         remaining.alignment = .right
         controls.orientation = .horizontal
         controls.spacing = Tokens.Space.s
         disclosure.bezelStyle = .inline
         disclosure.controlSize = .small
         disclosure.target = self; disclosure.action = #selector(toggleSpeed)
-        disclosure.setAccessibilityLabel("Show transfer speed graph")
+        disclosure.setAccessibilityLabel("Show transfer details")
+        disclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+        disclosure.imagePosition = .imageLeading
+        disclosure.toolTip = "Show transfer speed and timing"
         for view in [progress, controls, disclosure, speedHistory] as [NSView] { addSubview(view) }
         speedHistory.isHidden = true
         Theme.whenChanged(self) { [weak self] in self?.applyTheme() }
@@ -60,37 +62,41 @@ final class TransferProgressView: NSView {
 
     private func applyTheme() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Theme.viewBackground.cgColor
-            layer?.borderColor = Theme.separator.cgColor
+            layer?.backgroundColor = Theme.windowBackground.cgColor
             title.textColor = Theme.viewText
-            counts.textColor = Theme.viewText
-            for label in [current, amount, speed, remaining] { label.textColor = Theme.viewTextInactive }
+            counts.textColor = Theme.viewTextInactive
+            current.textColor = Theme.viewText
+            for label in [amount, percentage, remaining] { label.textColor = Theme.viewTextInactive }
         }
         speedHistory.needsDisplay = true
     }
 
     override func layout() {
         super.layout()
-        let width = max(0, bounds.width - 24)
-        title.frame = CGRect(x: 12, y: 10, width: width, height: 18)
-        counts.frame = CGRect(x: 12, y: 34, width: width, height: 18)
-        current.frame = CGRect(x: 12, y: 56, width: width, height: 16)
-        progress.frame = CGRect(x: 12, y: 78, width: width, height: 10)
-        amount.frame = CGRect(x: 12, y: 96, width: width * 0.62, height: 16)
-        speed.frame = CGRect(x: 12 + width * 0.62, y: 96, width: width * 0.38, height: 16)
-        remaining.frame = CGRect(x: 12, y: 115, width: width, height: 16)
+        let width = max(0, bounds.width)
+        title.frame = CGRect(x: 0, y: 0, width: width, height: 18)
+        current.frame = CGRect(x: 0, y: 26, width: width, height: 18)
+        counts.frame = CGRect(x: 0, y: 52, width: width, height: 18)
+        progress.frame = CGRect(x: 0, y: 82, width: max(0, width - 48), height: 8)
+        percentage.frame = CGRect(x: max(0, width - 44), y: 76, width: 44, height: 18)
+        speedHistory.frame = CGRect(x: 0, y: 78, width: width, height: 116)
+        let metricsY: CGFloat = isExpanded ? 208 : 104
+        amount.frame = CGRect(x: 0, y: metricsY, width: width * 0.42, height: 18)
+        remaining.frame = CGRect(x: width * 0.42, y: metricsY, width: width * 0.58, height: 18)
         let controlsSize = controls.fittingSize
-        controls.frame = CGRect(x: max(12, bounds.width - 12 - controlsSize.width), y: 136, width: controlsSize.width, height: 24)
+        controls.frame = CGRect(x: max(0, width - controlsSize.width), y: metricsY + 32, width: controlsSize.width, height: 24)
         disclosure.sizeToFit()
-        disclosure.frame = CGRect(x: 12, y: 138, width: disclosure.frame.width, height: 20)
-        speedHistory.frame = CGRect(x: 12, y: 172, width: width, height: 96)
+        disclosure.frame = CGRect(x: 0, y: metricsY + 34, width: disclosure.frame.width, height: 20)
     }
 
     @objc private func toggleSpeed() {
         isExpanded.toggle()
         speedHistory.isHidden = !isExpanded
-        disclosure.title = isExpanded ? "Hide Speed" : "Show Speed"
-        disclosure.setAccessibilityLabel(isExpanded ? "Hide transfer speed graph" : "Show transfer speed graph")
+        progress.isHidden = isExpanded
+        percentage.isHidden = isExpanded || progress.isIndeterminate
+        disclosure.image = NSImage(systemSymbolName: isExpanded ? "chevron.up" : "chevron.down", accessibilityDescription: nil)
+        disclosure.setAccessibilityLabel(isExpanded ? "Hide transfer details" : "Show transfer details")
+        disclosure.toolTip = isExpanded ? "Hide transfer speed and timing" : "Show transfer speed and timing"
         disclosure.setAccessibilityValue(isExpanded ? 1 : 0)
         needsLayout = true
         onHeightChanged?()
@@ -115,51 +121,67 @@ final class TransferProgressView: NSView {
         current.stringValue =
             activity.state.isEnded ? presentation.detailLine : summary.currentName.isEmpty ? activity.statusText : summary.currentName
         current.toolTip = activity.state.isEnded ? activity.statusText : summary.currentName
-        current.textColor = presentation.hasFailures ? Theme.transferDanger : Theme.viewTextInactive
+        current.textColor = presentation.hasFailures ? Theme.transferDanger : Theme.viewText
         progress.fraction = activity.state == .completed && !presentation.hasFailures ? 1 : summary.fraction
         progress.isIndeterminate = presentation.isIndeterminate
         progress.alphaValue = presentation.isPaused ? 0.5 : 1
+        percentage.isHidden = isExpanded || presentation.isIndeterminate
         amount.stringValue =
             summary.totalBytes > 0
             ? "\(FileFormat.size(summary.doneBytes)) of \(FileFormat.size(summary.totalBytes))" : FileFormat.size(summary.doneBytes)
-        speed.stringValue = summary.speedText ?? "—"
+        percentage.stringValue = "\(Int((summary.fraction * 100).rounded()))%"
         remaining.stringValue =
             activity.state == .paused
-            ? "Paused" : activity.state.isEnded ? activity.state.rawValue.capitalized : summary.timeLeftText ?? activity.statusText
+            ? "Paused"
+            : activity.state.isEnded
+                ? activity.state.rawValue.capitalized
+                : [summary.speedText, summary.timeLeftText].compactMap { $0 }.joined(separator: " · ")
+        if remaining.stringValue.isEmpty { remaining.stringValue = activity.statusText }
         remaining.toolTip = remaining.stringValue
+        speedHistory.currentSpeed = summary.bytesPerSecond
+        // Skipped or reused bytes advance completion but are not transferred throughput.
+        speedHistory.averageSpeed = summary.elapsed > 0 ? Double(activity.progress?.transferredBytes ?? 0) / summary.elapsed : nil
         speedHistory.samples = summary.speedSamples
         let hasFinishedWithoutSamples = activity.state.isEnded && summary.speedSamples.count < 2
         disclosure.isHidden = hasFinishedWithoutSamples
         if hasFinishedWithoutSamples, isExpanded {
             isExpanded = false
             speedHistory.isHidden = true
-            disclosure.title = "Show Speed"
-            disclosure.setAccessibilityLabel("Show transfer speed graph")
+            progress.isHidden = false; percentage.isHidden = false
+            disclosure.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+            disclosure.setAccessibilityLabel("Show transfer details")
             disclosure.setAccessibilityValue(0)
             onHeightChanged?()
         }
-        setActions(presentation.actions)
+        var actions =
+            presentation.hasFailures && !presentation.actions.contains(.failures) ? [.failures] + presentation.actions : presentation.actions
+        if activity.state == .interrupted, !actions.contains(.retry) { actions.insert(.retry, at: 0) }
+        setActions(actions, allowsDismissal: activity.state.isEnded)
         setAccessibilityLabel(activity.title + ". " + counts.stringValue + ". " + current.stringValue)
         needsLayout = true
     }
 
-    private func setActions(_ desired: [ActivityAction]) {
-        guard desired != actions else { return }
+    private var offeredDismissal = false
+    private func setActions(_ desired: [ActivityAction], allowsDismissal: Bool) {
+        guard desired != actions || offeredDismissal != allowsDismissal else { return }
+        offeredDismissal = allowsDismissal
         actions = desired
         controls.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let primary = desired.filter { [.pause, .resume, .cancel, .retry].contains($0) }
+        let primary = desired.filter { [.pause, .resume, .cancel, .retry, .failures].contains($0) }
         let secondary = desired.filter { !primary.contains($0) }
         for action in primary {
             let label: String
             switch action {
             case .pause: label = "Pause"
             case .resume: label = "Resume"
-            case .cancel: label = "Stop"
+            case .cancel: label = "Cancel"
+            case .failures: label = "Show Errors"
             default: label = "Retry"
             }
             let button = ClosureButton(title: label) { [weak self] _ in self?.run(action) }
-            button.controlSize = .small; button.bezelStyle = .rounded; button.toolTip = action.help
-            button.setAccessibilityLabel(action.help); controls.addArrangedSubview(button)
+            button.controlSize = .small; button.bezelStyle = .rounded
+            button.toolTip = action == .cancel ? "Cancel this transfer" : action.help
+            button.setAccessibilityLabel(label); controls.addArrangedSubview(button)
         }
         if !secondary.isEmpty {
             let more = NSPopUpButton(frame: .zero, pullsDown: true)
@@ -172,6 +194,12 @@ final class TransferProgressView: NSView {
                 more.menu?.addItem(item)
             }
             controls.addArrangedSubview(more)
+        }
+        if allowsDismissal {
+            let dismiss = ClosureButton(title: "Dismiss") { [weak self] _ in self?.onDismiss?() }
+            dismiss.controlSize = .small; dismiss.bezelStyle = .rounded
+            dismiss.toolTip = "Dismiss this transfer without changing your files"
+            controls.addArrangedSubview(dismiss)
         }
     }
 

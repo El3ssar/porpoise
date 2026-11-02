@@ -1,6 +1,12 @@
 # Privileged helper filesystem boundary
 
-The helper retains its existing Objective-C protocol identity and selectors. A request still contains one of the fixed legacy arrays (`/bin/mv`, `/bin/cp`, `/bin/ln`, `/bin/mkdir`, `/bin/chmod`, `/bin/rm`, `/usr/bin/chflags`), but these strings identify operations: **the helper does not execute those programs**. `HelperRequests.run` validates the array itself, then serializes descriptor-based transactions. Signature verification and administrator membership checks remain in the XPC entry point. The helper reports protocol implementation version 6.
+The helper retains the Objective-C protocol identity used by installed copies. Current protocol implementation is **7** (`PorpoiseHelperInfo.version`). Legacy request arrays name fixed operations (`/bin/mv`, `/bin/cp`, `/bin/ln`, `/bin/mkdir`, `/bin/chmod`, `/bin/rm`, `/usr/bin/chflags`, `/usr/sbin/chown`); **the helper does not execute those programs**. Its `perform` entry validates the arrays and authorization before serialized descriptor-based transactions. Signature verification and administrator membership checks remain in the XPC entry point.
+
+## Approval and policy
+
+The helper determines the required tier from current path/object facts; approval is not inferred from caller identity alone. Standard actions use Porpoise's own Authorization Services right with a five-minute timeout. Protected actions (system configuration, startup persistence, other people's files/private data, ownership and elevated mode bits) ask every time. SIP-protected actions are never allowed. The system asks for administrator authentication, with Touch ID when available or a password. Porpoise drops its retained authorization on lock/sleep or user switch. Each operation rechecks its boundary so a replaced link cannot redirect an approved standard action into a protected location.
+
+Script/CLI/Shortcut transfer requests never use administrator retry or the helper. See [AUTOMATION.md](AUTOMATION.md) for that separate boundary. Protocol selector compatibility does not mean old unauthenticated execution paths can bypass `perform`.
 
 ## Binding the request to objects
 
@@ -22,7 +28,7 @@ Before capture, a flushed `recovery.json` inside the private stage records the o
 
 An abrupt helper exit can leave a `.porpoise-helper-<UUID>` directory beside the original operand; the payload is `item` for a capture or `new` for generated output. **Automatic discovery/recovery of orphan stages is not implemented.** An administrator must inspect retained records and validate identities before recovering an interrupted request; an occupied original name must not be overwritten. No power-loss or installed-root crash-recovery guarantee is claimed. Recursive deletion can partially complete before an error, just as an ordinary recursive removal can; remaining captured objects are restored or retained with a recovery location.
 
-The standard-user interactive administrator-password/AppleScript route is separate from this XPC helper route and is not redesigned by this change. Helper installation/removal scripts also retain their existing approval flow. The existing descriptor-based Trash ownership path retains its separate validation. The change does not certify every privileged path in the application.
+The standard-user interactive administrator-password/AppleScript fallback is separate from the installed XPC helper route. Its operation and destination checks must be reviewed independently; the descriptor guarantees above do not automatically certify it. Helper installation/removal has its own approval flow. Trash ownership handover is part of the validated helper request, with separate ownership checks.
 
 ## Verification and distribution
 

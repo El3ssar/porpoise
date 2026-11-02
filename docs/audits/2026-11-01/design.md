@@ -1,5 +1,10 @@
 # Porpoise UI/UX audit — 2026-11-01
 
+> Historical audit/implementation receipt for the revision and checks recorded below. Findings, open gates,
+> “current” descriptions and local-only publication statements apply to that checkpoint, not automatically to main.
+> Later releases and CI supersede parts of this record; use [CHANGELOG.md](../../../CHANGELOG.md) and the
+> [current roadmap](../../../ROADMAP.md). Evidence limitations remain part of the original receipt.
+
 Scope: read-only review of current UI source and existing screenshots. No app launch, no changes to settings or product code. Applied local mac-design and ux-design skills. Findings marked source-confirmed establish a reachable code path; they are not claims of an attended live reproduction. Absolute source root is `/Users/daniel/Projects/porpoise/`.
 
 ## Highest priority fixes

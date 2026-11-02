@@ -368,17 +368,23 @@ final class PropertiesWindow: SecondaryWindowController, NSTextFieldDelegate {
             guard let total else { return }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.sizeCount === cancellation, !cancellation.isCancelled else { return }
-                let sub = max(0, total.folders - (all.count == 1 && total.folders > 0 ? 1 : 0))
-                var text = "\(FileFormat.size(total.bytes)) (\(total.bytes.formatted()) bytes)"
-                if total.folders > 0 || all.count > 1 {
-                    text +=
-                        "\n\(total.files.formatted()) \(total.files == 1 ? "file" : "files"), \(sub.formatted()) \(sub == 1 ? "subfolder" : "subfolders")"
-                }
+                let text = Self.sizeDescription(total, selectionCount: all.count)
                 self.sizeLabel.stringValue = text
                 self.sizeLabel.toolTip = text
                 self.recalculateButton.isEnabled = true
             }
         }
+    }
+
+    /// A scan with unreadable descendants is a lower bound, not a complete smaller folder.
+    static func sizeDescription(_ total: TreeMeasure.Progress, selectionCount: Int) -> String {
+        let sub = max(0, total.folders - (selectionCount == 1 && total.folders > 0 ? 1 : 0))
+        var text = (total.errors.isEmpty ? "" : "At least ") + "\(FileFormat.size(total.bytes)) (\(total.bytes.formatted()) bytes)"
+        if total.folders > 0 || selectionCount > 1 {
+            text += "\n\(total.files.formatted()) \(total.files == 1 ? "file" : "files"), \(sub.formatted()) \(sub == 1 ? "subfolder" : "subfolders")"
+        }
+        if !total.errors.isEmpty { text += " (some items couldn’t be read)" }
+        return text
     }
 
     private func permissionsView() -> NSView {

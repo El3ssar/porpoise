@@ -1,5 +1,11 @@
 # CASA preparation for Porpoise (W-74)
 
+> Historical preparation/checklist from the W-74 review. Its provider policies, console status, source line numbers,
+> security findings and proposed fixes were not revalidated by the 2026-11-02 documentation refresh. Do not treat
+> “pending” or “today” below as a current verdict. Use [SECURITY.md](../../SECURITY.md), [helper security](../HELPER-SECURITY.md),
+> [dependencies](../DEPENDENCIES.md), the published [privacy policy](../site/privacy/index.html) and the [roadmap](../../ROADMAP.md).
+> Current OAuth approval/registration status needs operator verification; check current provider requirements before a submission.
+
 CASA (Cloud Application Security Assessment) is the security assessment Google requires for some apps that use
 restricted scopes. It is built on OWASP ASVS with "no proprietary requirements" (https://appdefensealliance.dev/casa).
 Porpoise is a **desktop app with no backend**: all user data stays on the Mac, and the only parties it talks to are

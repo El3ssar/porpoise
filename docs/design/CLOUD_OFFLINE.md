@@ -1,5 +1,9 @@
 # Download / Remove Download for every cloud account
 
+> Mixed current contract and retained design history. The W-79 two-state revision immediately below
+> supersedes older “kept” UI, mockups and shortcut/settings locations later in this document. Current Settings lives
+> in Accounts & Servers (cloud controls), Keyboard (shortcuts) and Files (transfer controls). See [the documentation index](../README.md).
+
 Status: built (W-66 design, W-68/W-69/W-72). **Revised by W-79: two states only** (below). That revision supersedes
 the UI sections further down (§§ 4–5: the `.kept` badge, the Keep Downloaded check item, "kept"/"recent" wording); the
 engine (store, pins, inheritance, eviction, sync) is unchanged.
@@ -22,7 +26,7 @@ from "downloaded" any more, for every provider.
 - **Properties:** "On this Mac" reads "In Google Drive only", "Waiting to download", "Downloading 41 %",
   "Downloading · 812 of 1,020 items", "Downloaded · 24.1 MB" (and "· with “Photos”" when a folder above is the one
   downloaded); the checkbox is **Keep on this Mac** (unchecking is Remove Download).
-- **Settings › Accounts › On this Mac:** "Recently opened files use up to …"; per account "3.1 GB downloaded · 820 MB
+- **Settings › Accounts & Servers › On this Mac:** "Recently opened files use up to …"; per account "3.1 GB downloaded · 820 MB
   of recently opened files"; "Files you download stay on this Mac until you choose Remove Download; they don’t count
   toward this."
 

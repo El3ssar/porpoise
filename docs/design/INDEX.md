@@ -1,6 +1,9 @@
 # Instant filename and content search
 
-Search indexing is **off by default**. Enable it in Settings → Search, select folders/volumes, and optionally enable content filtering. No unselected volume is traversed. Until the complete selected scope is ready, `SearchRunner` keeps the existing fd/ripgrep/Spotlight/simple-walk path. An inaccessible subtree also makes searches covering that subtree use the fallback; readable sibling scopes can still use the index.
+> Implementation contract with historical verification notes. Test totals, captures and measurements below
+> are receipts for their original checkpoints, not new verification of this checkout. Current work is tracked in [ROADMAP.md](../../ROADMAP.md).
+
+Search indexing is **off by default**. Enable it in Settings → Advanced → Search indexing, select folders/volumes, and optionally enable content filtering. No unselected volume is traversed. Until the complete selected scope is ready, `SearchRunner` keeps the existing fd/ripgrep/Spotlight/simple-walk path. An inaccessible subtree also makes searches covering that subtree use the fallback; readable sibling scopes can still use the index.
 
 ## Layout and execution
 

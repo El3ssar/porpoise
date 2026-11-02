@@ -1,5 +1,8 @@
 # M4 fast transfers and previews (W-70)
 
+> Historical validation receipt for the named commits and fixtures. Recorded counts, timings and local-only
+> integration statements are not a fresh result for main. See the [documentation index](../README.md) for current contracts.
+
 ## Behavior
 
 - Binary files at least 32 MiB download into a private, preallocated job partial with four to eight size-adaptive ranged requests. A 300 MiB file uses five streams. Small files retain the existing six-job batch path.

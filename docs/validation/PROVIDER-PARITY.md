@@ -1,5 +1,8 @@
 # Provider capability contract (W-199)
 
+> Current capability contract with historical verification receipts. The catalog/tests describe supported
+> capabilities; old run counts and timings below remain tied to their recorded checkpoints, not current full CI or real accounts.
+
 `ProviderCapabilityContractTests` runs one shared contract over This Mac, SFTP, FTP, SMB,
 S3, Google Drive, Dropbox, Box and OneDrive. The account-free `ProviderLocation` catalog
 is the source of capability declarations and the text in **Help → Location Capabilities**.
