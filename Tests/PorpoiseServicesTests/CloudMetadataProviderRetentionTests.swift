@@ -87,7 +87,8 @@ import Testing
         // The retention barrier drains queued pruning, not those network tasks; wait for the final eviction.
         await expectEventually {
             await client.metadataCache.settleRetention()
-            return provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == nil
+            return client.metadataCache.retentionStorageCounts.reads == 0
+                && provider.cachedListing(root) == rows && provider.cachedListing(folder.url) == nil
         }
         withExtendedLifetime(model) {}
     }
