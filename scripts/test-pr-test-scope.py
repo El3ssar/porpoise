@@ -70,15 +70,26 @@ class ScopeTests(unittest.TestCase):
                 text = (HERE.parent / f'Tests/PorpoiseAppTests/{name}.swift').read_text()
                 self.assertRegex(text, rf'\b(?:struct|class|extension)\s+{name}\b')
 
-    def test_direct_tests_select_declared_and_extended_suites_not_file_stem(self):
+    def test_changed_test_selects_whole_target_including_helpers_and_top_level_tests(self):
         self.write('Tests/PorpoiseAppTests/UnrelatedFilename.swift',
-                   '@Suite struct RealTests {}\nextension OtherTests {}\nclass Legacy: XCTestCase {}')
+                   '@Suite struct RealTests {}\n@Test func topLevel() {}\nfunc sharedHelper() {}')
         result = self.merge()
         self.assertEqual(result['mode'], 'filtered')
-        for name in ['RealTests', 'OtherTests', 'Legacy']:
+        for name in ['RealTests', 'OtherConsumerTests', 'topLevel']:
             self.assertTrue(self.matches(result, 'PorpoiseAppTests', name))
-        self.assertFalse(self.matches(result, 'PorpoiseAppTests', 'UnrelatedFilename'))
-        self.assertFalse(self.matches(result, 'PorpoiseAppTests', 'RealTestsMore'))
+        self.assertFalse(self.matches(result, 'PorpoiseServicesTests'))
+
+    def test_real_cloud_offline_top_level_test_and_helpers_require_full_target(self):
+        text = (HERE.parent / 'Tests/PorpoiseServicesTests/CloudOfflineTests.swift').read_text()
+        self.assertIn('func folderTotalsMatchAWalkPerFolder()', text)
+        self.write('Tests/PorpoiseServicesTests/CloudOfflineTests.swift', text + '\n// changed top-level test')
+        self.assertEqual(self.merge()['mode'], 'full')
+
+    def test_test_helper_without_suite_still_selects_all_consumers_in_owning_target(self):
+        self.write('Tests/PorpoiseAppTests/Helpers.swift', 'func sharedHelper() {}')
+        result = self.merge()
+        self.assertEqual(result['mode'], 'filtered')
+        self.assertTrue(self.matches(result, 'PorpoiseAppTests', 'AnotherConsumerTests'))
 
     def test_source_targets_include_every_reviewed_downstream(self):
         for target, expected in scope.DOWNSTREAM.items():
@@ -105,11 +116,11 @@ class ScopeTests(unittest.TestCase):
 
     def test_other_app_source_selects_entire_app_target_and_unions_changed_tests(self):
         self.write('Sources/Porpoise/Views/UnknownView.swift', 'new UI')
-        self.write('Tests/PorpoiseServicesTests/Extra.swift', 'struct ExplicitTests {}')
+        self.write('Tests/PorpoiseFileSystemTests/Extra.swift', 'struct ExplicitTests {}')
         result = self.merge()
         self.assertTrue(self.matches(result, 'PorpoiseAppTests', 'AnyAppTest'))
-        self.assertTrue(self.matches(result, 'PorpoiseServicesTests', 'ExplicitTests'))
-        self.assertFalse(self.matches(result, 'PorpoiseServicesTests', 'OtherTests'))
+        self.assertTrue(self.matches(result, 'PorpoiseFileSystemTests', 'ExplicitTests'))
+        self.assertTrue(self.matches(result, 'PorpoiseFileSystemTests', 'OtherTests'))
 
     def test_unknown_build_support_and_controls_require_full_checks(self):
         for path in ['.github/workflows/ci.yml', 'scripts/pr-test-scope.py', 'Resources/icon.svg',
@@ -127,7 +138,7 @@ class ScopeTests(unittest.TestCase):
                 self.git('checkout', '-q', 'feature')
 
     def test_resource_suites_always_require_isolated_full_pass(self):
-        for name in scope.RESOURCE_SUITES:
+        for name in ['BusyPoolTests', 'MemoryBudgetTests', 'ScannerStarvationTests']:
             with self.subTest(name=name):
                 self.git('reset', '--hard', self.base)
                 self.write(f'Tests/PorpoiseServicesTests/{name}.swift', f'struct {name} {{}}')
@@ -160,8 +171,8 @@ class ScopeTests(unittest.TestCase):
                 self.assertEqual(scope.select()['mode'], 'full')
                 self.git('checkout', '-q', 'feature')
 
-    def test_missing_mapped_suite_or_undetectable_test_requires_full_checks(self):
-        self.write('Tests/PorpoiseAppTests/NoDeclaration.swift', '// nothing recognizable')
+    def test_core_test_changes_require_full_checks(self):
+        self.write('Tests/PorpoiseCoreTests/NewTests.swift', 'struct NewTests {}')
         self.assertEqual(self.merge()['mode'], 'full')
 
     def test_missing_mapping_and_wrong_base_require_full_checks(self):

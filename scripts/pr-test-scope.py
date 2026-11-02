@@ -17,7 +17,6 @@ DOWNSTREAM = {
     'PorpoiseFileSystem': {'PorpoiseFileSystemTests', 'PorpoiseServicesTests', 'PorpoiseAppTests'},
     'PorpoiseServices': {'PorpoiseServicesTests', 'PorpoiseAppTests'},
 }
-RESOURCE_SUITES = {'BusyPoolTests', 'MemoryBudgetTests', 'ScannerStarvationTests'}
 # Reviewed UI consumers: include integration/layout/accessibility checks, not filename similarity.
 APP_GROUPS = {
     'Panels/InformationPanel.swift': ['InformationThumbnailTests', 'InformationPanelLayoutTests',
@@ -48,8 +47,7 @@ def regular(revision, path):
 
 def declarations(revision, path):
     text = git('show', f'{revision}:{path}').decode('utf-8')
-    # Include every declared/extended type, including nested suites and XCTest classes. Extra matching
-    # helper types only broaden selection. A test file with no recognized declaration falls back to full.
+    # Used only to validate the explicit reviewed UI groups, never to select changed test files.
     names = set(re.findall(r'\b(?:struct|class|enum|extension)\s+([A-Za-z_][A-Za-z_0-9]*)', text))
     return names
 
@@ -81,10 +79,11 @@ def select(base='HEAD^1', head='HEAD'):
                 return full('Changed file type')
             parts = path.split('/')
             if len(parts) == 3 and parts[0] == 'Tests' and parts[1] in TARGETS and path.endswith('.swift'):
-                names = declarations(head, path)
-                if not names or names & RESOURCE_SUITES:
-                    return full('Changed test needs full discovery or resource isolation')
-                patterns.update(re.escape(parts[1] + '.' + name) + r'[./]' for name in names)
+                # Files can contain top-level tests and helpers used by other suites: declarations
+                # do not establish dependencies. Run the whole owning target instead.
+                if parts[1] in {'PorpoiseCoreTests', 'PorpoiseServicesTests'}:
+                    return full('Changed test target requires full discovery and resource isolation')
+                patterns.add(re.escape(parts[1]) + r'\.')
             elif len(parts) >= 3 and parts[0] == 'Sources' and path.endswith('.swift'):
                 target = parts[1]
                 if target in DOWNSTREAM:
