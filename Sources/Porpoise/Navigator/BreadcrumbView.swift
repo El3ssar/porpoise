@@ -127,6 +127,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         case 123: focused = order[max(0, at - 1)]  // ←
         case 124: focused = order[min(order.count - 1, at + 1)]  // →
         case 49, 36, 76: activateSegment(i)  // Space, Return, Enter
+        case 125:  // ↓ opens the focused folder's children without a tiny pointer target.
+            if case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).hasHierarchy {
+                showSubfolderMenu(of: u, at: segments[i].rect)
+            } else {
+                activateSegment(i)
+            }
         default: super.keyDown(with: event)
         }
     }
@@ -258,54 +264,82 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         switch s.kind {
         case .placesButton: return 26
         case .rootArrow: return 24
-        case .arrow: return 18
-        case .more: return 22
+        case .arrow: return 20
+        case .more: return 32
         case .crumb(_, let title, let last):
-            return ceil((title as NSString).size(withAttributes: [.font: last ? crumbBoldFont : crumbFont]).width) + 10
+            return max(36, ceil((title as NSString).size(withAttributes: [.font: last ? crumbBoldFont : crumbFont]).width) + 20)
         }
     }
 
     private func layoutSegments() {
-        let h = bounds.height
-        if bounds.width < 200,
-            let last = segments.last(where: {
-                if case .crumb(_, _, true) = $0.kind { return true }; return false
-            })
-        {
-            segments = [last]; segments[0].rect = bounds.insetBy(dx: 5, dy: 5)
-            return
+        // The whole segment is a target, including its padding. Keep the immediate parent until
+        // the last possible collapse, and retain an ancestor menu even in a narrow split pane.
+        let available = max(0, bounds.width - 8)
+        var prefix = segments.filter {
+            switch $0.kind {
+            case .placesButton, .rootArrow: return true;
+            default: return false
+            }
         }
-        var x: CGFloat = 10
-        let available = bounds.width - 40
-        // Collapse leading crumbs into a "more" menu when the path doesn't fit.
-        var segs = segments
-        var total = segs.reduce(CGFloat(6)) { $0 + width(of: $1) }
+        if bounds.width < 200 { prefix = [] }
+        var crumbs = segments.filter {
+            if case .crumb = $0.kind { return true }; return false
+        }
         var hidden: [URL] = []
-        while total > available {
-            guard
-                let i = segs.firstIndex(where: {
-                    if case .crumb(_, let title, let last) = $0.kind { return !last && title != preferredAncestorName }; return false
-                }),
-                case .crumb(let u, _, _) = segs[i].kind
-            else { break }
-            hidden.append(u)
-            total -= width(of: segs[i])
-            segs.remove(at: i)
-            if i < segs.count, case .arrow = segs[i].kind { total -= width(of: segs[i]); segs.remove(at: i) }
+        let hierarchical = LocationKind.of(url).hasHierarchy
+        func assembled() -> [Segment] {
+            var result = prefix
+            if !hidden.isEmpty { result.append(Segment(kind: .more(hidden))) }
+            for (index, crumb) in crumbs.enumerated() {
+                result.append(crumb)
+                if index < crumbs.count - 1, hierarchical, case .crumb(let u, _, _) = crumb.kind {
+                    result.append(Segment(kind: .arrow(u)))
+                }
+            }
+            return result
         }
-        if !hidden.isEmpty,
-            let r = segs.firstIndex(where: {
-                if case .rootArrow = $0.kind { return true }; return false
-            })
-        {
-            segs.insert(Segment(kind: .more(hidden)), at: r + 1)
+        func totalWidth(_ values: [Segment]) -> CGFloat { values.reduce(0) { $0 + width(of: $1) } }
+        var result = assembled()
+        while totalWidth(result) > available, crumbs.count > 1 {
+            // Prefer keeping a named context (e.g. a search root), but never at the expense of
+            // the immediate parent when earlier ancestors can be collapsed instead.
+            let candidates = crumbs.indices.dropLast(2)
+            let index =
+                candidates.first(where: {
+                    if case .crumb(_, let title, _) = crumbs[$0].kind { return title != preferredAncestorName }; return false
+                }) ?? 0
+            if case .crumb(let u, _, _) = crumbs.remove(at: index).kind { hidden.append(u) }
+            hidden.sort { a, b in
+                (trail.firstIndex { $0.url == a } ?? 0) < (trail.firstIndex { $0.url == b } ?? 0)
+            }
+            result = assembled()
         }
-        for i in segs.indices {
-            let w = width(of: segs[i])
-            segs[i].rect = CGRect(x: x, y: 5, width: w, height: h - 10)
-            x += w
+        while totalWidth(result) > available, !prefix.isEmpty {
+            prefix.removeFirst()
+            result = assembled()
         }
-        segments = segs
+        // A single long folder name must elide inside its own segment, never cover its neighbours.
+        let natural = totalWidth(result)
+        var remainingReduction = max(0, natural - available)
+        var widths = result.map { width(of: $0) }
+        for index in result.indices.reversed() {
+            guard case .crumb = result[index].kind else { continue }
+            let reduction = min(remainingReduction, max(0, widths[index] - min(36, available)))
+            widths[index] -= reduction
+            remainingReduction -= reduction
+        }
+        if remainingReduction > 0, !result.isEmpty {
+            // At extremely small widths preserve the current folder; ancestors remain available
+            // through the root context menu and the editable location shortcut.
+            result = crumbs.suffix(1).map { $0 }
+            widths = [available]
+        }
+        var x: CGFloat = 4
+        for index in result.indices {
+            result[index].rect = CGRect(x: x, y: 2, width: widths[index], height: max(0, bounds.height - 4))
+            x += widths[index]
+        }
+        segments = result
     }
 
     override func layout() {
@@ -314,9 +348,9 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         field?.frame = fieldFrame
     }
 
-    private var lastLayoutWidth: CGFloat = 0
+    private var lastLayoutSize: CGSize = .zero
     private func rebuildIfNeeded() {
-        if lastLayoutWidth != bounds.width { lastLayoutWidth = bounds.width; rebuild() }
+        if lastLayoutSize != bounds.size { lastLayoutSize = bounds.size; rebuild() }
     }
 
     // MARK: Drawing
@@ -339,19 +373,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
         let textColor = isActive ? Theme.windowText : Theme.windowTextInactive.withAlphaComponent(0.7)
 
-        if bounds.width < 200 {
-            let title = preferredAncestorName.map { "\($0) › \(url.folderName)" } ?? url.folderName
-            let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail
-            let font = NSFont.systemFont(ofSize: preferredAncestorName == nil ? Theme.fontSize : 11, weight: .medium)
-            (title as NSString).draw(
-                in: CGRect(x: 5, y: (bounds.height - 16) / 2, width: max(0, bounds.width - 10), height: 18),
-                withAttributes: [.font: font, .foregroundColor: textColor, .paragraphStyle: style])
-            return
-        }
         for (i, s) in segments.enumerated() {
             let r = s.rect
             if hover == i || pressed == i || dropHover == i {
-                let p = NSBezierPath(roundedRect: r.insetBy(dx: 0, dy: 2), xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
+                let p = NSBezierPath(roundedRect: r, xRadius: Tokens.Radius.row, yRadius: Tokens.Radius.row)
                 (pressed == i || dropHover == i ? Theme.selection.withAlphaComponent(0.55) : Theme.windowText.withAlphaComponent(0.10)).setFill()
                 p.fill()
             }
@@ -372,7 +397,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
                     from: .zero, operation: .sourceOver, fraction: isActive ? (hover == i ? 1 : 0.55) : 0.35,
                     respectFlipped: true, hints: nil)
             case .more:
-                ("…" as NSString).draw(at: CGPoint(x: r.minX + 6, y: r.midY - 9), withAttributes: [.font: crumbFont, .foregroundColor: textColor])
+                ("…" as NSString).draw(at: CGPoint(x: r.midX - 6, y: r.midY - 9), withAttributes: [.font: crumbFont, .foregroundColor: textColor])
             case .crumb(_, let title, let last):
                 let missing = last && missingTail
                 let attrs: [NSAttributedString.Key: Any] = [
@@ -380,11 +405,17 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
                     .foregroundColor: missing ? Theme.windowTextInactive.withAlphaComponent(0.6) : textColor,
                 ]
                 let ts = (title as NSString).size(withAttributes: attrs)
-                (title as NSString).draw(at: CGPoint(x: r.minX + 5, y: r.midY - ts.height / 2), withAttributes: attrs)
+                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingMiddle
+                var drawingAttributes = attrs
+                drawingAttributes[.paragraphStyle] = style
+                (title as NSString).draw(
+                    in: CGRect(x: r.minX + 10, y: r.midY - ts.height / 2, width: max(0, r.width - 20), height: ts.height),
+                    withAttributes: drawingAttributes)
                 if missing {
                     Theme.windowTextInactive.withAlphaComponent(0.6).setStroke()
-                    let underline = NSBezierPath(); underline.move(to: CGPoint(x: r.minX + 5, y: r.midY + ts.height / 2))
-                    underline.line(to: CGPoint(x: r.minX + 5 + ts.width, y: r.midY + ts.height / 2)); underline.lineWidth = 1
+                    let underline = NSBezierPath(); underline.move(to: CGPoint(x: r.minX + 10, y: r.midY + ts.height / 2))
+                    underline.line(to: CGPoint(x: r.minX + 10 + min(ts.width, max(0, r.width - 20)), y: r.midY + ts.height / 2));
+                    underline.lineWidth = 1
                     underline.setLineDash([2, 2], count: 2, phase: 0); underline.stroke()
                 }
             }
@@ -415,8 +446,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         if i != hover { hover = i; needsDisplay = true }
         if let i, case .crumb(let u, _, _) = segments[i].kind {
             toolTip = LocationNaming.address(for: u)
+        } else if let i, case .arrow(let u) = segments[i].kind {
+            toolTip = "Show Folders in “\(LocationNaming.name(for: u))”"
+        } else if let i, case .more = segments[i].kind {
+            toolTip = "Show Parent Folders"
         } else if i == nil {
-            toolTip = "Click to Edit Location"
+            toolTip = "Click to Edit Location (⌘L)"
         } else {
             toolTip = nil
         }
