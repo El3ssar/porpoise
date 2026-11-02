@@ -5,6 +5,7 @@
 - **Run Quick Actions in Porpoise.** Right-click local files or folders to run compatible Automator Quick Actions already installed on your Mac, with their names and icons. Customize opens the macOS Quick Actions settings.
 - **More room for previews.** Text previews fill the Information panel's width, while file details scroll separately below. Image previews update when a larger thumbnail becomes available, including in Column view.
 - **More reliable Git discovery.** Browsing ordinary folders or the filesystem root no longer leaves Git discovery looping; repository status remains available when you return to a project.
+- **Folders stay expanded.** A late result from an older background probe no longer collapses a folder you just expanded.
 
 ## 0.17.0
 
