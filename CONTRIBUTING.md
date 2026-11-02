@@ -81,29 +81,91 @@ python3 scripts/coverage.py --min 92
 
 ### CI and release validation
 
-CI runs the optimized shipping build and the **entire** instrumented test suite on separate macOS runners.
-The test job still runs the watchdog's isolated BusyPool/MemoryBudget pass, all test targets, workflow integrity,
-formatting, helper freshness, and the combined logic-layer coverage gate (92%). No changed-module selection is
-used. The existing `build-and-test` status aggregates both jobs and fails if either fails or is cancelled. `ci/**` branches and manual CI dispatch support timing
+CI checks the portable workflow, evidence, watchdog and budget-policy fixtures on Ubuntu before queuing macOS jobs.
+Ordinary PRs changing reviewed app inputs or individual test files get a cached debug build and relevant test
+suites, without coverage instrumentation or the separate shipping, UI-acceptance and strict benchmark jobs.
+Reviewed preview, folder and transfer UI paths have explicit suite groups; other app Swift changes run all app
+tests. Library, resource, support, package, CI-control, unknown, deleted and renamed paths require full checks.
+The selector validates the actual PR merge and reviewed package graph, and logs its selection. This first version
+is conservative: not every PR qualifies, and a cold debug build still takes time. Fast and covered build caches are
+separate. A fast PR success cannot create a full CI attestation.
+
+Main, manual CI and conservative PR fallbacks cover the optimized shipping build, the **entire** instrumented test
+suite, UI acceptance and app performance. The test job runs BusyPool, MemoryBudget and ScannerStarvation serially in their own process before
+the ordinary suite, plus formatting, helper freshness and the combined logic-layer coverage gate (92%).
+`build-and-test` requires the selected tier's gates and fails if a required job fails or is cancelled. A fast pass
+explicitly reports that full validation remains for main. `ci/**` branches and manual CI dispatch support timing
 experiments without pushing main. For a nonpublishing release packaging probe, run
 `gh workflow run ci.yml --ref ci/<branch> -f release_benchmark=true` after its shipping job has populated the cache.
 This probe uses production compile flags, ad hoc signing and the DMG scan, with no release credentials.
 Pull requests always run CI so required checks are reported.
 
-Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, `README.md`, or `docs/**` skip CI; the website has its
-own workflow. All other paths, including licenses, resources, scripts, tests and workflows, require full CI.
-Before release, `scripts/ci-proof.py` looks through the latest 100 main-push CI runs. It accepts a successful run
-from this repository only when its commit is an ancestor and `git diff --no-renames` shows no differences outside
-that exact documentation allowlist. A newer failed or running attempt supersedes an older success for the same
-commit. PR/dispatch/other-branch runs cannot certify a release. No matching proof or an API error runs full local
-release validation, including coverage; releases never wait for a second documentation-only CI run.
+Dependency review requires Settings → Advanced Security → Dependency Graph to be enabled on the repository.
+Without it, GitHub's comparison API returns 403 even with the correct read permission. Dependency changes must
+pass the real graph review; source-only changes report that no graph-covered dependency changed. An unavailable
+scan is not a clean advisory result.
+
+Main pushes changing only `CHANGELOG.md`, `CONTRIBUTING.md`, or `docs/**` skip CI; the website has its own workflow.
+Before release, `scripts/ci-proof.py` searches a bounded history of successful main pushes and maintainer-merged PRs.
+It binds paths, modes and object IDs for every build, test and security input, ignoring only that documentation
+allowlist. PR proof additionally binds the immutable tested merge checkout, its actual base, the merged GitHub PR,
+and successful product gates. Squash and rebase merges can reuse the same tested contents even though their commit
+identities differ. Changes to `.github/` or `scripts/` cannot certify their own evidence machinery: their first
+landing still needs fresh main validation. Newer relevant failed or incomplete evidence prevents older greens
+from certifying the same inputs. Missing or ambiguous metadata and API errors cause CI to run full validation.
+History is limited to the latest 100 runs; reruns are ordered by their latest recorded activity, with unresolved
+results winning ambiguous ties. Publishing requires trusted full CI proof before signing credentials are imported;
+if missing, complete full main CI on the same inputs and rerun Release. The packaging-only dry run retains its
+local test/coverage fallback, and cannot certify UI or performance. Release signing, disk-image scans and Sparkle
+signature verification always run when publishing.
+
+Performance checks separately fingerprint app and benchmark inputs. An unchanged reviewed package graph permits
+ordinary test-source and documentation changes to reuse a trusted, actually measured main result. Fixtures,
+resources, build scripts, benchmark controls and unknown paths still require measurements. The scope artifact
+records the decision and measured origin; an evidence-only job is explicitly identified and cannot create a new
+measurement receipt. Unresolved regressions stay blocked. A noisy comparison retries against its original base,
+so comparing an app with its identical parent cannot erase a regression. Missing or ambiguous failed evidence
+blocks reuse. Manual performance dispatch always requests fresh measurements.
+
+Cold-launch-only recalibration skips unrelated listing and search workloads after the same readiness check.
+The seven-pair calibration and comparison cohorts, idle check, performance budgets and noise caps are unchanged.
+
+For local feedback before pushing, run the relevant focused Swift tests and the portable checks you changed:
+
+```sh
+scripts/test-with-watchdog.sh --filter 'InformationThumbnailTests|AppearanceLayoutTests/foldersPanelListsLocalFoldersOffTheMainThread'
+python3 scripts/test-ci-proof.py
+python3 scripts/test-test-completion.py
+python3 scripts/test-workflow-pins.py
+python3 scripts/test-performance-budgets.py
+python3 scripts/test-performance-inputs.py
+python3 scripts/test-pr-test-scope.py
+python3 scripts/test-ci-profiles.py
+```
+
+The Python suites use synthetic fixtures and do not launch Porpoise. A filtered Swift run proves only its selected
+cases; it is not a full-suite or coverage receipt. Keep full covered runs separate so a later filtered run cannot
+overwrite their profiles. Use `scripts/ci-like.sh` for an explicit loaded reproduction when necessary, rather than
+waiting for a timing-dependent failure on the hosted runner.
 
 Test and shipping SwiftPM caches are separate and keyed by OS, architecture, toolchain/OS version, manifest and
-lockfile, then commit, with compatible earlier commits as fallbacks. The release reuses the shipping cache with
+lockfile, then commit, with compatible earlier commits as fallbacks. Each cache records actual tracked-file hashes,
+modes and timestamps. A restore replays a timestamp only for identical content and mode; changed inputs get fresh
+timestamps. Missing or malformed manifests discard that compiler cache. The v3 namespace requires one fresh build
+instead of trusting legacy caches. Git author times are never used to certify compiler inputs, including merge
+resolutions. The release reuses the shipping cache with
 exactly the same compiler flags as CI. SwiftPM still validates its build graph; release signing, path stripping,
 DMG scans and Sparkle verification always run. CI and releases share the ffmpeg cache keyed by source SHA-256
 and build-script hash. Every restored binary is checked against its recorded SHA-256; a missing or mismatched
 digest rebuilds from checksum-verified source. `scripts/build-ffmpeg.sh --force` remains available for a fresh build.
+
+Vendored SwiftTerm does not embed the outer Porpoise repository's changing Git metadata. Its generated source
+therefore stays stable across unrelated commits, preserving downstream compiler reuse. The standalone-package
+metadata reader and explicit overrides still work; `scripts/test-swiftterm-build-info.py` checks both cases.
+The private benchmark compiler cache separately keys compile inputs and measurement-runner code. Trial-only
+runner edits can restore compiler state with the same toolchain, package, build script and workload harness.
+Both apps are still built and staged afresh, source mtimes are restored only for identical content, and no old
+measurement or staged app is reused. Bump the cache namespace if preparation or instrumentation contracts change.
 
 Measured on 2026-10-18 with identical application/test sources on `ci/ciperf`:
 
@@ -117,7 +179,11 @@ The warm run reduced this measured wall time by 63%; all 1,489 main and 9 isolat
 coverage stayed at 93.7% of 36,527 lines. These are individual runner observations, including cache upload and
 the final gate, rather than a statistical latency guarantee. The [nonpublishing packaging probe](https://github.com/El3ssar/porpoise/actions/runs/39171385028)
 passed in 1:46 including DMG scanning: the cached shipping build took 10.26 seconds (previous release: 342.60),
-and ffmpeg verification took under a second (previous source build: 4:00). Ad hoc packaging excludes production
+and ffmpeg verification took under a second (previous source build: 4:00). These October timings predate the expanded
+suite. On November 2, [main's failing baseline](https://github.com/El3ssar/porpoise/actions/runs/41483385421) took
+19:57, including 17:17 for the test job and 14:02 for performance; failed waits and queue time are included.
+The cold-only retry fix removes 227.65 seconds of unrelated measured workloads from one retained historical trace;
+that is avoided work, not a measured hosted after-time. Ad hoc packaging excludes production
 identity import, Sparkle signing and publication, so it is separate evidence from an actual published release.
 
 Without a signing identity, `make-app.sh` signs the app ad hoc. That's fine for development, but macOS forgets
@@ -179,7 +245,8 @@ legacy-helper symbol gap and a non-publishing release workflow rehearsal.
 There are three ways to cut a release. Use whichever fits:
 
 - **Label a pull request.** Before merging, add `release:patch`, `release:minor` or `release:major`. On merge, the
-  latest tag is bumped (v0.1.0 + `release:minor` → v0.2.0) and the release is published. Unlabelled pull requests
+  workflow waits for successful full main CI if no trusted full proof exists, then bumps the latest tag
+  (v0.1.0 + `release:minor` → v0.2.0) and publishes. A failed full run prevents publication. Unlabelled pull requests
   don't release anything, so several changes can pile up before you ship one.
 - **Push a tag.** `git tag v0.2.0 && git push origin v0.2.0`.
 - **By hand.** Actions › Release › *Run workflow*, then enter the version. It tags the chosen branch.

@@ -21,13 +21,18 @@ Local differences from that upstream commit:
   is not declared; CoreText rendering supports Command Line Tools-only builds.
 - Nonshipping upstream apps, tests, benchmarks, docs and supporting root files
   are omitted. Sources/SwiftTerm (except Shaders.metal), the build-info generator,
-  Plugins and LICENSE otherwise match upstream, subject to the warning fix.
+  Plugins and LICENSE otherwise match upstream, subject to the patches below.
 - Porpoise d494c68731bbb64f12cc6e993e1a3efe9f37639b adds `_ =` to two
   vertices.withUnsafeBytes calls in Apple/Metal/MetalTerminalRenderer.swift.
 - The build-info plugin sets the generator's LLVM_PROFILE_FILE to its own
   sandbox-writable work directory. Coverage-instrumented generator execution
   no longer tries to write default.profraw in the read-only package root.
   Generated build information and application/test coverage are unchanged.
+- The build-info generator reads Git metadata only for a package with its own
+  .git directory or worktree pointer. A vendored copy no longer embeds the
+  enclosing Porpoise commit/branch/dirty state, which changed generated source
+  and forced downstream recompilation on unrelated pushes. Absent package Git
+  metadata stays unknown; explicit SWIFTTERM_BUILD_* overrides still work.
 
 Reproduce: obtain the exact upstream commit in a scratch directory; compare
 retained files with diff -ru; inspect git show b2ab7347:Vendor/SwiftTerm/Package.swift

@@ -8,7 +8,7 @@ import Testing
 @testable import Porpoise
 
 /// Context menus, the icon cache and the capacity bar do what fits the location.
-@MainActor @Suite(.serialized) struct SmallAppFixesTests {
+@MainActor @Suite(.serialized, .isolatedSettings) struct SmallAppFixesTests {
     // B8: "Open Path" only where items are listed away from their folder.
     @Test func openPathOnlyWhereItemsAreListedElsewhere() {
         #expect(LocationKind.of(URL(string: "recent:/files")!).isResultList)

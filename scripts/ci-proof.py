@@ -4,6 +4,7 @@
 No proof (including API failures) means the release must run every check itself.
 """
 import argparse
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -53,12 +54,15 @@ def attest(path):
         raise ValueError('Checkout does not match the workflow commit')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     pr = event.get('pull_request')
+    parents = git('show', '-s', '--format=%P', checkout).decode().split()
+    if pr and (len(parents) != 2 or parents[1] != pr['head']['sha']):
+        raise ValueError('PR checkout is not the tested base/head merge')
     value = dict(schema=1, repository=os.environ['GITHUB_REPOSITORY'],
                  run_id=int(os.environ['GITHUB_RUN_ID']), run_attempt=int(os.environ['GITHUB_RUN_ATTEMPT']),
                  event=os.environ['GITHUB_EVENT_NAME'], checkout=checkout,
                  application_tree=application_tree(), gates=sorted(GATES),
                  head=pr['head']['sha'] if pr else checkout,
-                 base=pr['base']['sha'] if pr else None,
+                 base=parents[0] if pr else None,
                  pr=event['number'] if pr else None)
     path.write_text(json.dumps(value, indent=2) + '\n')
 
@@ -67,46 +71,110 @@ def ancestor(candidate, target):
     return subprocess.run(['git', 'merge-base', '--is-ancestor', candidate, target], capture_output=True).returncode == 0
 
 
-def merged_pr_proof(run, repository, target, load_attestation, load_pr, load_jobs):
-    if not ancestor(run['head_sha'], target):
+def pr_checkout(run, repository):
+    """Resolve the immutable tested merge from GitHub metadata, never a mutable refs/pull ref.
+
+    Run lists often leave pull_requests empty. Local reusable workflow references still identify the
+    actual checkout and PR, including failed runs that could not produce an attestation.
+    """
+    references = run.get('referenced_workflows')
+    if not isinstance(references, list) or not references:
+        raise ValueError('Missing immutable PR checkout metadata')
+    contexts = set()
+    for row in references:
+        sha = row.get('sha', '')
+        ref = re.fullmatch(r'refs/pull/([1-9][0-9]*)/merge', row.get('ref', ''))
+        paths = {f'{repository}/.github/workflows/{name}@{sha}'
+                 for name in ['performance-budgets.yml', 'ui-acceptance.yml']}
+        if not re.fullmatch('[0-9a-f]{40}', sha) or not ref or row.get('path') not in paths:
+            raise ValueError('Unexpected PR checkout reference')
+        contexts.add((sha, int(ref[1])))
+    if len(contexts) != 1:
+        raise ValueError('Ambiguous PR checkout metadata')
+    checkout, number = contexts.pop()
+    if subprocess.run(['git', 'cat-file', '-e', checkout + '^{commit}'], capture_output=True).returncode != 0:
+        # Only immutable Git objects are fetched. No PR file is checked out or executed.
+        git('fetch', '--no-tags', 'origin', checkout)
+    parents = git('show', '-s', '--format=%P', checkout).decode().split()
+    if len(parents) != 2 or parents[1] != run['head_sha']:
+        raise ValueError('PR checkout does not contain its recorded head')
+    return checkout, parents[0], number
+
+
+def approved_pr(run, repository, target, context, load_pr):
+    if load_pr is None:
         return False
+    _, base, number = context
+    pr = load_pr(number)
+    if (pr.get('merged') is not True or pr['base']['ref'] != 'main'
+            or pr['base']['repo']['full_name'] != repository
+            or pr['head']['repo']['full_name'] != run['head_repository']['full_name']
+            or pr['head']['sha'] != run['head_sha']
+            or not re.fullmatch('[0-9a-f]{40}', pr.get('merge_commit_sha', ''))
+            or not ancestor(pr['merge_commit_sha'], target)):
+        return False
+    parents = git('show', '-s', '--format=%P', pr['merge_commit_sha']).decode().split()
+    # Squash/rebase merges do not contain the original PR head. Approval is bound to the GitHub
+    # merged PR identity, while the tested main base must predate the approved merge's first parent.
+    return bool(parents) and ancestor(base, parents[0])
+
+
+def merged_pr_proof(run, repository, target, load_attestation, load_pr, load_jobs):
+    context = pr_checkout(run, repository)
+    checkout, base, number = context
     value = load_attestation(run)
     if (not isinstance(value, dict) or value.get('schema') != 1 or value.get('repository') != repository
             or value.get('run_id') != run['id'] or value.get('run_attempt') != run['run_attempt']
             or value.get('event') != 'pull_request' or value.get('head') != run['head_sha']
-            or value.get('gates') != sorted(GATES) or type(value.get('pr')) is not int
-            or value.get('application_tree') != application_tree(target)):
+            or value.get('gates') != sorted(GATES) or value.get('pr') != number
+            or type(value.get('pr')) is not int or value.get('checkout') != checkout or value.get('base') != base
+            or value.get('application_tree') != application_tree(target)
+            or application_tree(checkout) != value['application_tree']
+            or not approved_pr(run, repository, target, context, load_pr)):
         return False
-    pr = load_pr(value['pr'])
-    approved = (pr.get('merged') is True and pr['base']['ref'] == 'main'
-            and pr['base']['repo']['full_name'] == repository
-            and pr['head']['repo']['full_name'] == run['head_repository']['full_name']
-            and pr['head']['sha'] == run['head_sha']
-            and ancestor(run['head_sha'], pr['merge_commit_sha'])
-            and ancestor(pr['merge_commit_sha'], target))
-    if not approved:
-        return False
-    # A PR must not certify changes to the machinery that produces/verifies its own evidence. This also
-    # permits fork contributions only after maintainer merge, using unchanged controls from trusted main.
-    parent = git('rev-parse', pr['merge_commit_sha'] + '^1').decode().strip()
-    if git('diff', '--name-only', '--no-renames', parent, target, '--', '.github/', 'scripts/').strip():
-        return False
-    checkout, base = value.get('checkout', ''), value.get('base', '')
-    if not all(isinstance(sha, str) and re.fullmatch('[0-9a-f]{40}', sha) for sha in [checkout, base]):
-        return False
-    if subprocess.run(['git', 'cat-file', '-e', checkout + '^{commit}'], capture_output=True).returncode != 0:
-        # Fetch only the immutable attested merge commit; no checkout or code execution follows.
-        git('fetch', '--no-tags', 'origin', checkout)
-    parents = git('show', '-s', '--format=%P', checkout).decode().split()
-    if (run['head_sha'] not in parents or base not in parents or not ancestor(base, parent)
-            or application_tree(checkout) != value['application_tree']):
+    # Compare against the actual tested main base, not the last rebased feature commit: a control
+    # change in an earlier commit of a rebase merge must not certify its own verifier.
+    if git('diff', '--name-only', '--no-renames', base, target, '--', '.github/', 'scripts/').strip():
         return False
     jobs = load_jobs(run)
     return all(any(row.get('name') == name and row.get('status') == 'completed' and row.get('conclusion') == 'success'
                    for row in jobs) for name in GATE_JOBS)
 
 
-def find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=None, load_jobs=None, caller_run_id=None):
+def failed_matching_inputs(run, repository, target, load_pr):
+    if run.get('event') != 'pull_request':
+        return ancestor(run['head_sha'], target) and application_tree(run['head_sha']) == application_tree(target)
+    context = pr_checkout(run, repository)
+    checkout, base, _ = context
+    # Current PR checks can recognize their own ancestral head without a merged-PR lookup.
+    # Post-merge squash/rebase checks instead require GitHub's merged approval and merge ancestry.
+    relevant = ((ancestor(run['head_sha'], target) and ancestor(base, target))
+                or approved_pr(run, repository, target, context, load_pr))
+    return relevant and application_tree(checkout) == application_tree(target)
+
+
+def evidence_order(run):
+    """GitHub lists runs by creation, but re-runs update the same run much later."""
+    if type(run.get('run_attempt')) is not int or run['run_attempt'] < 1:
+        raise ValueError('Missing positive run attempt')
+    timestamps = []
+    for field in ['created_at', 'updated_at', 'run_started_at']:
+        value = run.get(field)
+        if field == 'run_started_at' and value is None and run.get('status') == 'queued':
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+            raise ValueError('Missing UTC run timestamp')
+        timestamps.append(datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ'))
+    # An ambiguous tie cannot allow green evidence to hide a failed or unfinished check.
+    failed = run.get('status') != 'completed' or run.get('conclusion') != 'success'
+    return max(timestamps), failed
+
+
+def _find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=None, load_jobs=None, caller_run_id=None):
+    if not isinstance(runs, list) or len(runs) > 100:
+        raise ValueError('Expected bounded GitHub run evidence')
+    runs = [run for run in runs if caller_run_id is None or run.get('id') != caller_run_id]
+    runs = sorted(runs, key=evidence_order, reverse=True)
     seen = set()
     for run in runs:
         if caller_run_id is not None and run.get('id') == caller_run_id:
@@ -115,7 +183,7 @@ def find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=N
         if (run.get('status') != 'completed' or run.get('conclusion') != 'success'):
             # Failure/incomplete evidence on the same approved inputs vetoes older green evidence, even
             # across the PR-head/merge SHA boundary or documentation-only descendants.
-            if ancestor(sha, target) and application_tree(sha) == application_tree(target):
+            if failed_matching_inputs(run, repository, target, load_pr):
                 return None
         if sha in seen:
             continue
@@ -129,6 +197,14 @@ def find_proof(runs, repository, target='HEAD', load_attestation=None, load_pr=N
                 and merged_pr_proof(run, repository, target, load_attestation, load_pr, load_jobs)):
             return run
     return None
+
+
+def find_proof(*args, **kwargs):
+    # Unavailable or malformed evidence must run fresh checks, never fall back to older green runs.
+    try:
+        return _find_proof(*args, **kwargs)
+    except (ValueError, KeyError, TypeError, AttributeError, IndexError, OSError, subprocess.SubprocessError):
+        return None
 
 
 def api(path):

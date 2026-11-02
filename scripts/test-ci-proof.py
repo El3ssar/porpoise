@@ -46,7 +46,9 @@ class ProofTests(unittest.TestCase):
 
     def run_record(self, **changes):
         record = dict(head_sha=self.base, event='push', head_branch='main',
-                      head_repository={'full_name': self.repository}, status='completed', conclusion='success')
+                      head_repository={'full_name': self.repository}, status='completed', conclusion='success',
+                      run_attempt=1, created_at='2026-11-02T10:00:00Z',
+                      updated_at='2026-11-02T10:00:00Z', run_started_at='2026-11-02T10:00:00Z')
         record.update(changes)
         return record
 
@@ -117,21 +119,76 @@ class ProofTests(unittest.TestCase):
         for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None)]:
             self.assertIsNone(proof.find_proof([self.run_record(**state), self.run_record()], self.repository))
 
-    def merged_fixture(self, changed_controls=False):
+    def test_run_order_uses_rerun_clock_not_api_creation_order_or_attempt_number(self):
+        green = self.run_record(id=2, created_at='2026-11-02T10:45:00Z',
+                                updated_at='2026-11-02T10:55:00Z', run_started_at='2026-11-02T10:46:00Z')
+        for state in [dict(status='completed', conclusion='failure'),
+                      dict(status='in_progress', conclusion=None),
+                      dict(status='queued', conclusion=None, run_started_at=None)]:
+            late = self.run_record(id=1, run_attempt=2, created_at='2026-11-02T10:37:32Z',
+                                   updated_at='2026-11-02T11:07:29Z', run_started_at='2026-11-02T10:57:19Z')
+            late.update(state)
+            for rows in [[green, late], [late, green]]:
+                with self.subTest(state=state, rows=rows):
+                    self.assertIsNone(proof.find_proof(rows, self.repository))
+        ancient = self.run_record(id=1, run_attempt=99, conclusion='failure')
+        for rows in [[ancient, green], [green, ancient]]:
+            self.assertEqual(proof.find_proof(rows, self.repository), green)
+
+    def test_equal_clocks_resolve_failed_or_incomplete_evidence_before_green(self):
+        green = self.run_record(id=2)
+        for state in [dict(conclusion='failure'), dict(status='in_progress', conclusion=None),
+                      dict(status='queued', conclusion=None, run_started_at=None)]:
+            other = self.run_record(id=1, **state)
+            for rows in [[green, other], [other, green]]:
+                self.assertIsNone(proof.find_proof(rows, self.repository))
+
+    def test_malformed_clock_or_attempt_cannot_fall_back_to_green(self):
+        green = self.run_record(id=2)
+        for field, value in [('created_at', None), ('updated_at', 'garbage'),
+                             ('run_started_at', None), ('updated_at', '2026-02-30T10:00:00Z'),
+                             ('updated_at', '2026-11-02T10:00:00+01:00'),
+                             ('run_attempt', 0), ('run_attempt', True), ('run_attempt', '2')]:
+            with self.subTest(field=field, value=value):
+                invalid = self.run_record(id=1, **{field: value})
+                self.assertIsNone(proof.find_proof([green, invalid], self.repository))
+        self.assertIsNone(proof.find_proof([green] * 101, self.repository))
+
+    def merged_fixture(self, changed_controls=False, style='merge', multiple_commits=False):
         branch = self.git('branch', '--show-current')
         self.git('checkout', '-qb', 'feature')
-        Path('feature.swift').write_text('reviewed feature')
         if changed_controls:
             Path('scripts').mkdir()
             Path('scripts/ci-proof.py').write_text('untrusted proof producer')
+            if multiple_commits:
+                self.commit()
+        Path('feature.swift').write_text('reviewed feature')
         head = self.commit()
+        commits = self.git('rev-list', '--reverse', self.base + '..' + head).splitlines()
         self.git('checkout', '-q', branch)
-        self.git('merge', '--no-ff', '-qm', 'approved merge', head)
+        if style == 'rebase':
+            Path('CHANGELOG.md').write_text('base advanced before PR verification')
+            self.commit()
+        tested_base = self.git('rev-parse', 'HEAD')
+        self.git('merge', '--no-ff', '-qm', 'tested merge', head)
+        checkout = self.git('rev-parse', 'HEAD')
+        if style != 'merge':
+            self.git('reset', '--hard', tested_base)
+            if style == 'squash':
+                self.git('merge', '--squash', head)
+                self.git('commit', '-qm', 'approved squash')
+            elif style == 'rebase':
+                for commit in commits:
+                    self.git('cherry-pick', commit)
+            else:
+                raise ValueError(style)
         merge = self.git('rev-parse', 'HEAD')
-        run = self.run_record(id=42, run_attempt=2, head_sha=head, event='pull_request', head_branch='feature')
+        run = self.run_record(id=42, run_attempt=2, head_sha=head, event='pull_request', head_branch='feature',
+                              referenced_workflows=[dict(path=f'{self.repository}/.github/workflows/ui-acceptance.yml@{checkout}',
+                                                         ref='refs/pull/7/merge', sha=checkout)])
         value = dict(schema=1, repository=self.repository, run_id=42, run_attempt=2,
-                     event='pull_request', head=head, pr=7, checkout=merge,
-                     base=self.base,
+                     event='pull_request', head=head, pr=7, checkout=checkout,
+                     base=tested_base,
                      application_tree=proof.application_tree(), gates=sorted(proof.GATES))
         pr = dict(merged=True, merge_commit_sha=merge,
                   base=dict(ref='main', repo=dict(full_name=self.repository)),
@@ -148,6 +205,51 @@ class ProofTests(unittest.TestCase):
         Path('CHANGELOG.md').write_text('release notes')
         self.commit()
         self.assertEqual(self.pr_proof([run], value, pr), run)
+
+    def test_squash_and_rebase_approved_exact_tree_can_reuse_proof(self):
+        for style in ['squash', 'rebase']:
+            with self.subTest(style=style):
+                self.git('reset', '--hard', self.base)
+                if style == 'rebase':
+                    self.git('branch', '-D', 'feature')
+                run, value, pr = self.merged_fixture(style=style)
+                self.assertFalse(proof.ancestor(run['head_sha'], 'HEAD'))
+                self.assertEqual(self.pr_proof([run], value, pr), run)
+
+    def test_squash_failed_merge_context_vetoes_older_green_main_even_with_different_head_tree(self):
+        run, value, pr = self.merged_fixture(style='squash')
+        # Test HEAD lacks a change that landed in main before the synthetic PR merge was tested.
+        branch = self.git('branch', '--show-current')
+        self.git('checkout', '-qb', 'advanced-base', self.base)
+        Path('new-base.swift').write_text('current base input')
+        base = self.commit()
+        self.git('merge', '--no-ff', '-qm', 'new tested context', run['head_sha'])
+        checkout = self.git('rev-parse', 'HEAD')
+        self.git('checkout', '-q', branch)
+        self.git('reset', '--hard', base)
+        self.git('merge', '--squash', run['head_sha'])
+        self.git('commit', '-qm', 'approved updated-base squash')
+        target = self.git('rev-parse', 'HEAD')
+        pr['merge_commit_sha'] = target
+        failed = dict(run, id=44, run_attempt=3, conclusion='failure', referenced_workflows=[
+            dict(path=f'{self.repository}/.github/workflows/ui-acceptance.yml@{checkout}', ref='refs/pull/7/merge', sha=checkout)])
+        older = self.run_record(id=40, head_sha=target)
+        self.assertNotEqual(proof.application_tree(run['head_sha']), proof.application_tree())
+        self.assertIsNone(self.pr_proof([failed, older], value, pr))
+
+    def test_rebase_earlier_control_commit_cannot_self_certify(self):
+        run, value, pr = self.merged_fixture(style='rebase', changed_controls=True, multiple_commits=True)
+        self.assertEqual(self.git('diff', '--name-only', pr['merge_commit_sha'] + '^1', 'HEAD', '--', 'scripts/'), '')
+        self.assertIsNone(self.pr_proof([run], value, pr))
+
+    def test_missing_or_ambiguous_merge_context_cannot_fall_back_to_older_proof(self):
+        run, value, pr = self.merged_fixture(style='squash')
+        older = self.run_record(id=40, head_sha=pr['merge_commit_sha'])
+        for refs in [[], None, [dict(run['referenced_workflows'][0], sha=self.base)],
+                     run['referenced_workflows'] + [dict(run['referenced_workflows'][0], ref='refs/pull/8/merge')]]:
+            with self.subTest(refs=refs):
+                failed = dict(run, conclusion='failure', referenced_workflows=refs)
+                self.assertIsNone(self.pr_proof([failed, older], value, pr))
 
     def test_pr_evidence_is_bound_to_run_attempt_head_repository_and_all_gates(self):
         run, value, pr = self.merged_fixture()
@@ -215,10 +317,57 @@ class ProofTests(unittest.TestCase):
         self.assertIsNone(proof.find_proof([run], self.repository, load_attestation=lambda _: value,
                                           load_pr=lambda _: pr, load_jobs=lambda _: []))
 
+    def test_real_shallow_checkout_needs_two_levels_to_attest_pr_merge_parents(self):
+        run, expected, _ = self.merged_fixture()
+        source = Path.cwd().resolve()
+        checkout = self.git('rev-parse', 'HEAD')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            event = root / 'event.json'
+            # GitHub's event base may be stale; only the checked-out merge's first parent is trusted.
+            event.write_text(json.dumps(dict(number=7, pull_request=dict(
+                head=dict(sha=run['head_sha']), base=dict(sha='0' * 40)))))
+            environment = dict(GITHUB_SHA=checkout, GITHUB_REPOSITORY=self.repository,
+                               GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
+                               GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='2',
+                               CI_RESULTS=json.dumps({name: dict(result='success') for name in proof.GATES}))
+            for depth in [1, 2]:
+                with self.subTest(depth=depth):
+                    clone = root / f'depth-{depth}'
+                    # A file:// transport is essential: ordinary local clones ignore --depth.
+                    subprocess.run(['git', 'clone', '--quiet', '--no-local', '--depth', str(depth),
+                                    source.as_uri(), str(clone)], check=True, capture_output=True)
+                    os.chdir(clone)
+                    try:
+                        self.assertEqual(self.git('rev-parse', '--is-shallow-repository'), 'true')
+                        self.assertEqual(self.git('rev-parse', 'HEAD'), checkout)
+                        parents = self.git('show', '-s', '--format=%P', 'HEAD').split()
+                        output = clone / 'attestation.json'
+                        with patch.dict(os.environ, environment):
+                            if depth == 1:
+                                self.assertEqual(parents, [])
+                                with self.assertRaisesRegex(ValueError, 'tested base/head merge'):
+                                    proof.attest(output)
+                                self.assertFalse(output.exists())
+                            else:
+                                self.assertEqual(parents, [expected['base'], run['head_sha']])
+                                proof.attest(output)
+                                value = json.loads(output.read_text())
+                                self.assertEqual(value['checkout'], checkout)
+                                self.assertEqual(value['base'], expected['base'])
+                                self.assertEqual(value['head'], run['head_sha'])
+                                self.assertEqual(value['application_tree'], expected['application_tree'])
+                                event.write_text(json.dumps(dict(number=7, pull_request=dict(
+                                    head=dict(sha=expected['base']), base=dict(sha=expected['base'])))))
+                                with self.assertRaisesRegex(ValueError, 'tested base/head merge'):
+                                    proof.attest(clone / 'wrong-head.json')
+                    finally:
+                        os.chdir(source)
+
     def test_attestation_creation_requires_exact_checkout_and_every_gate(self):
         run, _, _ = self.merged_fixture()
         event = Path('event.json').resolve()
-        event.write_text(json.dumps(dict(number=7, pull_request=dict(head=dict(sha=run['head_sha']), base=dict(sha=self.base)))))
+        event.write_text(json.dumps(dict(number=7, pull_request=dict(head=dict(sha=run['head_sha']), base=dict(sha='0' * 40)))))
         environment = dict(GITHUB_SHA=self.git('rev-parse', 'HEAD'), GITHUB_REPOSITORY=self.repository,
                            GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
                            GITHUB_RUN_ID='42', GITHUB_RUN_ATTEMPT='2',
@@ -227,6 +376,7 @@ class ProofTests(unittest.TestCase):
         with patch.dict(os.environ, environment):
             proof.attest(output)
             self.assertEqual(json.loads(output.read_text())['application_tree'], proof.application_tree())
+            self.assertEqual(json.loads(output.read_text())['base'], self.git('rev-parse', 'HEAD^1'))
             with patch.dict(os.environ, GITHUB_SHA=self.base), self.assertRaises(ValueError):
                 proof.attest(output)
             for result in ['failure', 'cancelled', 'skipped']:

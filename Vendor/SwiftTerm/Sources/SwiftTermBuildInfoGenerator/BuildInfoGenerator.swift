@@ -14,16 +14,23 @@ struct BuildInfoGenerator {
         let repository = GitRepository(repositoryPath: repositoryPath)
         let git = GitCommand(repositoryPath: repositoryPath)
 
-        let branch = environment.nonemptyValue(for: "SWIFTTERM_BUILD_BRANCH")
-            ?? repository.branch
-            ?? git.nonemptyOutput(for: ["branch", "--show-current"])
-        let tag = environment.nonemptyValue(for: "SWIFTTERM_BUILD_TAG")
-            ?? git.nonemptyOutput(for: ["describe", "--exact-match", "--tags"])
-        let commit = environment.nonemptyValue(for: "SWIFTTERM_BUILD_COMMIT")
-            ?? repository.commit
-            ?? git.nonemptyOutput(for: ["rev-parse", "HEAD"])
-        let hasUncommittedChanges = environment.booleanValue(for: "SWIFTTERM_BUILD_DIRTY")
-            ?? git.output(for: ["status", "--porcelain"]).map { !$0.isEmpty }
+        // Git walks up from a vendored package to the application's repository. Embedding that
+        // application's SHA rebuilds SwiftTerm and its consumers on every unrelated push. Only
+        // inspect Git metadata when this package has its own .git directory or worktree pointer.
+        // Direct metadata reads also work when the Git executable is unavailable.
+        let ownsRepository = repository.isRepositoryRoot
+        let branch =
+            environment.nonemptyValue(for: "SWIFTTERM_BUILD_BRANCH")
+            ?? (ownsRepository ? repository.branch ?? git.nonemptyOutput(for: ["branch", "--show-current"]) : nil)
+        let tag =
+            environment.nonemptyValue(for: "SWIFTTERM_BUILD_TAG")
+            ?? (ownsRepository ? git.nonemptyOutput(for: ["describe", "--exact-match", "--tags"]) : nil)
+        let commit =
+            environment.nonemptyValue(for: "SWIFTTERM_BUILD_COMMIT")
+            ?? (ownsRepository ? repository.commit ?? git.nonemptyOutput(for: ["rev-parse", "HEAD"]) : nil)
+        let hasUncommittedChanges =
+            environment.booleanValue(for: "SWIFTTERM_BUILD_DIRTY")
+            ?? (ownsRepository ? git.output(for: ["status", "--porcelain"]).map { !$0.isEmpty } : nil)
 
         let source = sourceFile(
             branch: branch,
@@ -104,6 +111,8 @@ private struct GitRepository {
     init(repositoryPath: String) {
         repositoryURL = URL(fileURLWithPath: repositoryPath, isDirectory: true)
     }
+
+    var isRepositoryRoot: Bool { gitDirectory != nil }
 
     var branch: String? {
         guard let reference = head.reference, reference.hasPrefix("refs/heads/") else {

@@ -39,6 +39,8 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         /// The listing running for this node; a result from any other (older) listing is dropped.
         private var listing: Int?
         private static var listings = 0
+        private var probe: Int?
+        private static var probes = 0
         /// The missing child a re-list was made for: one re-list per missing folder, not one per follow.
         var relistedFor: String?
         /// The folder changed on disk while it was being listed: it's listed once more when that listing is done.
@@ -67,6 +69,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
 
         /// Marks a listing as started; pass the token back to `finishListing`.
         func beginListing() -> Int {
+            probe = nil  // The complete listing supersedes any earlier expandability guess.
             Self.listings += 1
             listing = Self.listings
             return Self.listings
@@ -81,6 +84,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         }
 
         private func apply(_ names: [String]) -> [Node] {
+            probe = nil
             let old = Dictionary((staleChildren ?? []).map { ($0.url.lastPathComponent, $0) }, uniquingKeysWith: { a, _ in a })
             let c = names.map { old[$0] ?? Node(url.appendingPathComponent($0)) }
             children = c
@@ -92,15 +96,21 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
         /// Whether it has subfolders, if known yet: from its children, or from a probe (`probeExpandable`).
         var knownExpandable: Bool? { children.map { !$0.isEmpty } ?? expandable }
         /// A probe of its first entries is running.
-        private(set) var probing = false
+        var probing: Bool { probe != nil }
 
-        func beginProbe() { probing = true }
+        func beginProbe() -> Int {
+            Self.probes += 1
+            probe = Self.probes
+            return Self.probes
+        }
 
         /// What a probe found; dropped if the folder was invalidated meanwhile (it's probed again).
-        func finishProbe(_ e: Bool) {
-            guard probing else { return }
-            probing = false
-            if children == nil { expandable = e }
+        @discardableResult func finishProbe(_ token: Int, _ e: Bool) -> Bool {
+            guard probe == token else { return false }
+            probe = nil
+            guard children == nil else { return false }
+            expandable = e
+            return true
         }
 
         /// Cheap check (first entries only, bounded before any full listing). Safe off the main thread.
@@ -125,7 +135,7 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
             staleChildren = children ?? staleChildren
             children = nil
             expandable = nil
-            probing = false
+            probe = nil
             listing = nil
         }
 
@@ -558,14 +568,14 @@ final class FoldersPanel: NSView, NSOutlineViewDataSource, NSOutlineViewDelegate
     }
 
     private func probeExpandable(_ node: Node) {
-        guard !node.probing else { return }
-        node.beginProbe()
+        guard !node.probing, !node.isLoading else { return }
+        let token = node.beginProbe()
         let url = node.url, hidden = showHidden, tree = root
         listingQueue.async { [weak self, weak node] in
             let e = Node.hasSubfolder(url, showHidden: hidden)
             DispatchQueue.main.async {
-                guard let self, let node, self.root === tree, self.remoteTree == nil, node.probing else { return }
-                node.finishProbe(e)
+                guard let self, let node, self.root === tree, self.remoteTree == nil else { return }
+                guard node.finishProbe(token, e) else { return }
                 if !e, self.outline.row(forItem: node) >= 0 { self.keepingSelection { self.outline.reloadItem(node) } }
             }
         }

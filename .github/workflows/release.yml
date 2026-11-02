@@ -83,13 +83,21 @@ jobs:
 
       # Reuse successful main-push CI or attested CI from an approved, merged PR with unchanged trusted controls.
       # Every build/test/security input must match; only unshipped documentation may differ.
-      # No proof, failed API lookup or changed build/test/security input means all checks run here.
+      # Publishing requires full proof; a fast PR pass cannot certify a release.
       - name: Find trusted CI proof
         id: ci
         run: python3 scripts/ci-proof.py
 
-      - name: Restore file times
-        uses: chetan/git-restore-mtime-action@d186aca54f8760da4dec55313195e51ed3ebb0b3 # v2
+      - name: Require full CI before publication
+        if: inputs.dry_run != true && steps.ci.outputs.passed != 'true'
+        run: |
+          echo '::error::No trusted full CI proof. Wait for or rerun full CI on this exact main commit, then rerun Release. Fast PR checks cannot certify a release.'
+          exit 1
+
+      - name: Identify packaging-only dry run
+        if: inputs.dry_run == true
+        run: echo 'Packaging dry run; this does not certify full UI or performance validation for a release.' >> "$GITHUB_STEP_SUMMARY"
+
 
       - name: Toolchain identity
         id: toolchain
@@ -97,11 +105,13 @@ jobs:
 
       - name: Restore shipping build cache
         id: release-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
-          key: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
-          restore-keys: spm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+          key: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-${{ github.sha }}
+          restore-keys: spm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-shipping-${{ hashFiles('Package.resolved', 'Package.swift', 'scripts/make-app.sh') }}-
+      - name: Restore content-checked source timestamps
+        run: python3 scripts/cache-source-times.py restore
 
       - name: ffmpeg source identity
         id: ffmpeg-source
@@ -110,7 +120,7 @@ jobs:
           echo "identity=$(scripts/build-ffmpeg.sh --cache-key)" >> "$GITHUB_OUTPUT"
 
       - name: Restore ffmpeg
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/ffmpeg/ffmpeg
@@ -217,7 +227,7 @@ jobs:
             --output "build/Porpoise-$V-symbols.zip"
 
       - name: Retain crash symbols separately from downloads
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Porpoise-${{ steps.version.outputs.version }}-${{ steps.symbols.outputs.revision }}-symbols
           path: build/Porpoise-${{ steps.version.outputs.version }}-symbols.zip
@@ -270,9 +280,12 @@ jobs:
             "build/Porpoise-$V.dmg" build/Porpoise.dmg build/SHA256SUMS.txt build/appcast.xml build/helper-cdhash.txt \
             --target "$(git rev-parse HEAD)" --title "Porpoise $V" --notes-file build/notes.md --latest
 
+      - name: Record verified source timestamps
+        if: ${{ !cancelled() && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
+        run: python3 scripts/cache-source-times.py save
       - name: Save release compiler state even after a failed check
         if: ${{ !cancelled() && steps.release-cache.outputs.cache-primary-key != '' && steps.release-cache.outputs.cache-matched-key != steps.release-cache.outputs.cache-primary-key && hashFiles('.build/**/description.json', '.build/manifest.pif') != '' }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build
           key: ${{ steps.release-cache.outputs.cache-primary-key }}

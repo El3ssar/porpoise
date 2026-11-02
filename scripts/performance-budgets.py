@@ -108,10 +108,9 @@ def evaluate_with_history(report, policy):
     retries = report.get('recalibrations', [])
     if not isinstance(retries, list) or len(retries) > retry_limit(policy):
         raise ValueError('Too many recalibrations')
-    groups = [report.get('calibration'), report.get('comparison'), report.get('warmup'), *retries]
+    groups = [report.get('calibration'), report.get('comparison'), report.get('warmup')]
     if any(not isinstance(group, list) or len(group) != count
-           for group, count in zip(groups, [policy['pairs'], policy['pairs'], policy['warmup_pairs'],
-                                           *([policy['pairs']] * len(retries))])):
+           for group, count in zip(groups, [policy['pairs'], policy['pairs'], policy['warmup_pairs']])):
         raise ValueError('Missing paired samples')
     for group in groups:
         validate_samples(group, paired_metrics(policy))
@@ -132,7 +131,11 @@ def evaluate_with_history(report, policy):
         if not needs_recalibration(results):
             raise ValueError('Recalibration after a valid verdict is not permitted')
         pending = [name for name, row in results.items() if row['status'] == 'calibration_failed']
-        current = compare_round(calibration, groups[1], policy)
+        if not isinstance(calibration, list) or len(calibration) != policy['pairs']:
+            raise ValueError('Missing paired samples')
+        metrics = recalibration_metrics(calibration, pending, policy)
+        validate_samples(calibration, metrics)
+        current = compare_round(calibration, groups[1], policy, metrics=metrics)
         # The first valid verdict is frozen. New A/A data cannot widen an already valid band or erase a regression.
         history.append(dict(attempt=attempt, metrics=pending, results={name: current[name] for name in pending}))
         for name in pending:
@@ -146,7 +149,8 @@ def evaluate_with_history(report, policy):
                 or pending['metrics'] != expected or not isinstance(pending['calibration'], list)
                 or len(pending['calibration']) > policy['pairs']):
             raise ValueError('Invalid in-progress recalibration')
-        validate_samples(pending['calibration'], paired_metrics(policy))
+        metrics = recalibration_metrics(pending['calibration'], expected, policy)
+        validate_samples(pending['calibration'], metrics)
     return results, history
 
 
@@ -163,9 +167,19 @@ def validate_samples(group, metrics=METRICS):
                     raise ValueError('Invalid measurement')
 
 
-def compare_round(calibration_pairs, comparison_pairs, policy):
+def recalibration_metrics(pairs, pending, policy):
+    # Retained reports contain full latency trials. New launch-only retries omit workloads that cannot
+    # affect the pending launch verdict; no unmeasured listing/search values are invented or substituted.
+    if policy['schema'] == 2 and pending == ['cold_launch'] and pairs:
+        first = pairs[0]
+        if isinstance(first, dict) and isinstance(first.get('a'), dict) and set(first['a']) == {'cold_launch'}:
+            return ('cold_launch',)
+    return paired_metrics(policy)
+
+
+def compare_round(calibration_pairs, comparison_pairs, policy, *, metrics=None):
     results = {}
-    for metric in paired_metrics(policy):
+    for metric in paired_metrics(policy) if metrics is None else metrics:
         aa = [(pair['a'][metric], pair['b'][metric]) for pair in calibration_pairs]
         ab = [(pair['a'][metric], pair['b'][metric]) for pair in comparison_pairs]
         offset = max(abs(a - b) for a, b in aa) if metric == 'idle_cpu' else 0
@@ -567,7 +581,7 @@ def read_reply(path, process, timeout=125):
 
 
 def trial(app, out, sender, policy, label, kind='combined'):
-    if kind not in ('latency', 'idle', 'combined'):
+    if kind not in ('launch', 'latency', 'idle', 'combined'):
         raise ValueError('Invalid trial kind')
     folder = out / 'trials' / (label + '-' + uuid.uuid4().hex)
     folder.mkdir(parents=True)
@@ -593,8 +607,15 @@ def trial(app, out, sender, policy, label, kind='combined'):
                 raise TimeoutError('Cold launch deadline')
             launch = time.monotonic() - start
             context = read_reply(ready, process, timeout=max(0, deadline - time.monotonic()))
+            if (context.get('operation') != 'ready' or context.get('rows') != 0
+                    or context.get('visible') is not True or context.get('mode') != 'details'
+                    or not all(not isinstance(context.get(key), bool) and isinstance(context.get(key), (int, float))
+                               and math.isfinite(context[key]) and context[key] > 0
+                               for key in ('width', 'height'))):
+                raise ValueError('Launch workload or window identity mismatch')
             values = {'cold_launch': launch}
-            for operation, metric, expected in [('listing', 'listing_100k', 100000), ('search', 'search_input', 1)]:
+            workloads = [] if kind == 'launch' else [('listing', 'listing_100k', 100000), ('search', 'search_input', 1)]
+            for operation, metric, expected in workloads:
                 reply = folder / (operation + '.json')
                 sender.emit(channel, 'budget ' + json.dumps(dict(operation=operation, report=str(reply), expected=expected,
                                                                directory=str(out / 'fixture'))))
@@ -648,13 +669,13 @@ def measure(out):
             raise RuntimeError('Owned trial failed: ' + result.stderr.strip())
         return json.loads(result.stdout)
 
-    def collect(group, left, right, count, pairs, checkpoint):
+    def collect(group, left, right, count, pairs, checkpoint, kind='latency'):
         for index in range(count):
             order = [('a', left), ('b', right)] if index % 2 == 0 else [('b', right), ('a', left)]
             pair = {}
             print(f'{group} pair {index + 1}/{count}', flush=True)
             for member, app in order:
-                pair[member] = run_trial(f'{group}-{index}-{member}', app, 'latency')
+                pair[member] = run_trial(f'{group}-{index}-{member}', app, kind)
             pairs.append(pair)
             checkpoint()
 
@@ -677,7 +698,8 @@ def measure(out):
 
     def collect_retry(pending, checkpoint):
         print(f"Recalibration {pending['attempt']}/{retry_limit(policy)} for {', '.join(pending['metrics'])}", flush=True)
-        collect(f"recalibration-{pending['attempt']}", 'base', 'base', policy['pairs'], pending['calibration'], checkpoint)
+        kind = 'launch' if policy['schema'] == 2 and pending['metrics'] == ['cold_launch'] else 'latency'
+        collect(f"recalibration-{pending['attempt']}", 'base', 'base', policy['pairs'], pending['calibration'], checkpoint, kind)
 
     results = recalibrate(report, policy, collect_retry, save)
     report['measurement_seconds'] = time.monotonic() - started
@@ -695,7 +717,7 @@ def main():
                         help='reuse the private .build-budgets cache at the fixed CI output path')
     parser.add_argument('--trial-only', help=argparse.SUPPRESS)
     parser.add_argument('--label', default='trial', help=argparse.SUPPRESS)
-    parser.add_argument('--trial-kind', choices=['latency', 'idle', 'combined'], help=argparse.SUPPRESS)
+    parser.add_argument('--trial-kind', choices=['launch', 'latency', 'idle', 'combined'], help=argparse.SUPPRESS)
     parser.add_argument('--evaluate', type=Path, help='evaluate a retained report without building/running apps')
     args = parser.parse_args()
     out = args.out.resolve()

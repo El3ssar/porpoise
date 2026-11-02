@@ -99,9 +99,12 @@ class BudgetTests(unittest.TestCase):
             process = SimpleNamespace(pid=123, poll=lambda: None, terminate=lambda: None, wait=lambda **kwargs: 0)
             class FakeSender:
                 done = True
+                visible = True
+                operations = []
                 def emit(self, channel, command):
                     request = json.loads(command[len('budget '):])
-                    value = dict(schema=1, operation=request['operation'], rows=request['expected'], visible=True,
+                    self.operations.append(request['operation'])
+                    value = dict(schema=1, operation=request['operation'], rows=request['expected'], visible=self.visible,
                                  width=1200, height=800, mode='details', seconds=0.1, search_done=self.done)
                     budgets.write_json(Path(request['report']), value)
             sender = FakeSender()
@@ -112,12 +115,85 @@ class BudgetTests(unittest.TestCase):
                 values = budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'latency', 'latency')
                 self.assertEqual(set(values), set(budgets.LATENCY_METRICS))
                 cpu.assert_not_called()
+                sender.operations.clear()
+                launch = budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'launch', 'launch')
+                self.assertEqual(set(launch), {'cold_launch'})
+                self.assertEqual(sender.operations, ['ready'])
+                cpu.assert_not_called()
+                sender.visible = False
+                with self.assertRaisesRegex(ValueError, 'Launch workload or window identity'):
+                    budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'hidden-launch', 'launch')
+                sender.visible = True
                 values = budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'idle', 'idle')
                 self.assertEqual(values, {'idle_cpu': 0.001})
                 self.assertEqual(cpu.call_count, 1)
                 sender.done = False
                 with self.assertRaisesRegex(ValueError, 'Workload or window identity'):
                     budgets.trial('FAKE', root, sender, CURRENT_POLICY, 'unfinished-search', 'latency')
+
+    def test_launch_only_recalibration_keeps_other_verdicts_and_candidate_samples(self):
+        value = current_report()
+        for pair in value['calibration']:
+            pair['b']['cold_launch'] = 2
+        candidate = copy.deepcopy(value['comparison'])
+        frozen = budgets.evaluate(value, CURRENT_POLICY)
+        value['recalibrations'] = [[dict(a={'cold_launch': 1}, b={'cold_launch': 1.03})
+                                    for _ in range(CURRENT_POLICY['pairs'])]]
+        results, history = budgets.evaluate_with_history(value, CURRENT_POLICY)
+        self.assertEqual(results['cold_launch']['status'], 'pass')
+        self.assertEqual(results['cold_launch']['calibration_attempt'], 1)
+        self.assertEqual(history[-1]['metrics'], ['cold_launch'])
+        for name in ['listing_100k', 'search_input', 'idle_cpu']:
+            self.assertEqual(results[name], dict(frozen[name], calibration_attempt=0) if name != 'idle_cpu' else frozen[name])
+        self.assertEqual(value['comparison'], candidate)
+        bad = copy.deepcopy(value)
+        for pair in bad['comparison']:
+            pair['b']['listing_100k'] = 2
+        with self.assertRaisesRegex(ValueError, 'Recalibration after a valid verdict'):
+            budgets.evaluate(bad, CURRENT_POLICY)
+        bad = copy.deepcopy(value)
+        for pair in bad['recalibrations'][0]:
+            pair['b']['cold_launch'] = 1.6
+        self.assertEqual(budgets.evaluate(bad, CURRENT_POLICY)['cold_launch']['status'], 'calibration_failed')
+        # A new A/A band still cannot clear a measured regression or an unresolved second metric.
+        for other in ['listing_100k', 'search_input']:
+            bad = copy.deepcopy(value)
+            for pair in bad['calibration']:
+                pair['b'][other] = 2
+            with self.assertRaises(ValueError):
+                budgets.evaluate(bad, CURRENT_POLICY)
+        for bad_pair in [dict(a={'cold_launch': 1}, b={}),
+                         dict(a={'cold_launch': 1}, b={'cold_launch': float('nan')}),
+                         dict(a={'cold_launch': 1, 'unknown': 1}, b={'cold_launch': 1})]:
+            bad = copy.deepcopy(value)
+            bad['recalibrations'][0][0] = bad_pair
+            with self.assertRaises(ValueError):
+                budgets.evaluate(bad, CURRENT_POLICY)
+
+    def test_measure_selects_launch_only_trials_only_for_cold_pending_metric(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            prepared = dict(base='a' * 40, candidate='b' * 40, policy=CURRENT_POLICY,
+                            apps=dict(base='BASE', candidate='CANDIDATE'), harness={},
+                            runner_sha256=hashlib.sha256(Path(budgets.__file__).read_bytes()).hexdigest())
+            budgets.write_json(root / 'prepared.json', prepared)
+            calls = []
+            def trial(args, **kwargs):
+                label, kind = args[args.index('--label') + 1], args[args.index('--trial-kind') + 1]
+                calls.append((label, kind))
+                value = {'idle_cpu': 0.001} if kind == 'idle' else (
+                    {'cold_launch': 1} if kind == 'launch' else {key: 1 for key in budgets.LATENCY_METRICS})
+                if label.startswith('calibration-') and label.endswith('-b'):
+                    value['cold_launch'] = 2
+                return SimpleNamespace(returncode=0, stdout=json.dumps(value), stderr='')
+            with patch.object(budgets.subprocess, 'run', side_effect=trial):
+                self.assertEqual(budgets.measure(root), 0)
+            retry = [kind for label, kind in calls if label.startswith('recalibration-')]
+            self.assertEqual(retry, ['launch'] * (2 * CURRENT_POLICY['pairs']))
+            self.assertEqual(sum(kind == 'idle' for _, kind in calls), 3)
+            retained = json.loads((root / 'results.json').read_text())
+            self.assertEqual(retained['evaluation']['cold_launch']['status'], 'pass')
+            self.assertEqual(len(retained['comparison']), 7)
 
     def test_interrupted_candidate_cohort_is_retained_and_cannot_pass_or_resume(self):
         with tempfile.TemporaryDirectory() as folder:
