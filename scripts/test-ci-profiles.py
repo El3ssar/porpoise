@@ -76,6 +76,11 @@ class ProfileTests(unittest.TestCase):
             for block in workflow.split('          restore-keys: spm-v3-')[1:]:
                 self.assertTrue(block.split('\n', 1)[1].startswith('      - name: Restore content-checked source timestamps\n'))
 
+    def test_full_attestation_checkout_keeps_merge_parents(self):
+        aggregate = CI.split('  build-and-test:\n', 1)[1].split('  release-benchmark:\n', 1)[0]
+        checkout = aggregate.split('      - uses: actions/checkout@', 1)[1].split('      - name:', 1)[0]
+        self.assertIn('fetch-depth: 2', checkout)
+
 
 class ReleaseWaitTests(unittest.TestCase):
     def run_wait(self, delayed=False, watch_status=0, missing=False, api_error=False):
