@@ -251,6 +251,8 @@ sys.exit(scenario.get('status', 0))
         self.assertEqual(result.stdout.count('Test completion verified:'), 2)
         execution = self.execution_calls()
         self.assertEqual([call['alone'] for call in execution], [True, False])
+        self.assertIn('--no-parallel', execution[0]['arguments'])
+        self.assertNotIn('--no-parallel', execution[1]['arguments'])
         self.assertTrue(all('--skip-build' in call['arguments'] for call in execution))
         self.assertTrue(all(call['arguments'][-3:] == ['--experimental-maximum-parallelization-width', '6', '--skip-build'] for call in execution))
 
@@ -264,10 +266,11 @@ sys.exit(scenario.get('status', 0))
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
 
     def test_hung_test_is_still_bounded(self):
-        result = self.watchdog({'output': '◇ Test run started.', 'sleep': 3}, timeout='1')
+        # Bash SECONDS is integral: a one-second budget can expire during discovery at a clock boundary.
+        result = self.watchdog({'output': '◇ Test run started.', 'sleep': 3}, timeout='2')
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(self.execution_calls()), 1)
-        self.assertIn('::error::swift test still running after 1s', result.stdout)
+        self.assertIn('::error::swift test still running after 2s', result.stdout)
 
 
 if __name__ == '__main__':
