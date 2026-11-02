@@ -197,6 +197,13 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(result['mode'], 'blocked')
         self.assertIsInstance(scope.run_order(dict(run(), run_started_at=None)), tuple)
 
+    def test_two_overall_failed_runs_with_equal_clock_cannot_pick_first_compare_success(self):
+        first = dict(run(2), conclusion='failure')
+        second = dict(run(1), conclusion='failure', updated_at=first['updated_at'])
+        result, _ = self.decide([first, second])
+        self.assertEqual(result['mode'], 'blocked')
+        self.assertIn('Cannot verify', result['reason'])
+
     def test_invalid_chronology_fails_closed(self):
         for bad in [dict(run(), updated_at='bad'), dict(run(), run_attempt=True), dict(run(), run_attempt=0)]:
             result, _ = self.decide([bad])

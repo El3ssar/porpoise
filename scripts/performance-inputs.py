@@ -136,6 +136,13 @@ def decide(base, candidate, repository, caller, api, budget, tree=inputs, load_r
                 continue
             if tree(sha)['fingerprint'] != after['fingerprint']:
                 continue
+            clock = run_order(run)[0]
+            peers = [other for other in runs if run_order(other)[0] == clock
+                     and tree(other['head_sha'])['fingerprint'] == after['fingerprint']]
+            # Overall CI may fail while its performance job passed. With second-resolution clocks,
+            # that fact cannot order two conflicting performance outcomes; do not pick API order.
+            if len(peers) > 1 and any(run_order(other)[1] for other in peers):
+                raise ValueError('Ambiguous same-second matching performance outcomes')
             probed += 1
             if probed > 8:
                 raise ValueError('Performance proof history budget exhausted')
