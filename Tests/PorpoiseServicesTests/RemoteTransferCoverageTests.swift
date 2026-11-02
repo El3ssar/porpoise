@@ -21,7 +21,7 @@ private final class StagedUploadGate: RemoteProvider {
         guard source.lastPathComponent == "large.bin", !staged.isSet else { return try base.upload(source, into: folder) }
         guard let control = Shell.currentTransferControl else { throw RemoteError.failed("The upload has no transfer control.") }
         let previous = control.onBytes
-        let staged = staged, firstBytes = firstBytes, release = release, timedOut = Flag()
+        let staged = self.staged, firstBytes = self.firstBytes, release = self.release, timedOut = Flag()
         control.onBytes = { bytes in
             previous(bytes)
             if !staged.isSet {
