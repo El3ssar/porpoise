@@ -2,8 +2,8 @@
 
 Start with [the current roadmap](../ROADMAP.md), [shipped changes](../CHANGELOG.md) and
 [contributor workflow](../CONTRIBUTING.md). Source/status refresh: 2026-11-02, using
-0.18.0 (`efd41202`) as the released baseline. Work described as planned is not a claim
-that it is present in that release.
+0.19.0 source (`98e1c881`) as the implementation baseline, after full CI passed. Work described
+as planned remains separate from the implemented polish and its scoped validation.
 
 ## Current contracts
 

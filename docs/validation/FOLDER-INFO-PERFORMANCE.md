@@ -1,7 +1,7 @@
 # Folder information: streaming measurements
 
 Measured 2026-11-02 on Apple Silicon macOS, comparing `efd41202776284d32cfd9ec01ec54e64c8ae2259`
-with the aggregate-scanner changes in `9a9cd817`. These are optimized local synthetic filesystem
+with the aggregate-scanner changes integrated in `98e1c881`. These are optimized local synthetic filesystem
 measurements, not hosted CI, device, cloud-provider or visual acceptance results.
 
 ## What changed
