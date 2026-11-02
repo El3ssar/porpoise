@@ -92,7 +92,8 @@ jobs:
       - name: Tests
         env:
           # Hosted macOS does not reliably write .ips reports; retain the trapping stack in the job log.
-          SWIFT_BACKTRACE: enable=yes,interactive=no,output-to=stderr
+          # System SSH cannot use the backtracer; its startup diagnostic must not contaminate the SSH protocol.
+          SWIFT_BACKTRACE: enable=yes,interactive=no,output-to=stderr,warnings=suppressed
         run: scripts/test-with-watchdog.sh --enable-code-coverage
       - name: Coverage of the logic layers
         run: python3 scripts/coverage.py --min 92
