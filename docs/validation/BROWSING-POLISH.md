@@ -1,0 +1,80 @@
+# Everyday browsing and interaction polish — 2026-11-03
+
+Scope: transfers, breadcrumb interactions, filename sorting, date columns and measured
+browsing/layout work. Finder registration and filesystem drivers are outside this change.
+Production source measured: `1ca56528`; baseline: `8ebb2946` (the 0.19.0 app code).
+
+## Optimized browsing measurements
+
+The opt-in [benchmark](../../Benchmarks/Browsing/README.md) runs the real model and layout
+without presenting a window. One warmup pair preceded five alternating baseline/candidate
+pairs, each in a separate process; no compiler or other agent workload ran during sampling.
+Both fixtures contain 100,000 synthetic entries with already loaded metadata. The benchmark
+publishes the model, then lays out Icons, Details and Compact and resizes each twenty times.
+Compact starts with its label measurements uncached; shared topology/font infrastructure can
+already be warm from the preceding views. This is not time to a displayed frame.
+
+Medians, milliseconds:
+
+| Workload | Baseline | Candidate |
+| --- | ---: | ---: |
+| Compact initial layout, short names | 731.38 | 739.03 |
+| Compact initial layout, long names | 1,716.66 | 0.07 |
+| Twenty Compact resizes, short names | 6.34 | 0.19 |
+| Twenty Compact resizes, long names | 4.87 | 0.14 |
+| Model publication, short / long names | 50.62 / 46.76 | 48.43 / 50.19 |
+| Icons initial layout, short / long names | 6.07 / 6.04 | 5.91 / 6.36 |
+| Details initial layout, short / long names | 0.07 / 0.01 | 0.05 / 0.01 |
+
+The long-name improvement avoids measuring the remaining labels once a measured name
+already reaches the column's width cap. The resize improvement removes the per-file
+rectangle array; Compact uses one geometry band per group. Exact legacy-cell, group-gap,
+hit-target, keyboard, extra-role, zoom, empty-state and value-copy checks preserve behavior.
+
+**Remaining measured hotspot:** the initial Compact layout still measures every label when
+all names remain below the cap. This fixture takes about 0.74 seconds on the main thread;
+it has not improved. A later change needs to move that work away from interaction while
+deliberately preserving column sizing and scroll/selection stability. Do not describe this
+change as making every large-folder interaction meet a 50 ms main-thread budget.
+
+These are local diagnostic medians, without A/A calibration or isolated host use. Small
+differences in the other workloads establish no speedup or regression conclusion. The
+existing strict hosted performance gates remain separate. No filesystem enumeration,
+end-to-end Back, presented frames, actual Quick Look/network throughput, removable-drive
+or long-session energy claim follows from this benchmark. The [raw samples](data/browsing-2026-11-03.json)
+record toolchain/OS, exact source references, frozen test-bundle hashes and warmup samples.
+
+## Correctness and interaction checks
+
+- Numeric filename runs compare numerically in every name mode, preserving case choices,
+  folder/hidden partitions, descending order, incremental merges and deterministic ties.
+  The actual-Core harness passed 305 tests; old alphabetical comparison failed the new
+  numeric regression. Dates have separate fixed-clock boundary/time-zone/locale checks.
+- Recent dates use `Just now` below one minute and completed minutes below one hour.
+  Relative day/date labels retain time; hovering a date column exposes seconds and zone.
+  Saved widths are preserved. A one-shot timer watches visible date rows only; hidden,
+  occluded, detached and absolute-date views retain no timer. Compact ticks repaint without
+  relayout or directory-wide label measurement.
+- Thumbnail lifecycle changes request a coalesced cancellation sweep even when the new
+  viewport requests no thumbnails. Another visible owner's shared work and ownerless
+  inspector interests survive. Cancelling jobs retain their lane slot until they finish.
+  The baseline probe reproduced stale work after navigation; three scheduler-only tests pass.
+- Transfers cover preparation, queueing, running, pause, waiting, verification, failure,
+  partial completion and interruption at the minimum width in both appearances. Concurrent
+  cards remain scrollable through the last operation. Paused bands/glides stop; ended
+  preparation/verification cannot remain indeterminate. Successful history stays absent.
+- Breadcrumb Places/root menus have keyboard/accessibility actions. Command-Return opens
+  a new tab. Delayed child menus require the original request, active app and key owning
+  window; editing, navigation and detachment invalidate stale requests.
+
+The integrated optimized App check passed **53 tests in 8 suites**. Separate worker checks
+include the focused Core/Services date and presentation suites. Regression controls failed
+before the numeric, transfer-state and paused-animation fixes. The existing cache-reuse
+assertion caught a font-metric eviction during integration; preserving that metric fixed it
+without weakening the assertion.
+
+Light/dark offscreen images were reviewed for dates, narrow/wide paths, transfer states,
+compact/expanded details and concurrent cards. Independent code/visual review found no
+blockers. Every local fixture kept native windows unordered and non-key. These checks do
+not certify active native materials, real VoiceOver interaction or conflict-sheet keyboard
+dispatch. Hosted CI/UI/performance results must be assessed separately for the final head.
