@@ -83,7 +83,9 @@ import Testing
         model.selection = [removed]; model.currentURL = removed
         gate.release(a)
         try await settled(model, at: a)
-        #expect(model.rows.map(\.item.url).sorted(by: { $0.path < $1.path }) == [added, after].sorted(by: { $0.path < $1.path }))
+        let actualPaths = model.rows.map { $0.item.url.path }.sorted()
+        let expectedPaths = [added.path, after.path].sorted()
+        #expect(actualPaths == expectedPaths)
         #expect(model.selection.isEmpty && model.currentURL == nil && loaded == 2)
         // The old A payload was consumed; the one retained slot contains the departed empty B.
         #expect(model.localSnapshotRowsForTesting == 0)
