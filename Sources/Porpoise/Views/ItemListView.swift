@@ -170,6 +170,10 @@ final class ItemListView: NSView {
     var transitionHidden: Set<String> = []
     /// Row per transition key, rebuilt with each layout.
     var rowKeys: [String: Int] = [:]
+    var rowKeysRevision: UInt64?
+    #if PORPOISE_TEST_HOOKS
+    var rowKeyBuildCount = 0
+    #endif
     /// Lays out at this width instead of the visible one: the width the view is about to have, while an animation
     /// (the split opening) changes its real width, so items move once, straight to their final places.
     var layoutWidthOverride: CGFloat? { didSet { if layoutWidthOverride != oldValue { relayout() } } }

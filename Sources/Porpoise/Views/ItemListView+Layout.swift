@@ -64,7 +64,6 @@ extension ItemListView {
             compactPendingRename = nil
         }
         cloudRects = [:]
-        rowKeys = [:]
         cacheGeometryTopology()
         groupHeaderFrames = []
         let width = max(layoutWidthOverride ?? visibleWidth, 100)
@@ -396,6 +395,8 @@ extension ItemListView {
     private func cacheGeometryTopology() {
         guard geometryRowsRevision != model.rowsRevision else { return }
         geometryRowsRevision = model.rowsRevision
+        rowKeys = [:]
+        rowKeysRevision = nil
         geometryHeaderStarts = []
         var lastGroup = -2
         for (i, row) in model.rows.enumerated() where row.group >= 0 && row.group != lastGroup {
