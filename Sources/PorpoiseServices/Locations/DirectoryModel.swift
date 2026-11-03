@@ -746,6 +746,7 @@ public final class DirectoryModel {
                 items = listed
                 rebuild()
             }
+            guard token == loadToken else { return }
             loadingListing = false
             isRefreshing = true
             lastLoaded = url
