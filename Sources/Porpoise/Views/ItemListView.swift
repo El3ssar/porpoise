@@ -67,6 +67,7 @@ final class ItemListView: NSView {
         let roles: [ItemRole]
         let relativeMinute: Int?
         let width: CGFloat
+        let complete: Bool
     }
     #if PORPOISE_TEST_HOOKS
     var textMeasurementCount = 0

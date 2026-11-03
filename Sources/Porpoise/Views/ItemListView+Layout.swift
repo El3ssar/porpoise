@@ -12,6 +12,8 @@ struct ItemCellFrames: RandomAccessCollection {
     var count = 0
     var bands: [Band] = []
     var columns = 1
+    /// Compact fills down a column before advancing horizontally.
+    var rowsPerColumn: Int?
     var cellSize = CGSize.zero
     var materialized: [CGRect] = []
     var startIndex: Int { 0 }
@@ -25,6 +27,12 @@ struct ItemCellFrames: RandomAccessCollection {
             if bands[mid].start <= index { lo = mid } else { hi = mid }
         }
         let band = bands[lo], offset = index - band.start
+        if let rowsPerColumn {
+            return CGRect(
+                x: band.origin.x + CGFloat(offset / rowsPerColumn) * cellSize.width,
+                y: band.origin.y + CGFloat(offset % rowsPerColumn) * cellSize.height,
+                width: cellSize.width, height: cellSize.height)
+        }
         return CGRect(
             x: band.origin.x + CGFloat(offset % columns) * cellSize.width,
             y: band.origin.y + CGFloat(offset / columns) * cellSize.height,
@@ -67,6 +75,7 @@ extension ItemListView {
         if frame.size != size { setFrameSize(size) }
         dropStaleIndexes()
         if let i = renamingIndex, i < frames.count { positionRenameField(i) }
+        thumbnailVisibilityChanged()
     }
 
     /// Row indexes kept across a layout may point past the end once rows were removed.
@@ -116,7 +125,6 @@ extension ItemListView {
     /// new column under its header (Dolphin's horizontal group layout).
     private func layoutCompact(width: CGFloat) -> NSSize {
         let rows = model.rows
-        var cells = Array(repeating: CGRect.zero, count: rows.count)
         let margin = Self.margin, pad = Self.pad, groupH = groupHeaderHeight
         let roles = model.props.roles(for: .compact)
         let h = 2 * pad + max(iconSize, lineHeight * CGFloat(1 + roles.count)) + 2
@@ -124,40 +132,37 @@ extension ItemListView {
         let top = margin + groupH
         let availH = max(h, visibleHeight - top - margin - scroller)
         rowsPerColumn = max(1, Int(availH / h))
-        let widest = compactWidestText(roles: roles)
+        let charWidth = textWidth("x")
+        let maxChars = Settings.shared.compactMaxWidth
+        let limit = (maxChars > 0 ? CGFloat(maxChars) : CompactColumns.defaultChars(iconSize: iconSize)) * charWidth
+        let widest = compactWidestText(roles: roles, limit: limit)
         let text = CompactColumns.textWidth(
-            widest: widest, iconSize: iconSize, charWidth: textWidth("x"), maxChars: Settings.shared.compactMaxWidth,
+            widest: widest, iconSize: iconSize, charWidth: charWidth, maxChars: maxChars,
             minimum: 5 * lineHeight)
         let colW = ceil(4 * pad + iconSize + 6 + text + 10)
         let headerFont = NSFont.systemFont(ofSize: Theme.fontSize, weight: .semibold)
         var x = margin
-        var i = 0
-        while i < rows.count {
-            let group = rows[i].group
-            var groupEnd = i
-            while groupEnd < rows.count && rows[groupEnd].group == group { groupEnd += 1 }
+        var bands: [ItemCellFrames.Band] = []
+        var start = 0
+        for end in geometryHeaderStarts + [rows.count] where end > start {
+            let group = rows[start].group
             let groupX = x
-            while i < groupEnd {
-                let end = min(groupEnd, i + rowsPerColumn)
-                for j in i..<end {
-                    cells[j] = CGRect(x: x, y: top + CGFloat(j - i) * h, width: colW, height: h)
-                }
-                x += colW
-                i = end
-            }
+            bands.append(.init(start: start, origin: CGPoint(x: x, y: top)))
+            x += CGFloat((end - start + rowsPerColumn - 1) / rowsPerColumn) * colW
             if group >= 0, group < model.groups.count {
                 // The header is never narrower than its title, so titles of narrow groups don't run into the next one.
                 let titleW = ceil((model.groups[group].title as NSString).size(withAttributes: [.font: headerFont]).width) + 16
                 x = max(x, groupX + titleW)
                 groupHeaderFrames.append(CGRect(x: groupX, y: margin, width: x - groupX - 4, height: groupH))
             }
+            start = end
         }
-        frames = ItemCellFrames(count: cells.count, materialized: cells)
+        frames = ItemCellFrames(count: rows.count, bands: bands, rowsPerColumn: rowsPerColumn, cellSize: CGSize(width: colW, height: h))
         return NSSize(width: max(width, x + margin), height: visibleHeight)
     }
 
     /// Geometry changes reuse one scalar. A new listing/rename/filter, changed roles or loaded metadata rebuild it.
-    private func compactWidestText(roles: [ItemRole]) -> CGFloat {
+    private func compactWidestText(roles: [ItemRole], limit: CGFloat) -> CGFloat {
         let minute =
             Settings.shared.dateStyle == .relative
                 && roles.contains(where: {
@@ -166,14 +171,22 @@ extension ItemListView {
         if var cached = compactTextMeasurement, cached.roles == roles, cached.relativeMinute == minute {
             // commitZoom synchronously rebuilds identical rows while saving only their icon size.
             if committingZoom { cached.revision = model.rowsRevision; compactTextMeasurement = cached }
-            if cached.revision == model.rowsRevision { return cached.width }
+            if cached.revision == model.rowsRevision, cached.complete || cached.width >= limit { return cached.width }
         }
         var widest: CGFloat = 0
-        for row in model.rows {
+        var complete = true
+        for (index, row) in model.rows.enumerated() {
             widest = max(widest, textWidth(model.displayName(for: row.item)))
             for role in roles { widest = max(widest, textWidth(model.text(for: role, of: row.item))) }
+            // Every column is capped. Once a measured value reaches that cap, later
+            // names cannot affect this layout. A larger zoom cap rechecks the cache.
+            if widest >= limit {
+                complete = index == model.rows.count - 1
+                break
+            }
         }
-        compactTextMeasurement = CompactTextMeasurement(revision: model.rowsRevision, roles: roles, relativeMinute: minute, width: widest)
+        compactTextMeasurement = CompactTextMeasurement(
+            revision: model.rowsRevision, roles: roles, relativeMinute: minute, width: widest, complete: complete)
         return widest
     }
 
