@@ -59,6 +59,14 @@ record toolchain/OS, exact source references, frozen test-bundle hashes and warm
   viewport requests no thumbnails. Another visible owner's shared work and ownerless
   inspector interests survive. Cancelling jobs retain their lane slot until they finish.
   The baseline probe reproduced stale work after navigation; three scheduler-only tests pass.
+  A further gated-server probe found a return-before-cancellation-completes race: an owner
+  could redraw while the old request was still pending, then receive no notification when
+  it settled. Cancellation completion now releases bookkeeping and the lane before
+  invalidating currently wanted targets, including folder collage URLs. Regression cases
+  cover direct files, folder targets, another returning owner and no remaining owner;
+  stale images and old job bodies are never replayed.
+  The combined thumbnail/inspector/performance regression filter passed 23 tests in 6 suites
+  after this correction; independent code review found no blocker.
 - Transfers cover preparation, queueing, running, pause, waiting, verification, failure,
   partial completion and interruption at the minimum width in both appearances. Concurrent
   cards remain scrollable through the last operation. Paused bands/glides stop; ended

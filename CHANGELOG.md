@@ -5,6 +5,7 @@
 - **Numbers sort naturally.** Numbered filenames sort as 1, 2, 9, 10 in every name-sorting mode, while keeping the chosen letter/case ordering.
 - **More useful file dates.** Recent changes show “Just now” or completed minutes ago. Older dates keep their time; hover a date column for the exact timestamp, including seconds and time zone. Visible labels refresh without rescanning the folder, and saved column widths remain intact.
 - **Less work while browsing.** Compact view calculates cell positions without rebuilding a rectangle per file on every resize, and stops measuring labels once the column's width cap is reached. Obsolete thumbnail and video-preview work cancels when its last visible owner navigates away, scrolls away, hides or closes.
+- Returning while an old preview request is still cancelling now requests a fresh thumbnail after cleanup, so the icon does not stay stuck waiting for another redraw.
 - **Transfer and navigation details, finished.** Preparation shows discovered counts, waiting and failed states stay clear, paused bars stop animating, and failure emphasis survives theme changes. Places and path menus support keyboard and accessibility actions; delayed folder menus cannot appear after you switch apps or navigate away.
 
 ## 0.19.0

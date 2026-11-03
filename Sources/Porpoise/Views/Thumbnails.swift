@@ -258,8 +258,8 @@ final class Thumbnails {
     /// invalidating only its currently wanted targets, so even synchronous redraws can start fresh work.
     private func finishCancelled(_ job: ThumbnailWorkScheduler.Job) {
         pending.remove(job.key)
-        let wanted = job.wantedURLs
         job.finish()
+        let wanted = job.wantedURLs
         for url in wanted { NotificationCenter.default.post(name: Thumbnails.ready, object: url) }
     }
 
