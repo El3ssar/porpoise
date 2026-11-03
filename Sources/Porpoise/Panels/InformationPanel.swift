@@ -7,7 +7,7 @@ import QuickLookThumbnailing
 
 /// Dolphin's Information panel (F10 here): large preview, name and metadata of the hovered item, the selection,
 /// or the current folder.
-final class InformationPanel: NSView {
+final class InformationPanel: NSView, ThumbnailOwner {
     private let preview = PreviewImageView()
     let codePreview = CodePreviewView(frame: .zero)
     private var codeCleanup: URL?
@@ -127,6 +127,8 @@ final class InformationPanel: NSView {
     deinit {
         [thumbnailObserver, windowCloseObserver, listingObserver].compactMap { $0 }.forEach(NotificationCenter.default.removeObserver)
         playerWork?.cancel()
+        hoverWork?.cancel()
+        detailWork?.cancel()
         drivePreview?.cancel()
         if let codeCleanup { try? FileManager.default.removeItem(at: codeCleanup) }
     }
@@ -244,9 +246,7 @@ final class InformationPanel: NSView {
             forName: NSWindow.willCloseNotification, object: newWindow,
             queue: .main
         ) { [weak self] _ in
-            self?.stopPlayer()
-            self?.drivePreview?.cancel()
-            self?.clearCodePreview()
+            self?.clearContent()
         }
     }
 
@@ -256,13 +256,31 @@ final class InformationPanel: NSView {
         // Hidden: stop playback. Panels are removed and re-added when the layout is rebuilt, so wait a turn.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.window == nil else { return }
-            self.stopPlayer()
-            self.clearCodePreview()
-            self.drivePreview?.cancel(); self.drivePreview = nil
-            self.previewSpinner.stopAnimation(nil)
-            self.shownURLs = []
-            self.container = nil
+            self.clearContent()
         }
+    }
+
+    /// Parked tabs keep their view hierarchy, but not decoded previews or queued work.
+    /// This is delayed by the attachment callback so same-turn layout reparenting keeps its content.
+    func clearContent() {
+        detailGeneration &+= 1
+        detailWork?.cancel(); detailWork = nil
+        hoverWork?.cancel(); hoverWork = nil
+        observeThumbnail(nil)
+        clearCodePreview()
+        clear()
+        shownURLs = []
+        scrollSelection = []
+        shownStamp = nil
+        container = nil
+        hoveredURL = nil
+        metadataCache.removeAll()
+        Thumbnails.shared.scheduler.requestReconcile()
+        needsLayout = true
+    }
+
+    func showsThumbnail(of url: URL) -> Bool {
+        window != nil && !isHiddenOrHasHiddenAncestor && shownURLs == [url]
     }
 
     // MARK: Content
@@ -382,6 +400,7 @@ final class InformationPanel: NSView {
         stopPlayer()
         drivePreview?.cancel(); drivePreview = nil
         previewStatus.stringValue = ""
+        previewStatus.toolTip = nil
         previewSpinner.stopAnimation(nil)
         preview.image = nil
         preview.isPicture = false
@@ -524,7 +543,7 @@ final class InformationPanel: NSView {
         }
         // The cache can return a small image. Register for updates before you request the thumbnail.
         observeThumbnail(item)
-        if let t = Thumbnails.shared.thumbnail(for: item, size: big) {
+        if let t = Thumbnails.shared.thumbnail(for: item, size: big, owner: self) {
             preview.image = t
             preview.isPicture = true
         }
@@ -588,7 +607,7 @@ final class InformationPanel: NSView {
         thumbnailObserver = NotificationCenter.default.addObserver(forName: Thumbnails.ready, object: nil, queue: .main) { [weak self] n in
             guard let self, (n.object as? URL) == item.url, self.shownURLs == [item.url] else { return }
             // Kept until the next update: a smaller size for the same file may arrive first.
-            if let t = Thumbnails.shared.thumbnail(for: item, size: Self.previewSize) {
+            if let t = Thumbnails.shared.thumbnail(for: item, size: Self.previewSize, owner: self) {
                 self.preview.image = t
                 self.preview.isPicture = true
                 // The video's poster too, if the player is already there (thumbnails can take a while).
@@ -697,6 +716,7 @@ final class InformationPanel: NSView {
         streamObservation = nil
         playerURL = nil
         poster.removeFromSuperview()
+        poster.image = nil
         VideoPreview.shared.stop(for: self)
     }
 

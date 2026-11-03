@@ -7,6 +7,7 @@ final class ColumnPreviewView: NSView {
     let information = InformationPanel()
     /// The file shown (nil: none).
     private(set) var shownURL: URL?
+    private weak var container: ViewContainer?
 
     override var isFlipped: Bool { true }
 
@@ -35,16 +36,32 @@ final class ColumnPreviewView: NSView {
 
     /// Shows the focused column's one selected file.
     func show(_ url: URL, container: ViewContainer) {
+        self.container = container
         guard url != shownURL else { return }
         shownURL = url
         information.show(hovered: nil, container: container)
     }
 
-    func clear() { shownURL = nil }
+    func clear() {
+        shownURL = nil
+        container = nil
+        information.clearContent()
+    }
 
     /// Out of the window, the panel stops what plays and forgets what it showed: shown again, it reads it afresh.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { shownURL = nil }
+        guard window != nil else {
+            // Keep only the weak source so returning to a parked tab can read its current selection again.
+            shownURL = nil
+            return
+        }
+        // Children receive their attachment callbacks separately; resume after the hierarchy has settled.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil, let container = self.container else { return }
+            let selected = container.model.selectedItems
+            guard selected.count == 1, !selected[0].isBrowsableFolder else { return self.clear() }
+            self.show(selected[0].url, container: container)
+        }
     }
 }

@@ -69,6 +69,20 @@ import Testing
         window.contentView = nil; window.close()
     }
 
+    @Test func closingTheWindowReleasesThePreviewEvenIfThePanelIsRetained() throws {
+        let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
+        window.contentView = panel
+        var image: NSImage? = try bitmap(side: 32)
+        let reference = WeakImage(try #require(image))
+        try preview(in: panel).image = image
+        image = nil
+        window.close()
+        #expect(reference.value == nil)
+        #expect(!window.isVisible && !window.isKeyWindow)
+        withExtendedLifetime(panel) {}
+        window.contentView = nil
+    }
+
     @Test func sameTurnReparentingPreservesTheCurrentPreview() async throws {
         let left = window(), right = window()
         let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
@@ -107,7 +121,14 @@ import Testing
         window.contentView = nil; window.close()
     }
 
-    @Test func aParkedInformationPanelStopsItsRemoteThumbnailInterest() async throws {
+    private final class OtherPreviewOwner: ThumbnailOwner {
+        let url: URL
+        init(_ url: URL) { self.url = url }
+        func showsThumbnail(of url: URL) -> Bool { url == self.url }
+    }
+
+    @Test(arguments: [false, true])
+    func aParkedInformationPanelStopsOnlyItsOwnRemoteThumbnailInterest(sharedWithAnotherView: Bool) async throws {
         _ = NSApplication.shared
         Settings.shared.showGitStatus = false
         Settings.shared.folderSizeMode = .none
@@ -132,16 +153,73 @@ import Testing
         defer { NotificationCenter.default.removeObserver(observer) }
         panel.show(hovered: nil, container: pane)
         try #require(await eventually { server.started == 1 })
+        let otherOwner = OtherPreviewOwner(item.url)
+        if sharedWithAnotherView { _ = Thumbnails.shared.thumbnail(for: item, size: 256, owner: otherOwner) }
         window.contentView = nil
         await mainTurn(); await mainTurn()
         Thumbnails.shared.scheduler.reconcile()
         server.open()
         try #require(await eventually { Thumbnails.shared.outstanding == 0 })
-        #expect(publications == 0)
+        #expect(sharedWithAnotherView ? publications > 0 : publications == 0)
+        #expect(try preview(in: panel).image == nil)
         #expect(server.copies.allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
         #expect(!window.isVisible && !window.isKeyWindow)
-        withExtendedLifetime((panel, pane)) {}
+        withExtendedLifetime((panel, pane, otherOwner)) {}
         window.close()
+    }
+
+    @Test func returningToAParkedColumnResumesTheCurrentSelectionButClearDoesNot() async throws {
+        Settings.shared.infoShowPreview = false
+        Settings.shared.infoShowHovered = false
+        Settings.shared.showGitStatus = false
+        Settings.shared.folderSizeMode = .none
+        let scratch = try Scratch(), file = try scratch.file("selected.bin", "fixture")
+        let pane = ViewContainer(url: scratch.url)
+        try #require(await eventually { pane.model.rows.count == 1 && !pane.model.isLoading })
+        pane.list.select(file)
+        let column = ColumnPreviewView(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
+        defer { window.contentView = nil; window.close() }
+        window.contentView = column
+        column.show(file, container: pane)
+        #expect(try preview(in: column.information).image != nil)
+        window.contentView = nil
+        await mainTurn(); await mainTurn()
+        #expect(try preview(in: column.information).image == nil)
+        window.contentView = column
+        await mainTurn(); await mainTurn()
+        #expect(column.shownURL == file)
+        #expect(try preview(in: column.information).image != nil)
+        column.clear()
+        window.contentView = nil
+        await mainTurn(); await mainTurn()
+        window.contentView = column
+        await mainTurn(); await mainTurn()
+        #expect(column.shownURL == nil)
+        #expect(try preview(in: column.information).image == nil)
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
+    @Test func delayedHoverCannotRestartAParkedInspector() async throws {
+        Settings.shared.infoShowPreview = false
+        Settings.shared.infoShowHovered = true
+        Settings.shared.showGitStatus = false
+        Settings.shared.folderSizeMode = .none
+        let scratch = try Scratch(), file = try scratch.file("hovered.bin", "fixture")
+        let pane = ViewContainer(url: scratch.url)
+        try #require(await eventually { !pane.model.isLoading })
+        let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
+        defer { window.contentView = nil; window.close() }
+        window.contentView = panel
+        panel.show(hovered: file, container: pane)
+        window.contentView = nil
+        // A barrier after the real hover debounce, rather than polling before its callback can run.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { continuation.resume() }
+        }
+        #expect(try preview(in: panel).image == nil)
+        #expect(!panel.showsThumbnail(of: file))
+        #expect(!window.isVisible && !window.isKeyWindow)
+        withExtendedLifetime(pane) {}
     }
 
     private func residentBytes() -> UInt64 {
