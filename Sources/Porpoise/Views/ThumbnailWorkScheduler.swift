@@ -113,7 +113,7 @@ final class ThumbnailWorkScheduler {
             enqueue(Job(key: key, lane: lane, interests: [interest], isContinuation: false, body: body, dropped: dropped))
             pump()
         }
-        scheduleReconcile()
+        requestReconcile()
     }
 
     /// Another owner draws an item whose work is already queued or running.
@@ -121,7 +121,7 @@ final class ThumbnailWorkScheduler {
         guard let job = jobs[key] else { return }
         job.interests.append(interest)
         compactInterests(job)
-        scheduleReconcile()
+        requestReconcile()
     }
 
     /// Finishes `job` and queues its next step (a downloaded copy's preview, a video's ffmpeg frame) for the same
@@ -185,7 +185,9 @@ final class ThumbnailWorkScheduler {
         job.interests = kept
     }
 
-    private func scheduleReconcile() {
+    /// A viewport, model or window changed even when its next drawing pass requests no thumbnails.
+    /// Coalescing until the next turn lets the owner finish updating its rows and visible geometry first.
+    func requestReconcile() {
         guard !reconcileScheduled else { return }
         reconcileScheduled = true
         // After the drawing pass that asked: by then the owner shows what it just drew.

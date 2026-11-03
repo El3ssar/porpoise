@@ -185,11 +185,25 @@ final class ItemListView: NSView {
                 [weak self] n in
                 guard let self, let changed = n.object as? NSWindow, changed === self.window else { return }
                 self.stopRelativeDateRefresh()
+                self.thumbnailVisibilityChanged()
                 self.needsDisplay = true
+            })
+        for name in [NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
+            observers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    guard let self, let changed = note.object as? NSWindow, changed === self.window else { return }
+                    self.thumbnailVisibilityChanged()
+                })
+        }
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: nil, queue: .main) { [weak self] note in
+                guard let self, let clip = note.object as? NSClipView, clip === self.enclosingScrollView?.contentView else { return }
+                self.thumbnailVisibilityChanged()
             })
         observers.append(
             NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
                 self?.settingsChanged(key: n.object as? String)
+                self?.thumbnailVisibilityChanged()
             })
     }
 
@@ -199,6 +213,7 @@ final class ItemListView: NSView {
         observers.forEach(NotificationCenter.default.removeObserver)
         zoomCommitTimer?.invalidate()
         relativeDateTimer?.invalidate()
+        Thumbnails.shared.scheduler.requestReconcile()
         hoverFade.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()
@@ -207,16 +222,20 @@ final class ItemListView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         stopRelativeDateRefresh()
+        enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
+        thumbnailVisibilityChanged()
         needsDisplay = true
     }
 
     override func viewDidHide() {
         super.viewDidHide()
         stopRelativeDateRefresh()
+        thumbnailVisibilityChanged()
     }
 
     override func viewDidUnhide() {
         super.viewDidUnhide()
+        thumbnailVisibilityChanged()
         needsDisplay = true
     }
 
