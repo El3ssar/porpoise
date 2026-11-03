@@ -102,8 +102,46 @@ import Testing
         try #require(await eventually { pane.statusBar.text.contains("Updating…") })
         #expect(pane.model.isRefreshing)
         if selected { #expect(pane.statusBar.text.contains("selected")) }
+        try captureUpdatingStatus(pane, selected: selected)
         source.finish()
         try #require(await eventually { !pane.model.isRefreshing && !pane.statusBar.text.contains("Updating…") })
         #expect(pane.window == nil)
+    }
+
+    private func captureUpdatingStatus(_ pane: ViewContainer, selected: Bool) throws {
+        guard let folder = ProcessInfo.processInfo.environment["PORPOISE_NAVIGATION_CAPTURES"] else { return }
+        let previousAppearance = NSApp.appearance
+        let previousChoice = Settings.shared.appearance
+        defer {
+            Settings.shared.appearance = previousChoice
+            NSApp.appearance = previousAppearance
+            Theme.lookChanged()
+        }
+        let output = URL(fileURLWithPath: folder, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        for (name, choice, look) in [
+            ("light", AppearanceChoice.light, NSAppearance.Name.aqua), ("dark", .dark, .darkAqua),
+        ] {
+            let appearance = try #require(NSAppearance(named: look))
+            Settings.shared.appearance = choice
+            NSApp.appearance = appearance
+            Theme.lookChanged()
+            let window = NSWindow(contentRect: pane.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.appearance = appearance
+            window.contentView = pane
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            pane.layoutSubtreeIfNeeded()
+            pane.updateStatus()
+            let bitmap = try #require(pane.bitmapImageRepForCachingDisplay(in: pane.bounds))
+            appearance.performAsCurrentDrawingAppearance { pane.cacheDisplay(in: pane.bounds, to: bitmap) }
+            let data = try #require(bitmap.representation(using: .png, properties: [:]))
+            try data.write(to: output.appendingPathComponent("navigation-updating-\(name)-\(selected ? "selected" : "folder").png"))
+            #expect(!window.isVisible && !window.isKeyWindow)
+            #expect(pane.statusBar.text.contains("Updating…"))
+        }
     }
 }
