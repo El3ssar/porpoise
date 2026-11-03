@@ -341,14 +341,20 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
                 self.list.scroll(pos.origin)
                 if self.pendingSelect == nil, let c = pos.current, self.model.index(of: c) != nil { self.model.currentURL = c }
             }
-            if let u = self.pendingSelect, let i = self.model.index(of: self.listedURL(matching: u)) {
-                self.list.select(self.model.rows[i].item.url)
+            if let u = self.pendingSelect {
+                if let i = self.model.index(of: self.listedURL(matching: u)) {
+                    self.list.select(self.model.rows[i].item.url)
+                    self.pendingSelect = nil
+                } else if !self.model.isRefreshing {
+                    // A cached listing may predate a newly created/revealed item. Keep the
+                    // request until the fresh answer arrives, but never into a later reload.
+                    self.pendingSelect = nil
+                }
             }
             if let selection = self.pendingAutomationSelection, selection.folder == self.url {
                 self.model.selection = selection.paths
                 self.pendingAutomationSelection = nil
             }
-            self.pendingSelect = nil
             if let r = self.pendingRename, let i = self.model.index(of: self.listedURL(matching: r.url)) {
                 self.pendingRename = nil
                 if self.window?.firstResponder === self.list, self.list.userActions == r.userActions {
@@ -852,6 +858,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         } else {
             statusBar.freeSpaceText = ""
             statusBar.toolTip = nil
+        }
+        if url.isFileURL, showsUpdating, model.isRefreshing {
+            statusBar.text = statusBar.text.isEmpty ? "Updating…" : statusBar.text + " · Updating…"
         }
         needsLayout = true
     }
