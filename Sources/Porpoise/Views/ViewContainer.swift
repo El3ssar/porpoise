@@ -640,7 +640,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if u != url {
             pendingRename = nil
             visits += 1
-            viewPositions[url] = (list.scrollOriginForRestoration, model.currentURL)
+            viewPositions[url] = pendingPosition ?? (list.scrollOriginForRestoration, model.currentURL)
             if viewPositions.count > 200 { viewPositions.removeAll() }
             pendingPosition = nil
         }

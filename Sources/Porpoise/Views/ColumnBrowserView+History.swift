@@ -36,9 +36,10 @@ extension ColumnBrowserView {
         if container.model.rows.isEmpty {
             // Not listed yet (its column had gone): once it is.
             let next = container.onNextLoad
+            let visit = container.visits
             container.onNextLoad = { [weak self] in
                 next?()
-                guard let self, Self.key(self.container.url) == Self.key(s.focused) else { return }
+                guard let self, self.container.visits == visit, Self.key(self.container.url) == Self.key(s.focused) else { return }
                 self.select(s)
             }
         } else {
