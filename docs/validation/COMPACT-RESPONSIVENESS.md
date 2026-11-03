@@ -45,6 +45,6 @@ Rename completion requires the current key-window/list context and no later acti
 Local optimized validation: 27 tests in `CompactTextPreparationTests`,
 `LargeDirectoryGeometryTests`, `PerformanceRoutingTests` and `RelativeDateColumnTests` passed.
 Offscreen, unordered light/dark loading captures were inspected. No window was activated or
-made key. The loading text's final contrast adjustment is drawing-only and is verified with
+made key. The loading text's final contrast adjustment was inspected in both appearances with
 the integrated build; it does not affect the timing workload. Hosted CI, native VoiceOver
 operation and a presented interactive window remain separate acceptance checks.

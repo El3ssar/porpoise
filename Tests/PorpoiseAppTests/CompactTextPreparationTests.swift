@@ -106,7 +106,8 @@ import Testing
         let third = try #require(view.compactTextPreparation)
         #expect(second !== third && third.roles == [.size])
         await expectEventually { !view.isPreparingCompact && view.frames.count == model.rows.count }
-        let expected = model.rows.flatMap { [model.displayName(for: $0.item), model.text(for: .size, of: $0.item)] }
+        let expected =
+            model.rows.flatMap { [model.displayName(for: $0.item), model.text(for: .size, of: $0.item)] }
             .map { view.textWidth($0) }.max() ?? 0
         #expect(view.compactTextMeasurement?.width == expected)
     }

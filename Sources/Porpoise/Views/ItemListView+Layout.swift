@@ -193,7 +193,10 @@ extension ItemListView {
         if let pending = compactTextPreparation {
             if committingZoom { pending.revision = model.rowsRevision }
             if pending.revision == model.rowsRevision, pending.roles == roles,
-                pending.relativeMinute == minute, pending.font == font, pending.limit == limit { return nil }
+                pending.relativeMinute == minute, pending.font == font, pending.limit == limit
+            {
+                return nil
+            }
             if pending.revision != model.rowsRevision {
                 compactPendingScroll = nil
                 compactPendingScrollItem = nil
@@ -267,7 +270,8 @@ extension ItemListView {
             let widest = CompactTextPreparation.widest(snapshot, font: font)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.compactTextPreparation === request,
-                    self.mode == .compact, self.model.rowsRevision == request.revision else { return }
+                    self.mode == .compact, self.model.rowsRevision == request.revision
+                else { return }
                 request.widest = max(request.widest, widest)
                 request.nextRow = end
                 #if PORPOISE_TEST_HOOKS
@@ -293,7 +297,8 @@ extension ItemListView {
                 if let rename = self.compactPendingRename {
                     self.compactPendingRename = nil
                     if self.window?.isKeyWindow == true, self.window?.firstResponder === self,
-                        self.userActions == rename.userActions, self.model.index(of: rename.url) != nil {
+                        self.userActions == rename.userActions, self.model.index(of: rename.url) != nil
+                    {
                         self.beginRename(rename.url)
                     }
                 }
