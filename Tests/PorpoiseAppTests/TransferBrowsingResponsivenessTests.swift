@@ -36,6 +36,7 @@ import Testing
         NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
         try #require(await eventually { !pane.model.isLoading && pane.model.index(of: incoming.url) != nil })
         pane.list.computeLayout()
+        try #require(await eventually { !pane.list.isPreparingCompact && pane.list.frames.count == pane.model.rows.count })
         let incomingIndex = try #require(pane.model.index(of: incoming.url))
         let label = pane.list.nameTextRect(incomingIndex)
         #expect(pane.list.incomingProgressRedrawRect(incomingIndex).contains(CGPoint(x: label.midX, y: label.maxY + 6)))
