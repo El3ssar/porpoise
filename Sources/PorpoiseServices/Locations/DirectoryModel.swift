@@ -176,12 +176,13 @@ public final class DirectoryModel {
             (rowIndexByPath?.count ?? 0) <= Self.maximumLocalSnapshotRows,
             tagCache.count <= Self.maximumLocalSnapshotRows, folderCounts.count <= Self.maximumLocalSnapshotRows
         else { return nil }
-        return LocalSnapshot(
+        let snapshot = LocalSnapshot(
             location: location, identity: localIdentity, props: props, filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles,
             folderSizeMode: Settings.shared.folderSizeMode, folderSizeDepth: Settings.shared.folderSizeDepth,
             items: items, ordered: sortedTop, rows: rows, groups: groups, keys: rowFileKeys,
             keyCache: fileKeyCache, index: rowIndex, indexByPath: rowIndexByPath, tags: tagCache, folderCounts: folderCounts)
+        return canShowLocalSnapshot(snapshot) ? snapshot : nil
     }
 
     private func canShowLocalSnapshot(_ snapshot: LocalSnapshot) -> Bool {
@@ -703,11 +704,13 @@ public final class DirectoryModel {
     /// `changedOnly`: a change in the folder (FSEvents), not a new visit or the user's reload: item counts are taken
     /// again only for folders that changed.
     private func reload(keepSelection: Bool = true, changedOnly: Bool, cachedLocalSnapshot: LocalSnapshot? = nil) {
+        let snapshotToValidate = cachedLocalSnapshot ?? (changedOnly ? pendingLocalSnapshot : nil)
+        let keepingKnownLocalRows = changedOnly && localSnapshotRefresh && source is LocalSource && !rows.isEmpty
         cancelLocalSnapshotValidation()
-        localSnapshotRefresh = false
+        localSnapshotRefresh = keepingKnownLocalRows
         refreshingRowsPending = false
         localIdentity = nil
-        if source is LocalSource { isRefreshing = false }
+        if source is LocalSource { isRefreshing = keepingKnownLocalRows }
         observeGit()
         if !changedOnly && gitHasDelivered { gitObservation?.retry() }
         loadedNotificationPending = false
@@ -716,6 +719,7 @@ public final class DirectoryModel {
         let replacement = sourceFactory(location, appLibraryPresentationEnabled)
         replacement.retainMetadata(for: expanded.union([location]))
         source = replacement
+        if !(source is LocalSource), localSnapshotRefresh { localSnapshotRefresh = false; isRefreshing = false }
         folderPrefetch?.cancel(); folderPrefetch = nil
         hoverPrefetch?.cancel(); hoverPrefetch = nil
         for load in childLoads.values { load.cancel() }
@@ -752,7 +756,7 @@ public final class DirectoryModel {
             lastLoaded = url
             notifyLoaded()
         } else {
-            loadingListing = true
+            loadingListing = !localSnapshotRefresh
             if source.traits.paintsCache { isRefreshing = false }
         }
         guard token == loadToken else { return }
@@ -767,7 +771,7 @@ public final class DirectoryModel {
         // A synchronous source or delivery callback may have navigated/reloaded again.
         guard token == loadToken else { load.cancel(); return }
         currentLoad = load
-        if let cachedLocalSnapshot { beginLocalSnapshotValidation(cachedLocalSnapshot, token: token) }
+        if let snapshotToValidate { beginLocalSnapshotValidation(snapshotToValidate, token: token) }
     }
 
     /// A paging source finished: the expanded folders are listed again and the visible ones read ahead. A failure
