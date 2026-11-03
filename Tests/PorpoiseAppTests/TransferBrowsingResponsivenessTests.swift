@@ -115,7 +115,7 @@ import Testing
         runner.readSpotlightText = { _, _, _ in
             reading.continuation.yield(); textGate.wait(); return "a needle in the text"
         }
-        defer { textGate.signal(); runner.stop(); reading.continuation.finish() }
+        defer { runner.stop(); snippetQueue.cancelAllOperations(); textGate.signal(); reading.continuation.finish() }
         let paths = [scratch.path("needle.txt").path, scratch.path("body.txt").path]
         runner.publish(paths, done: true)
         try #require(await reads.next() != nil)
