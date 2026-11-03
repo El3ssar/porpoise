@@ -74,11 +74,27 @@ final class ConflictDialog: NSObject {
                 attributes: [.font: NSFont.systemFont(ofSize: FontSize.callout)]
             ).height)
         let height = max(16, hintHeight)
-        window.setContentSize(CGSize(width: 620, height: 358 + height))
-        _ = label(
+        let heading =
             (bothFolders ? "A folder named “\(info.source.name)”" : "“\(info.source.name)”")
-                + " already exists in \(destinationName)",
-            CGRect(x: 20, y: 324 + height, width: 450, height: 18), size: 13, weight: .semibold)
+            + " already exists in \(destinationName)"
+        let headingWidth: CGFloat = (info.remainingConflicts ?? 1) > 1 ? 440 : 580
+        let headingField = label(heading, CGRect(x: 20, y: 324 + height, width: headingWidth, height: 18), size: 13, weight: .semibold)
+        headingField.maximumNumberOfLines = 4
+        headingField.lineBreakMode = .byWordWrapping
+        headingField.cell?.truncatesLastVisibleLine = true
+        headingField.toolTip = heading
+        // Measure the actual text cell: its horizontal insets can move a word onto an extra line.
+        let headingHeight = max(
+            18,
+            min(
+                72,
+                ceil(
+                    headingField.cell?.cellSize(
+                        forBounds:
+                            CGRect(x: 0, y: 0, width: headingWidth, height: .greatestFiniteMagnitude)
+                    ).height ?? 18)))
+        headingField.frame.size.height = headingHeight
+        window.setContentSize(CGSize(width: 620, height: 340 + height + headingHeight))
         _ = label(hint, CGRect(x: 20, y: 321, width: 580, height: height), secondary: true)
         card(
             info.destination, heading: "In \(destinationName)", x: 20, newer: older,
@@ -90,7 +106,8 @@ final class ConflictDialog: NSObject {
             larger: bothFolders
                 ? ((info.sourceFolder?.bytes ?? 0) > (info.destinationFolder?.bytes ?? .max)) : info.source.size > info.destination.size,
             summary: info.sourceFolder)
-        _ = label("→", CGRect(x: 300, y: 229, width: 22, height: 24), size: 17, secondary: true)
+        // The incoming item is on the right; it is being copied into the destination on the left.
+        _ = label("←", CGRect(x: 300, y: 229, width: 22, height: 24), size: 17, secondary: true)
 
         let strip = NSView(frame: CGRect(x: 20, y: 95, width: 580, height: 66))
         strip.wantsLayer = true
@@ -113,6 +130,8 @@ final class ConflictDialog: NSObject {
         window.contentView!.addSubview(counts)
         methodChanged()
         method.toolTip = "Size & date compares metadata; Contents reads every byte."
+        method.setAccessibilityLabel("Compare files using")
+        method.setAccessibilityHelp(method.toolTip)
         window.contentView!.addSubview(method)
         let total = info.remainingConflicts ?? 1
         let rule = NSButton(title: total > 1 ? "Apply to All \(total)" : "Apply", target: self, action: #selector(different))
@@ -122,7 +141,9 @@ final class ConflictDialog: NSObject {
         rule.frame = CGRect(x: 594 - rule.frame.width, y: 113, width: rule.frame.width, height: 32)
         window.contentView!.addSubview(rule)
         applyAll.title = total > 1 ? "Do this for the other \(total - 1) conflicts" : "Do this for later conflicts in this transfer"
-        if total > 1 { _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 325 + height, width: 130, height: 18), size: 11, secondary: true) }
+        if total > 1 {
+            _ = label("Conflict 1 of \(total)", CGRect(x: 470, y: 307 + height + headingHeight, width: 130, height: 18), size: 11, secondary: true)
+        }
         applyAll.font = .systemFont(ofSize: FontSize.small)
         applyAll.frame = CGRect(x: 20, y: 63, width: 386, height: 22)
         window.contentView!.addSubview(applyAll)
@@ -185,6 +206,7 @@ final class ConflictDialog: NSObject {
         window.contentView!.addSubview(image)
         let name = label(item.name, CGRect(x: x + 86, y: 253, width: 176, height: 19), size: 13, weight: .medium)
         name.lineBreakMode = .byTruncatingMiddle
+        name.toolTip = item.name
         let sizeText: String
         if item.isBrowsableFolder {
             sizeText =
@@ -193,6 +215,7 @@ final class ConflictDialog: NSObject {
             sizeText = FileFormat.size(item.size)
         }
         let size = label(sizeText, CGRect(x: x + 86, y: 235, width: 176, height: 18))
+        size.lineBreakMode = .byTruncatingTail; size.toolTip = sizeText
         if larger { size.textColor = Theme.transferChanged }
         let formatter = DateFormatter()
         formatter.locale = .current; formatter.dateFormat = "d MMM yyyy, HH:mm"
@@ -212,7 +235,7 @@ final class ConflictDialog: NSObject {
                 ? "Folder" : (item.contentType == nil && item.url.pathExtension.lowercased() == "pdf" ? "PDF document" : item.typeDescription),
             CGRect(x: x + 86, y: 199, width: 176, height: 16), size: 11, secondary: true)
         box.setAccessibilityElement(true)
-        box.setAccessibilityLabel("\(heading): \(item.name), \(FileFormat.size(item.size)), \(badges)")
+        box.setAccessibilityLabel((["\(heading): \(item.name)", sizeText, dateText] + (badges.isEmpty ? [] : [badges])).joined(separator: ", "))
     }
 
     @objc private func methodChanged() {

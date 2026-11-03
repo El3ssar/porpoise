@@ -31,11 +31,11 @@ already reaches the column's width cap. The resize improvement removes the per-f
 rectangle array; Compact uses one geometry band per group. Exact legacy-cell, group-gap,
 hit-target, keyboard, extra-role, zoom, empty-state and value-copy checks preserve behavior.
 
-**Remaining measured hotspot:** the initial Compact layout still measures every label when
-all names remain below the cap. This fixture takes about 0.74 seconds on the main thread;
-it has not improved. A later change needs to move that work away from interaction while
-deliberately preserving column sizing and scroll/selection stability. Do not describe this
-change as making every large-folder interaction meet a 50 ms main-thread budget.
+**Hotspot identified in this initial run:** the Compact layout still measured every label
+when all names remained below the cap, taking about 0.74 seconds on the main thread.
+The subsequent [large Compact follow-up](COMPACT-RESPONSIVENESS.md) addresses that stall
+with exact asynchronous measurement and records its own before/after evidence. Neither
+receipt establishes a 50 ms budget for every large-folder operation.
 
 These are local diagnostic medians, without A/A calibration or isolated host use. Small
 differences in the other workloads establish no speedup or regression conclusion. The
@@ -86,3 +86,33 @@ compact/expanded details and concurrent cards. Independent code/visual review fo
 blockers. Every local fixture kept native windows unordered and non-key. These checks do
 not certify active native materials, real VoiceOver interaction or conflict-sheet keyboard
 dispatch. Hosted CI/UI/performance results must be assessed separately for the final head.
+
+
+## Next-block follow-up
+
+The later Compact change is documented in [Large Compact layouts](COMPACT-RESPONSIVENESS.md).
+The same delivery also includes:
+
+- Cooperative cancellation during background sorts and incremental merges. Five alternating
+  optimized 100k-name samples reduced obsolete-sort tail latency from median 639.0 ms to
+  2.82 ms. Complete-sort medians were 684.2/690.6 ms on this noisy host; no normal-sort
+  throughput improvement is claimed. See the [repeatable diagnostic](../../Benchmarks/Browsing/README.md#superseded-sorting).
+- Transfer fractions repaint incoming cells, including background Columns, without laying
+  out the folder or broadcasting a fresh listing. A regression observes zero listing
+  notifications across 100 ticks and checks the full below-label progress-bar damage area.
+  Structural incoming-item changes still rebuild. A gated workload keeps actual thumbnail
+  and snippet IO pending while browsing/filtering, transfer ticks and newer search metadata
+  continue; it uses temporary synthetic entries and fake servers, not personal files.
+- In-flight metadata requests share tag reads. Refresh/reload generation tests ensure older
+  completions cannot publish stale tags or clear a newer request's reservation.
+- Stale breadcrumb presses cannot activate a different path after rebuilding. Disabled
+  toolbar menus reject pointer, keyboard and accessibility actions. Conflict names wrap,
+  retain full hover text, announce the displayed folder summary and comparison method,
+  and show the transfer arrow toward the destination.
+
+The integrated local check passed 117 targeted tests: 70 Services, 43 App and 4 Core.
+Focused optimized Compact checks passed 27 tests separately. Light/dark unordered conflict
+and loading captures were inspected; no app window was activated or made key. Tests do not
+certify real VoiceOver use, physical-volume throughput or all end-to-end navigation latency.
+Hosted validation is assessed separately for the final PR head. The broader navigation/Back
+roadmap item remains open until those remaining delays are measured and addressed.

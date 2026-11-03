@@ -47,6 +47,7 @@ final class BrowserColumn {
             self?.list.relayout()
             self?.refreshState()
         }
+        model.onIncomingProgressChanged = { [weak self] in self?.list.redrawIncomingProgress() }
         model.onSelectionChanged = { [weak self] in
             guard let self else { return }
             self.list.needsDisplay = true
@@ -114,6 +115,7 @@ final class BrowserColumn {
     func close() {
         loadingWork?.cancel()
         model.onChange = nil
+        model.onIncomingProgressChanged = nil
         model.onSelectionChanged = nil
         model.onLoaded = nil
         model.onPropsChanged = nil

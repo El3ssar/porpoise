@@ -252,6 +252,10 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
         segments = segs
         hover = nil
+        // A mouse-down or spring-loaded arrow belongs to the path and geometry that received it.
+        // A navigation or resize can put an unrelated folder at that same segment index.
+        pressed = nil
+        endDropHover()
         layoutSegments()
         // Keyboard focus stays on the path: on the folder now shown.
         if focused != nil { focused = focusable.last }
@@ -556,7 +560,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let i = pressed else { return }
+        guard !isEditing, let i = pressed else { return }
         pressed = nil
         needsDisplay = true
         let p = convert(event.locationInWindow, from: nil)
@@ -776,6 +780,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             isEditing = true
             completion = CompletionSource()
             let f = PathField(frame: fieldFrame)
+            f.setAccessibilityLabel("Location")
             f.stringValue = editText
             f.font = Theme.font
             f.isBordered = false

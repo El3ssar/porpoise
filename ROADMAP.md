@@ -4,11 +4,10 @@ Make Porpoise the file manager people want to use every day: fast, polished and 
 
 ## Next
 
-- [ ] Remove the delay when opening Compact view in folders with many short filenames.
-- [ ] Make navigation, Back, sorting and view changes feel immediate in large folders.
-- [ ] Keep browsing and searching responsive while previews load and transfers run.
-- [ ] Finish the interaction details: keyboard navigation, hover feedback, accessibility
-  and clear handling of loading, conflicts and errors.
+- [x] Remove the UI freeze when opening Compact view in folders with many short filenames.
+- [ ] Measure and fix remaining delays in navigation, Back, sorting and view changes in large folders.
+- [x] Keep browsing and searching responsive while previews load and transfers run.
+- [x] Polish keyboard navigation, hover feedback, accessibility and loading/conflict messages.
 
 ## Then
 

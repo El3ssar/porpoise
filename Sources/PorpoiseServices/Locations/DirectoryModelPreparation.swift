@@ -30,7 +30,7 @@ struct DirectoryModelPreparation {
         let alive: Set<URL>
     }
 
-    /// Queued work can be cancelled before it starts; running work checks between preparation stages.
+    /// Queued work can be cancelled before it starts; running work checks within sorting and between stages.
     /// The caller also checks its generation before publishing. No worker waits for another worker.
     private static let queue = DispatchQueue(label: "app.porpoise.directory-preparation", qos: .userInitiated, autoreleaseFrequency: .workItem)
 
@@ -83,8 +83,9 @@ struct DirectoryModelPreparation {
             }
             return names
         }
-        func sort(_ list: [FileItem]) -> [FileItem] {
-            ItemSorter.sort(list, props: props, choice: choice, folderSizes: sizes, tags: props.sortRole == .tags ? tagNames(list) : [:])
+        func sort(_ list: [FileItem]) -> [FileItem]? {
+            let names = props.sortRole == .tags ? tagNames(list) : [:]
+            return ItemSorter.sort(list, props: props, choice: choice, folderSizes: sizes, tags: names, cancelled: cancelled)
         }
         let top: [FileItem]
         if let ordered {
@@ -97,7 +98,8 @@ struct DirectoryModelPreparation {
                 let urls = Set(incoming.map(\.url))
                 listing = items.filter { !urls.contains($0.url) } + incoming
             }
-            top = sort(visible(listing, filtered: false))
+            guard let sorted = sort(visible(listing, filtered: false)) else { return nil }
+            top = sorted
         }
         guard !cancelled() else { return nil }
         let shown = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
@@ -116,7 +118,7 @@ struct DirectoryModelPreparation {
         let assembly = DirectoryRowAssembly.build(
             shown, groups: sections, expanded: expanded, expandsFolders: props.mode == .details, cancelled: cancelled
         ) { url in
-            children[url].map { sort(visible($0, filtered: true)) }
+            children[url].flatMap { sort(visible($0, filtered: true)) }
         }
         let rows = assembly.rows, groups = assembly.groups
         guard !cancelled() else { return nil }

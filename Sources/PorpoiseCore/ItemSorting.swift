@@ -104,6 +104,26 @@ public enum ItemSorter {
         items.sorted { inOrder($0, $1, props: props, choice: choice, folderSizes: folderSizes, tags: tags) }
     }
 
+    /// Background preparation can stop obsolete work during the sort, rather than waiting for every
+    /// comparison before serving the next request. The uncancelled API above keeps its original fast path.
+    public static func sort(
+        _ items: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
+        folderSizes: [URL: Int] = [:], tags: [URL: [String]] = [:], cancelled: () -> Bool
+    ) -> [FileItem]? {
+        guard !cancelled() else { return nil }
+        var comparisons = 0
+        let result = try? items.sorted { a, b in
+            // Checking the cancellation lock for every localized comparison adds needless contention.
+            // At most 256 comparisons can run after a request is cancelled.
+            if comparisons & 255 == 0, cancelled() { throw Interrupted.cancelled }
+            comparisons &+= 1
+            return inOrder(a, b, props: props, choice: choice, folderSizes: folderSizes, tags: tags)
+        }
+        return cancelled() ? nil : result
+    }
+
+    private enum Interrupted: Error { case cancelled }
+
     /// `sorted` (in the order `sort` makes) with `more` (in any order) added: only `more` is sorted, then the two
     /// are merged. What a growing list of search results needs, thousands of items long.
     public static func merge(
@@ -122,6 +142,29 @@ public enum ItemSorter {
                 out.append(sorted[i]); i += 1
             }
         }
+        out.append(contentsOf: sorted[i...])
+        out.append(contentsOf: added[j...])
+        return out
+    }
+
+    /// The same stable merge, with cancellation while sorting new results and combining the two lists.
+    public static func merge(
+        _ sorted: [FileItem], adding more: [FileItem], props: ViewProperties, choice: SortingChoice = .natural,
+        folderSizes: [URL: Int] = [:], cancelled: () -> Bool
+    ) -> [FileItem]? {
+        guard let added = sort(more, props: props, choice: choice, folderSizes: folderSizes, cancelled: cancelled) else { return nil }
+        var out: [FileItem] = []
+        out.reserveCapacity(sorted.count + added.count)
+        var i = 0, j = 0
+        while i < sorted.count, j < added.count {
+            if (i + j) & 255 == 0, cancelled() { return nil }
+            if inOrder(added[j], sorted[i], props: props, choice: choice, folderSizes: folderSizes, tags: [:]) {
+                out.append(added[j]); j += 1
+            } else {
+                out.append(sorted[i]); i += 1
+            }
+        }
+        guard !cancelled() else { return nil }
         out.append(contentsOf: sorted[i...])
         out.append(contentsOf: added[j...])
         return out

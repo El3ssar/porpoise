@@ -68,8 +68,17 @@ public final class DirectoryModel {
             return (item, activity.incomingFraction)
         }
         let next = pairs.map { $0.0 }
-        incomingProgress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
-        if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
+        let progress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
+        let progressChanged = incomingProgress != progress
+        incomingProgress = progress
+        if incomingItems != next {
+            incomingItems = next
+            rebuild()
+        } else if progressChanged {
+            // The same incoming rows only need their bars repainted. A full model change makes
+            // browsing panes lay out and measure their labels again while the copy is running.
+            if let onIncomingProgressChanged { onIncomingProgressChanged() } else { onChange?() }
+        }
     }
     deinit {
         searchSortWork?.cancel()
@@ -173,8 +182,9 @@ public final class DirectoryModel {
             guard !work.isCancelled else { return }
             let top =
                 grows
-                ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes)
-                : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes)
+                ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes, cancelled: { work.isCancelled })
+                : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes, cancelled: { work.isCancelled })
+            guard let top else { return }
             let urls = items.map(\.url)
             let keys = FilePath.keys(urls, cancelled: { work.isCancelled })
             guard !work.isCancelled else { return }
@@ -291,6 +301,8 @@ public final class DirectoryModel {
     public var anchorURL: URL?
 
     public var onChange: (() -> Void)?
+    /// Fractions changed without changing row content, order or geometry.
+    public var onIncomingProgressChanged: (() -> Void)?
     public var onSelectionChanged: (() -> Void)?
     public var onPropsChanged: (() -> Void)?
     public var onLoaded: (() -> Void)?
@@ -448,6 +460,7 @@ public final class DirectoryModel {
     }
     public func refreshTags() {
         tagCache = [:]
+        resetMetadataRequests()
         if props.sortRole == .tags || props.effectiveGroupRole == .tags { rebuild() }
     }
     private func tagMap(_ list: [FileItem]) -> [URL: [String]] {
@@ -484,7 +497,20 @@ public final class DirectoryModel {
 
     public var onMetadataLoaded: (() -> Void)?
     private var metadataWanted: Set<URL> = []
+    /// Missing tags stay in flight until publication, so repeated layout passes share one disk read.
+    private var metadataInFlight: Set<URL> = []
+    private var metadataGeneration: UInt64 = 0
     private static let metadataQueue = DispatchQueue(label: "app.porpoise.item-metadata", qos: .userInitiated, autoreleaseFrequency: .workItem)
+    typealias MetadataValue = (tags: [FinderTags.Tag]?, cloud: (state: CloudState, isCloud: Bool))
+    #if PORPOISE_TEST_HOOKS
+    var readItemMetadataForTesting: ((URL, Bool) -> MetadataValue)?
+    #endif
+
+    private func resetMetadataRequests() {
+        metadataGeneration &+= 1
+        metadataWanted = []
+        metadataInFlight = []
+    }
 
     /// Tags to draw: the cached ones, or none until they're read.
     public func shownTags(for item: FileItem) -> [FinderTags.Tag] {
@@ -504,9 +530,11 @@ public final class DirectoryModel {
 
     /// Collects the misses of one drawing pass and reads them together once it's done.
     private func want(_ url: URL) {
+        guard !metadataInFlight.contains(url) else { return }
         if metadataWanted.isEmpty {
+            let generation = metadataGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, self.metadataGeneration == generation else { return }
                 let urls = self.metadataWanted
                 self.metadataWanted = []
                 self.readMetadata(of: urls, tags: true)
@@ -516,15 +544,27 @@ public final class DirectoryModel {
     }
 
     private func readMetadata(of urls: Set<URL>, tags: Bool) {
+        let urls = tags ? urls.subtracting(metadataInFlight) : urls
         guard !urls.isEmpty else { return }
+        if tags { metadataInFlight.formUnion(urls) }
         let token = loadToken
+        let generation = metadataGeneration
+        #if PORPOISE_TEST_HOOKS
+        let injectedRead = readItemMetadataForTesting
+        #endif
         Self.metadataQueue.async { [weak self] in
-            let read = urls.map { ($0, tags ? FinderTags.read($0) : nil, CloudState.of($0)) }
+            let read = urls.map { url -> (URL, MetadataValue) in
+                #if PORPOISE_TEST_HOOKS
+                if let injectedRead { return (url, injectedRead(url, tags)) }
+                #endif
+                return (url, (tags ? FinderTags.read(url) : nil, CloudState.of(url)))
+            }
             DispatchQueue.main.async {
-                guard let self, self.loadToken == token else { return }
-                for (url, t, c) in read {
-                    if let t, self.tagCache[url] == nil { self.tagCache[url] = t }
-                    self.cloudCache[url] = c
+                guard let self, self.loadToken == token, self.metadataGeneration == generation else { return }
+                if tags { self.metadataInFlight.subtract(urls) }
+                for (url, value) in read {
+                    if let tags = value.tags, self.tagCache[url] == nil { self.tagCache[url] = tags }
+                    self.cloudCache[url] = value.cloud
                 }
                 self.onMetadataLoaded?()
             }
@@ -566,7 +606,7 @@ public final class DirectoryModel {
         tagCache = [:]
         cloudCache = [:]
         fileKeyCache = [:]
-        metadataWanted = []
+        resetMetadataRequests()
         // Every load starts clean: an error of the previous location must not leak into this one.
         loadError = nil
         blockedByPrivacy = false
@@ -1255,7 +1295,7 @@ public final class DirectoryModel {
         tagCache = [:]
         cloudCache = [:]
         fileKeyCache = [:]
-        metadataWanted = []
+        resetMetadataRequests()
         loadError = nil
         blockedByPrivacy = false
         locationVanished = false

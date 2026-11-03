@@ -11,7 +11,7 @@ import Testing
 /// No wall-clock assertions: compare alternating baseline/candidate processes on the same host.
 @MainActor @Suite(.isolatedSettings) struct BrowsingPerformanceTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["PORPOISE_BROWSING_BENCHMARK"] == "1"))
-    func offscreenBrowsing() throws {
+    func offscreenBrowsing() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch("browsing-performance")
         Settings.shared.folderSizeMode = .none
@@ -36,7 +36,11 @@ import Testing
             scroll.documentView = view
             for mode in [ViewMode.icons, .details, .compact] {
                 model.props.mode = mode
+                let readyStart = ProcessInfo.processInfo.systemUptime
                 measure("\(mode.rawValue)_initial_ms") { view.computeLayout() }
+                await expectEventually { view.frames.count == count }
+                metrics["\(mode.rawValue)_ready_ms"] = (ProcessInfo.processInfo.systemUptime - readyStart) * 1000
+                if mode == .compact { metrics["compact_snapshot_max_ms"] = view.compactSnapshotMaxMilliseconds }
                 measure("\(mode.rawValue)_resize_20_ms") {
                     for _ in 0..<20 {
                         scroll.frame.size.width += 1

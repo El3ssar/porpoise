@@ -59,7 +59,7 @@ import Testing
         #expect(view.frames.isEmpty && view.groupHeaderFrames.isEmpty)
     }
 
-    @Test func hundredThousandCellsUseOneBandAndSnapshotsKeepTheirGeometry() throws {
+    @Test func hundredThousandCellsUseOneBandAndSnapshotsKeepTheirGeometry() async throws {
         let scratch = try Scratch()
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
         model.searchResults = (0..<100_000).map {
@@ -71,6 +71,7 @@ import Testing
             model.props.mode = mode
             view.previewZoom(32, commitAfter: nil)
             view.computeLayout()
+            await expectEventually { !view.isPreparingCompact && view.frames.count == 100_000 }
             #expect(view.frames.count == 100_000)
             #expect(view.frames.bands.count == 1 && view.frames.materialized.isEmpty)
             let old = view.frames
