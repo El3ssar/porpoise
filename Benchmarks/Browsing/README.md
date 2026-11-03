@@ -26,3 +26,18 @@ The synthetic model workload supplies already loaded metadata through the search
 entry point. It measures model/layout code, not filesystem enumeration, presented frames,
 native materials, Quick Look throughput, network latency or end-to-end Back navigation.
 Use hosted app performance and UI acceptance for their separate recorded workloads.
+
+## Superseded sorting
+
+`SortingPerformanceTests` is another opt-in, window-free diagnostic. In an optimized test
+build, run it with `PORPOISE_SORTING_BENCHMARK=1` and filter `SortingPerformanceTests`.
+It prints `SORTING_BENCHMARK` JSON for 100,000 deterministically shuffled short filenames:
+ordinary and cooperative sorts, both uninterrupted and cancelled after a 10 ms timer.
+The ordinary sort is the previous worker behavior: it must finish its comparisons before
+noticing cancellation. The cooperative sort can stop within a comparison batch.
+
+Compare alternating fresh-process samples, discard the warmup, and retain the raw records.
+`after_cancel_ms` measures obsolete sorting work that must retire before the serial directory
+preparation queue can start a newer request. It does not measure an entire navigation,
+filesystem listing, row publication, or a presented frame. Successful sorts retain the exact
+same comparator and stable ordering; cancellation never publishes a partially sorted array.

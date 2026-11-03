@@ -182,8 +182,9 @@ public final class DirectoryModel {
             guard !work.isCancelled else { return }
             let top =
                 grows
-                ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes)
-                : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes)
+                ? ItemSorter.merge(kept ?? [], adding: shown, props: p, choice: choice, folderSizes: sizes, cancelled: { work.isCancelled })
+                : ItemSorter.sort(shown, props: p, choice: choice, folderSizes: sizes, cancelled: { work.isCancelled })
+            guard let top else { return }
             let urls = items.map(\.url)
             let keys = FilePath.keys(urls, cancelled: { work.isCancelled })
             guard !work.isCancelled else { return }
