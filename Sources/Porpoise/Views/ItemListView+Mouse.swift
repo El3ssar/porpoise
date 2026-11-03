@@ -28,6 +28,7 @@ extension ItemListView {
     private func updateBadgeTip(at p: CGPoint, row i: Int?) {
         let help = i.flatMap { i in
             cloudRects[i].flatMap { $0.contains(p) ? CloudBadge.help(cloudBadge(model.rows[i].item), of: model.rows[i].item.url) : nil }
+                ?? dateToolTip(at: p, row: i)
         }
         if let help {
             if toolTip != help { toolTip = help }

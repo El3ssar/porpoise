@@ -206,7 +206,7 @@ private var utc: Calendar {
     @Test func relativeDates() {
         let cal = utc
         let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: 12))!
-        #expect(FileFormat.relativeDate(now, now: now, calendar: cal).hasPrefix("Today at "))
+        #expect(FileFormat.relativeDate(now, now: now, calendar: cal) == "Just now")
         #expect(FileFormat.relativeDate(now.addingTimeInterval(-86400), now: now, calendar: cal).hasPrefix("Yesterday at "))
         #expect(FileFormat.relativeDate(now.addingTimeInterval(-3 * 86400), now: now, calendar: cal).hasPrefix("Monday at "))
         let old = FileFormat.relativeDate(now.addingTimeInterval(-30 * 86400), now: now, calendar: cal)

@@ -138,6 +138,7 @@ final class ItemListView: NSView {
     /// True while a zoom is being saved (the container then keeps the scroll position).
     private(set) var committingZoom = false
     private var zoomCommitTimer: Timer?
+    var relativeDateTimer: Timer?
     private let zoomAnimator = Animator(name: "list.zoom")
 
     // MARK: Transitions (+Transition)
@@ -180,6 +181,13 @@ final class ItemListView: NSView {
                 self?.thumbnailReady(n)
             })
         observers.append(
+            NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) {
+                [weak self] n in
+                guard let self, let changed = n.object as? NSWindow, changed === self.window else { return }
+                self.stopRelativeDateRefresh()
+                self.needsDisplay = true
+            })
+        observers.append(
             NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
                 self?.settingsChanged(key: n.object as? String)
             })
@@ -190,9 +198,26 @@ final class ItemListView: NSView {
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
         zoomCommitTimer?.invalidate()
+        relativeDateTimer?.invalidate()
         hoverFade.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopRelativeDateRefresh()
+        needsDisplay = true
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        stopRelativeDateRefresh()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        needsDisplay = true
     }
 
     override var isFlipped: Bool { true }
@@ -231,6 +256,7 @@ final class ItemListView: NSView {
         ]
         let changesLayout = key.map(layoutKeys.contains) ?? true
         guard changesLayout || key.map(drawingKeys.contains) == true else { return }
+        if key == nil || key == "dateStyle" { stopRelativeDateRefresh() }
         guard changesLayout else { needsDisplay = true; return }
         let f = Settings.shared.labelFont
         if f != font {
