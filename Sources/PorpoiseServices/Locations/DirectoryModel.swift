@@ -784,6 +784,8 @@ public final class DirectoryModel {
             self.tagCache = result.tags
             self.rowFileKeys = result.keys
             self.fileKeyCache = result.keyCache
+            self.rowIndex = result.rowIndex
+            self.rowIndexByPath = result.rowIndexByPath
             self.requestFolderCounts()
             self.onChange?()
             if self.loadedNotificationPending {
@@ -1028,7 +1030,7 @@ public final class DirectoryModel {
 
     // MARK: Queries
 
-    /// URL → row, built on first use after `rows` changes: views look rows up per hover, draw and key press.
+    /// URL → row. Large local preparations supply it from their worker; small listings build it on first use.
     private var rowIndex: [URL: Int]?
     /// URLs `index(of:)` didn't find in the current rows.
     private(set) var missedLookups: Set<URL> = []
