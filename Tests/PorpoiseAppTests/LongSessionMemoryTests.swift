@@ -59,11 +59,14 @@ import Testing
     @Test func clearingThePreviewColumnReleasesContentBeforeTheColumnIsRemoved() throws {
         let column = ColumnPreviewView(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
         window.contentView = column
-        var image: NSImage? = try bitmap(side: 32)
-        let reference = WeakImage(try #require(image))
-        try preview(in: column.information).image = image
-        image = nil
-        column.clear()
+        let reference = try autoreleasepool { () throws -> WeakImage in
+            let image = try bitmap(side: 32), reference = WeakImage(image)
+            try preview(in: column.information).image = image
+            column.clear()
+            #expect(try preview(in: column.information).image == nil)
+            return reference
+        }
+        // AppKit's setter may autorelease the old image; drain that pool before testing ownership.
         #expect(reference.value == nil)
         #expect(column.window === window && !window.isVisible && !window.isKeyWindow)
         window.contentView = nil; window.close()
@@ -72,11 +75,13 @@ import Testing
     @Test func closingTheWindowReleasesThePreviewEvenIfThePanelIsRetained() throws {
         let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
         window.contentView = panel
-        var image: NSImage? = try bitmap(side: 32)
-        let reference = WeakImage(try #require(image))
-        try preview(in: panel).image = image
-        image = nil
-        window.close()
+        let reference = try autoreleasepool { () throws -> WeakImage in
+            let image = try bitmap(side: 32), reference = WeakImage(image)
+            try preview(in: panel).image = image
+            window.close()
+            #expect(try preview(in: panel).image == nil)
+            return reference
+        }
         #expect(reference.value == nil)
         #expect(!window.isVisible && !window.isKeyWindow)
         withExtendedLifetime(panel) {}
