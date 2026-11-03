@@ -8,10 +8,9 @@ The 2026-11-03 [everyday polish receipt](validation/BROWSING-POLISH.md) records 
 interaction/performance follow-up, its source and local evidence, including the remaining
 short-name Compact measurement cost. Hosted/release validation is assessed separately.
 
-For planning, use [ROADMAP.md](../ROADMAP.md) for direction and
-[the living backlog](STORIES.md) for idea maturity, next actions, acceptance checks and
-completion status. The board was triaged after v0.19.1 on 2026-11-03; release receipts
-below retain their original dates and evidence boundaries.
+[ROADMAP.md](../ROADMAP.md) is the single planning document for direction, priorities,
+ideas, research, acceptance checks and completion status. It was reviewed after v0.19.1
+on 2026-11-03; release receipts below retain their original evidence boundaries.
 
 ## Current contracts
 
@@ -66,10 +65,9 @@ requirements before changing an application's configuration.
 
 ## Future decisions and historical design
 
-[ROADMAP.md](../ROADMAP.md) owns direction, priorities and standing scope decisions.
-[STORIES.md](STORIES.md) is the single living tracker for brainstorming, research, ready
-work, verification, completed deliveries and parked ideas. Historical plans and audits do
-not create additional active backlogs.
+[ROADMAP.md](../ROADMAP.md) owns direction, priorities, statuses and standing scope decisions.
+Ideas, research, planned work, verification, completed deliveries and parked proposals all
+live in that one file. Historical plans and audits are supporting references.
 Drive-format support is a feasibility investigation; additional install-attracting perks are
 still a discussion. Old brainstorms do not become scheduled features merely by being retained.
 
