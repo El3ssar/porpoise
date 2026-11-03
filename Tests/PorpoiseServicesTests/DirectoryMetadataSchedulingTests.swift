@@ -1,9 +1,9 @@
 import Foundation
-import os
 import PorpoiseCore
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
 import Testing
+import os
 
 @testable import PorpoiseServices
 
@@ -22,7 +22,9 @@ import Testing
         let counts = OSAllocatedUnfairLock(initialState: (tags: 0, cloud: 0))
         model.readItemMetadataForTesting = { _, tags in
             if tags {
-                let read = counts.withLock { $0.tags += 1; return $0.tags }
+                let read = counts.withLock {
+                    $0.tags += 1; return $0.tags
+                }
                 if read == 1 { gate.wait() }
             } else {
                 counts.withLock { $0.cloud += 1 }
@@ -59,7 +61,9 @@ import Testing
                 counts.withLock { $0.cloud += 1 }
                 return (nil, (.local, false))
             }
-            let read = counts.withLock { $0.tags += 1; return $0.tags }
+            let read = counts.withLock {
+                $0.tags += 1; return $0.tags
+            }
             if read == 1 { oldGate.wait() }
             if read == 2 { newGate.wait() }
             return ([FinderTags.Tag(name: read == 1 ? "Old" : "New", color: 0)], (.local, false))
