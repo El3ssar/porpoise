@@ -100,6 +100,42 @@ import Testing
         #expect(window.presentations == 1)
     }
 
+    @Test func concurrentOperationsKeepSeparateBoundedCardsAndScrollWithoutPresenting() throws {
+        _ = NSApplication.shared
+        let operations = FileOperationsController(), cloudEditing = CloudEditing()
+        let controller = ActivityWindowController(controller: operations, cloudEditing: cloudEditing)
+        let window = try #require(controller.window); defer { window.close() }
+        let content = try #require(window.contentView)
+        operations.activities = [Activity.State.running, .paused, .waiting, .queued].map { state in
+            let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/Source")], destination: nil, job: nil)
+            activity.state = state
+            return activity
+        }
+        controller.reload(); content.layoutSubtreeIfNeeded()
+        let cards = descendants(content, as: TransferProgressView.self)
+        #expect(cards.count == 4)
+        #expect(window.contentLayoutRect.height == 520)
+        let scroll = try #require(descendants(content, as: NSScrollView.self).first)
+        let document = try #require(scroll.documentView)
+        #expect(document.frame.height > scroll.contentView.bounds.height)
+        let frames = cards.map { $0.convert($0.bounds, to: document) }.sorted { $0.minY < $1.minY }
+        for (previous, next) in zip(frames, frames.dropFirst()) { #expect(previous.maxY + 20 <= next.minY) }
+        #expect(cards.allSatisfy { $0.bounds.width >= 400 && $0.bounds.width <= 600 })
+        if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
+            let previous = NSApp.appearance; defer { NSApp.appearance = previous; Theme.lookChanged() }
+            for look in [AppearanceChoice.light, .dark] {
+                Settings.shared.appearance = look; NSApp.appearance = Theme.appearance; window.appearance = Theme.appearance; Theme.lookChanged()
+                content.layoutSubtreeIfNeeded()
+                try captureOffscreen(window, to: URL(fileURLWithPath: folder).appendingPathComponent("transfers-concurrent-\(look.rawValue).png"))
+            }
+        }
+        if let last = cards.max(by: { $0.convert($0.bounds, to: document).maxY < $1.convert($1.bounds, to: document).maxY }) {
+            last.scrollToVisible(last.bounds)
+            #expect(scroll.contentView.bounds.origin.y > 0, "The final queued operation remains reachable below the compact viewport")
+        }
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
     private func descendants<T: NSView>(_ view: NSView, as type: T.Type) -> [T] {
         (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, as: type) }
     }
@@ -107,7 +143,11 @@ import Testing
     private func captureOffscreen(_ window: NSWindow, to url: URL) throws {
         let content = try #require(window.contentView)
         let bitmap = try #require(content.bitmapImageRepForCachingDisplay(in: content.bounds))
-        window.effectiveAppearance.performAsCurrentDrawingAppearance { content.cacheDisplay(in: content.bounds, to: bitmap) }
+        window.effectiveAppearance.performAsCurrentDrawingAppearance {
+            // Caching a plain content view omits NSWindow's background; paint it only in this offscreen fixture.
+            content.wantsLayer = true; content.layer?.backgroundColor = Theme.windowBackground.cgColor
+            content.cacheDisplay(in: content.bounds, to: bitmap)
+        }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
     }

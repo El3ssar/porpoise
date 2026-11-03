@@ -58,13 +58,50 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     /// folder a narrow field shows). The arrows and buttons are reachable through the menus.
     override func accessibilityChildren() -> [Any]? {
         if isEditing { return super.accessibilityChildren() }
-        return trail.map { crumb in
-            let u = crumb.url
-            return AccessibleRegion(
-                in: self, role: .button, label: crumb.title,
-                frame: { [weak self] in self?.accessibilityFrame(of: u) ?? .zero },
-                press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
+        var controls: [Any] = []
+        if showPlacesButton {
+            controls.append(
+                AccessibleRegion(
+                    in: self, role: .popUpButton, label: "Show Places",
+                    frame: { [weak self] in
+                        self?.segments.first {
+                            if case .placesButton = $0.kind { return true }; return false
+                        }?.rect
+                            ?? self?.segments.first?.rect ?? .zero
+                    },
+                    press: { [weak self] in
+                        guard let self else { return }
+                        self.showPlacesMenu(at: self.segments.first?.rect ?? self.bounds)
+                    }))
         }
+        controls.append(
+            AccessibleRegion(
+                in: self, role: .popUpButton, label: "Show Locations on This Path",
+                frame: { [weak self] in
+                    self?.segments.first {
+                        if case .rootArrow = $0.kind { return true }; return false
+                    }?.rect
+                        ?? self?.segments.first?.rect ?? .zero
+                },
+                press: { [weak self] in
+                    guard let self else { return }
+                    self.showRootMenu(at: self.segments.first?.rect ?? self.bounds)
+                }))
+        return controls
+            + trail.map { crumb in
+                let u = crumb.url
+                let showChildren: (() -> Bool)? =
+                    LocationKind.of(u).hasHierarchy
+                    ? { [weak self] in
+                        guard let self else { return false }
+                        self.showSubfolderMenu(of: u, at: self.accessibilityFrame(of: u))
+                        return true
+                    } : nil
+                return AccessibleRegion(
+                    in: self, role: .button, label: crumb.title,
+                    frame: { [weak self] in self?.accessibilityFrame(of: u) ?? .zero }, showMenu: showChildren,
+                    press: { [weak self] in if let self { self.delegate?.breadcrumb(self, navigateTo: u, newTab: false) } })
+            }
     }
 
     /// Where a folder of the path is drawn: its crumb, the "…" holding it, or else the first thing shown.
@@ -95,7 +132,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     private var focusable: [Int] {
         segments.indices.filter {
             switch segments[$0].kind {
-            case .crumb, .more: return true
+            case .placesButton, .rootArrow, .crumb, .more: return true
             default: return false
             }
         }
@@ -126,7 +163,7 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         switch Int(event.keyCode) {
         case 123: focused = order[max(0, at - 1)]  // ←
         case 124: focused = order[min(order.count - 1, at + 1)]  // →
-        case 49, 36, 76: activateSegment(i)  // Space, Return, Enter
+        case 49, 36, 76: activateSegment(i, newTab: event.modifierFlags.contains(.command))  // Space, Return, Enter
         case 125:  // ↓ opens the focused folder's children without a tiny pointer target.
             if case .crumb(let u, _, _) = segments[i].kind, LocationKind.of(u).hasHierarchy {
                 showSubfolderMenu(of: u, at: segments[i].rect)
@@ -137,10 +174,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
         }
     }
 
-    private func activateSegment(_ i: Int) {
+    private func activateSegment(_ i: Int, newTab: Bool = false) {
         guard i < segments.count else { return }
         switch segments[i].kind {
-        case .crumb(let u, _, _): delegate?.breadcrumb(self, navigateTo: u, newTab: false)
+        case .placesButton: showPlacesMenu(at: segments[i].rect)
+        case .rootArrow: showRootMenu(at: segments[i].rect)
+        case .crumb(let u, _, _): delegate?.breadcrumb(self, navigateTo: u, newTab: newTab)
         case .more(let urls): showMenu(urls.map { ($0, $0.folderName) }, at: segments[i].rect)
         default: break
         }
@@ -196,6 +235,9 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
     func refresh() { rebuild() }
 
     private func rebuild() {
+        // A delayed menu belongs to the path and geometry that requested it.
+        subfolderRequest += 1
+        toolTip = nil
         var segs: [Segment] = []
         if showPlacesButton { segs.append(Segment(kind: .placesButton)) }
         segs.append(Segment(kind: .rootArrow))
@@ -471,14 +513,16 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             toolTip = "Show Parent Folders"
         } else if i == nil {
             toolTip = "Click to Edit Location (⌘L)"
+        } else if let i, case .placesButton = segments[i].kind {
+            toolTip = "Show Places"
         } else {
-            toolTip = nil
+            toolTip = "Show Locations on This Path"
         }
     }
 
     private var fieldHover = false
     override func mouseEntered(with event: NSEvent) { fieldHover = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hover = nil; fieldHover = false; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hover = nil; fieldHover = false; toolTip = nil; needsDisplay = true }
 
     override func mouseDown(with event: NSEvent) {
         delegate?.breadcrumbActivated(self)
@@ -664,7 +708,8 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
             guard self != nil else { return }
             let folders = Self.subfolders(of: u)
             DispatchQueue.main.async {
-                guard let self, self.window != nil, self.subfolderRequest == request else { return }
+                // Never let a slow disk open a popup over another app or a newly edited location.
+                guard let self, NSApp.isActive, self.window?.isKeyWindow == true, !self.isEditing, self.subfolderRequest == request else { return }
                 self.showMenu(folders.map { ($0, $0.folderName) }, at: r, bold: next)
             }
         }
@@ -755,6 +800,12 @@ final class BreadcrumbView: NSView, NSTextFieldDelegate {
 
     /// The location as text in the field (folders end with "/" so typing continues inside them).
     private var editText: String { !url.isFileURL ? url.absoluteString : (url.path == "/" ? "/" : url.path + "/") }
+
+    /// A folder listing cannot reopen a menu after this view leaves its original window.
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow !== window { subfolderRequest += 1 }
+        super.viewWillMove(toWindow: newWindow)
+    }
 
     /// "Make location bar editable": the field is there from the start (without taking the keyboard focus).
     override func viewDidMoveToWindow() {

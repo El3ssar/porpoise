@@ -51,6 +51,68 @@ import Testing
         #expect(!view.isEditing && !window.isVisible && !window.isKeyWindow)
     }
 
+    @Test func keyboardCanReachPlacesAndLocationMenusWithoutShowingAWindow() throws {
+        _ = NSApplication.shared
+        let saved = KeyboardAccess.isFull; defer { KeyboardAccess.isFull = saved }
+        KeyboardAccess.isFull = { true }
+        let view = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: 640, height: 34))
+        view.url = URL(fileURLWithPath: "/Library/Fonts")
+        view.showPlacesButton = true
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = view
+        defer { window.close() }
+        view.layoutSubtreeIfNeeded()
+        #expect(window.makeFirstResponder(view))
+        for _ in 0..<20 {
+            let event = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 123))
+            view.keyDown(with: event)
+        }
+        #expect(view.focusRingMaskBounds.minX == 4, "Left Arrow reaches the Places button, before the folder crumbs")
+        let right = try #require(
+            NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 124))
+        view.keyDown(with: right)
+        #expect(view.focusRingMaskBounds.minX == 30, "The location-root menu follows Places")
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
+    @Test func commandReturnAndAccessibleFoldersKeepTheirNavigationTargets() throws {
+        _ = NSApplication.shared
+        let saved = KeyboardAccess.isFull; defer { KeyboardAccess.isFull = saved }
+        KeyboardAccess.isFull = { true }
+        let view = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: 640, height: 34))
+        let parent = URL(fileURLWithPath: "/fixture/Parent")
+        view.url = parent.appendingPathComponent("Current"); view.showPlacesButton = true
+        let recorder = Recorder(); view.delegate = recorder
+        let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = view
+        defer { window.close() }
+        view.layoutSubtreeIfNeeded(); #expect(window.makeFirstResponder(view))
+        for (code, flags): (UInt16, NSEvent.ModifierFlags) in [(123, []), (36, .command)] {
+            let event = try #require(
+                NSEvent.keyEvent(
+                    with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)
+            )
+            view.keyDown(with: event)
+        }
+        #expect(recorder.visits.map { $0.0.path } == [parent.path] && recorder.visits.map(\.1) == [true])
+        for width: CGFloat in [640, 120] {
+            view.frame.size.width = width; view.layout()
+            let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
+            #expect(children.contains { $0.accessibilityLabel() == "Show Places" && $0.accessibilityRole() == .popUpButton })
+            #expect(children.contains { $0.accessibilityLabel() == "Show Locations on This Path" && $0.accessibilityRole() == .popUpButton })
+            let parentElement = try #require(children.first { $0.accessibilityLabel() == "Parent" })
+            #expect(parentElement.accessibilityPerformPress())
+            #expect(recorder.visits.last?.0.path == parent.path && recorder.visits.last?.1 == false)
+        }
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
     @Test func narrowPathKeepsParentAndOverflowWithinBounds() throws {
         let view = BreadcrumbView(frame: CGRect(x: 0, y: 0, width: 180, height: 34))
         let parent = URL(fileURLWithPath: "/Library/A")

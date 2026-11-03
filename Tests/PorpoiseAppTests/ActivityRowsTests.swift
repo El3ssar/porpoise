@@ -41,6 +41,125 @@ import Testing
         }
     }
 
+    @Test(.isolatedSettings) func preparationAndWaitingUseReadableStateLabels() throws {
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running
+        var progress = JobProgress(
+            kind: .copy, totalBytes: 4096, doneBytes: 0, totalItems: 5, doneItems: 0,
+            currentName: "A long filename whose full value stays available in help.jpg", destination: nil)
+        progress.phase = .preparing; progress.totalFiles = 3; progress.totalFolders = 2
+        activity.progress = progress
+        let card = TransferProgressView(window: nil)
+        card.update(activity)
+        let labels = descendants(card, as: NSTextField.self)
+        #expect(labels.contains { $0.stringValue == "Found 3 files · 2 folders" })
+        #expect(labels.contains { $0.stringValue == "Preparing…" })
+        #expect(labels.contains { $0.stringValue == progress.currentName && $0.toolTip == progress.currentName })
+        if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
+            for look in [AppearanceChoice.light, .dark] {
+                try captureState(
+                    card, look: look, to: URL(fileURLWithPath: folder).appendingPathComponent("transfer-state-preparing-\(look.rawValue).png"))
+            }
+        }
+        activity.state = .waiting; card.update(activity)
+        #expect(labels.contains { $0.stringValue == "Waiting for your answer" })
+        #expect(card.accessibilityValueDescription()?.contains("Waiting for your answer") == true)
+    }
+
+    @Test(.isolatedSettings) func failureEmphasisSurvivesAppearanceUpdates() throws {
+        _ = NSApplication.shared
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .failed; activity.errors = ["The destination is no longer available"]
+        let card = TransferProgressView(window: nil); card.update(activity)
+        card.viewDidChangeEffectiveAppearance()
+        let failure = try #require(descendants(card, as: NSTextField.self).first { $0.stringValue == activity.errors[0] })
+        #expect(failure.textColor == Theme.transferDanger)
+        activity.state = .running; activity.errors = []; card.update(activity)
+        card.viewDidChangeEffectiveAppearance()
+        #expect(failure.textColor == Theme.viewText)
+    }
+
+    @Test(.isolatedSettings) func environmentWaitTakesPriorityOverPreparationAndStaleThroughput() {
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running; activity.progress?.phase = .preparing
+        activity.notice = "Transfer retry pending"; activity.environmentNotice = "Waiting for network"
+        let card = TransferProgressView(window: nil); card.update(activity)
+        #expect(descendants(card, as: NSTextField.self).contains { $0.stringValue == "Waiting for network" })
+        #expect(card.speedHistory.currentSpeed == nil)
+    }
+
+    @Test(.isolatedSettings) func compactStateControlsFitAtTheMinimumWindowWidth() throws {
+        _ = NSApplication.shared
+        let activity = Activity(
+            kind: .copy, sources: [URL(fileURLWithPath: "/fixture/A long source name")],
+            destination: URL(fileURLWithPath: "/fixture/A long destination name"), job: nil)
+        activity.failedSources = activity.sources
+        activity.startedAt = Date().addingTimeInterval(-2)
+        activity.speedHistory = TransferSpeedHistory()
+        activity.speedHistory.add(bytes: 0, at: 0)
+        activity.speedHistory.add(bytes: 1024, at: 1)
+        activity.speedHistory.add(bytes: 2048, at: 2)
+        activity.progress?.currentName = "A very long filename with Unicode 日本語 and a meaningful extension.photolibrary"
+        for state: Activity.State in [.queued, .running, .paused, .waiting, .verifying, .completed, .failed, .cancelled, .interrupted] {
+            activity.state = state
+            activity.errors = state.isEnded ? ["The destination is unavailable; reconnect it and retry the transfer."] : []
+            let card = TransferProgressView(window: nil); card.update(activity)
+            card.frame = CGRect(x: 0, y: 0, width: 400, height: card.preferredHeight)
+            card.layoutSubtreeIfNeeded()
+            let controls = try #require(descendants(card, as: NSStackView.self).first)
+            let details = try #require(descendants(card, as: NSButton.self).first { $0.title == "Details" })
+            let labels = descendants(card, as: NSTextField.self).map(\.stringValue)
+            if state == .queued { #expect(labels.contains("Files and folders not counted yet")) }
+            if state == .completed { #expect(labels.contains("Completed with errors")) }
+            #expect(controls.frame.minX >= 0 && controls.frame.maxX <= card.bounds.maxX)
+            #expect(details.isHidden || details.frame.maxX + 8 <= controls.frame.minX)
+            #expect(card.subviews.allSatisfy { $0.isHidden || card.bounds.contains($0.frame) })
+            if let folder = ProcessInfo.processInfo.environment["PORPOISE_ACTIVITY_CAPTURES"] {
+                for look in [AppearanceChoice.light, .dark] {
+                    try captureState(
+                        card, look: look,
+                        to: URL(fileURLWithPath: folder).appendingPathComponent("transfer-state-\(state.rawValue)-\(look.rawValue).png"))
+                }
+            }
+        }
+    }
+
+    private func captureState(_ card: TransferProgressView, look: AppearanceChoice, to url: URL) throws {
+        let previous = NSApp.appearance
+        defer { NSApp.appearance = previous; Theme.lookChanged(); card.removeFromSuperview() }
+        Settings.shared.appearance = look; NSApp.appearance = Theme.appearance; Theme.lookChanged()
+        let root = NSView(frame: CGRect(x: 0, y: 0, width: 440, height: card.preferredHeight + 40))
+        root.wantsLayer = true; root.addSubview(card)
+        card.frame = CGRect(x: 20, y: 20, width: 400, height: card.preferredHeight)
+        let window = NSWindow(contentRect: root.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = root; window.appearance = Theme.appearance
+        defer { window.close() }
+        window.effectiveAppearance.performAsCurrentDrawingAppearance {
+            root.layer?.backgroundColor = Theme.windowBackground.cgColor
+            root.layoutSubtreeIfNeeded()
+        }
+        let bitmap = try #require(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+        window.effectiveAppearance.performAsCurrentDrawingAppearance { root.cacheDisplay(in: root.bounds, to: bitmap) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #require(bitmap.representation(using: .png, properties: [:])).write(to: url)
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
+    @Test(.isolatedSettings) func endedPreparationAndVerificationStopIndeterminateProgress() throws {
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        let card = TransferProgressView(window: nil)
+        for phase: JobProgress.Phase in [.preparing, .verifying] {
+            activity.progress?.phase = phase
+            activity.state = .running; card.update(activity)
+            let progress = try #require(descendants(card, as: ThinProgressView.self).first)
+            #expect(progress.isIndeterminate)
+            for state: Activity.State in [.failed, .cancelled, .completed, .interrupted] {
+                activity.state = state; card.update(activity)
+                #expect(!progress.isIndeterminate, "Ended work must not keep animating its previous preparation phase")
+            }
+        }
+    }
+
     @Test(.isolatedSettings) func detailsExpandOnlyTheSpeedGraphAndPreserveMeasuredSamples() throws {
         let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/source")], destination: nil, job: nil)
         activity.state = .running

@@ -5,6 +5,8 @@ import PorpoiseCore
 public struct ActivityPresentation {
     public let title: String
     public let detailLine: String
+    /// The current network, power or transfer wait, without repeated progress amounts.
+    public let notice: String?
     public let actions: [ActivityAction]
     public let fraction: Double
     public let hasFailures: Bool
@@ -15,6 +17,7 @@ public struct ActivityPresentation {
 
     public init(_ activity: Activity) {
         title = Self.title(of: activity)
+        notice = activity.environmentNotice ?? activity.notice
         detailLine = (activity.state == .completed ? Self.summary(activity) : Self.status(of: activity))
             .replacingOccurrences(of: " — ", with: " · ")
         actions = Self.actions(for: activity)
@@ -22,8 +25,10 @@ public struct ActivityPresentation {
         hasFailures = activity.state == .failed || !activity.errors.isEmpty || activity.verification?.ok == false
         showsProgress = activity.state.isActive || activity.state == .queued
         isIndeterminate =
-            (activity.progress?.phase == .preparing || activity.progress?.phase == .verifying) || (activity.fraction <= 0 && activity.state.isActive)
-            || activity.state == .queued
+            !activity.state.isEnded
+            && (activity.progress?.phase == .preparing || activity.progress?.phase == .verifying
+                || (activity.fraction <= 0 && activity.state.isActive)
+                || activity.state == .queued)
         isPaused = activity.state == .paused
     }
 
