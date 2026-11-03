@@ -1,6 +1,6 @@
 import Foundation
-import os
 import Testing
+import os
 
 @testable import PorpoiseCore
 
@@ -29,7 +29,8 @@ import Testing
                     }
                 }
                 let start = DispatchTime.now().uptimeNanoseconds
-                let sorted = cooperative
+                let sorted =
+                    cooperative
                     ? ItemSorter.sort(items, props: ViewProperties(), cancelled: { cancellation.isCancelled })
                     : ItemSorter.sort(items, props: ViewProperties())
                 let end = DispatchTime.now().uptimeNanoseconds
@@ -38,8 +39,10 @@ import Testing
                 } else {
                     #expect(sorted?.first?.name == "file0.txt" && sorted?.last?.name == "file99999.txt")
                 }
-                var record: [String: Any] = ["cooperative": cooperative, "cancelled": stop, "count": items.count,
-                                              "total_ms": Double(end - start) / 1e6]
+                var record: [String: Any] = [
+                    "cooperative": cooperative, "cancelled": stop, "count": items.count,
+                    "total_ms": Double(end - start) / 1e6,
+                ]
                 if stop {
                     try #require(cancellation.isCancelled)
                     record["after_cancel_ms"] = Double(end - cancelledAt.withLock { $0 }) / 1e6

@@ -43,10 +43,12 @@ import Testing
     @Test func cancelledSortNeverReturnsPartialRows() {
         let all = items(10_000)
         var checks = 0
-        let result = ItemSorter.sort(all, props: ViewProperties(), cancelled: {
-            checks += 1
-            return checks >= 4
-        })
+        let result = ItemSorter.sort(
+            all, props: ViewProperties(),
+            cancelled: {
+                checks += 1
+                return checks >= 4
+            })
         #expect(result == nil)
         // A request can be cancelled after comparisons have begun, without finishing the whole sort.
         #expect(checks == 5)
@@ -55,11 +57,21 @@ import Testing
 
     @Test func cancellationIsCheckedBeforeStartingAndAfterTinySorts() {
         var checks = 0
-        #expect(ItemSorter.sort(items(), props: ViewProperties(), cancelled: { checks += 1; return true }) == nil)
+        #expect(
+            ItemSorter.sort(
+                items(), props: ViewProperties(),
+                cancelled: {
+                    checks += 1; return true
+                }) == nil)
         #expect(checks == 1)
         for input in [[], Array(items().prefix(1))] {
             checks = 0
-            #expect(ItemSorter.sort(input, props: ViewProperties(), cancelled: { checks += 1; return checks == 2 }) == nil)
+            #expect(
+                ItemSorter.sort(
+                    input, props: ViewProperties(),
+                    cancelled: {
+                        checks += 1; return checks == 2
+                    }) == nil)
             #expect(checks == 2)
         }
     }
@@ -69,13 +81,19 @@ import Testing
         let first = ItemSorter.sort(Array(all.prefix(5000)), props: ViewProperties())
         let more = Array(all.dropFirst(5000))
         var sortingChecks = 0
-        _ = ItemSorter.sort(more, props: ViewProperties(), cancelled: { sortingChecks += 1; return false })
+        _ = ItemSorter.sort(
+            more, props: ViewProperties(),
+            cancelled: {
+                sortingChecks += 1; return false
+            })
         var checks = 0
         #expect(
-            ItemSorter.merge(first, adding: more, props: ViewProperties(), cancelled: {
-                checks += 1
-                return checks == sortingChecks + 2
-            }) == nil)
+            ItemSorter.merge(
+                first, adding: more, props: ViewProperties(),
+                cancelled: {
+                    checks += 1
+                    return checks == sortingChecks + 2
+                }) == nil)
         #expect(checks == sortingChecks + 2)
         #expect(ItemSorter.merge(first, adding: [], props: ViewProperties(), cancelled: { true }) == nil)
     }
