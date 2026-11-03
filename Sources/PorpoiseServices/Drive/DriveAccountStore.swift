@@ -135,7 +135,7 @@ public final class DriveAccountStore: ObservableObject {
                 id: existing?.account.id ?? UUID(), subject: profile.sub, email: profile.email,
                 displayName: profile.name ?? profile.email, photoURL: profile.picture?.scheme == "https" ? profile.picture : nil)
             // Consent is requested so the first connection must provide a refresh credential.
-            guard try token.refresh_token != nil || credentials.read(clientID: config.clientID, accountID: account.id) != nil else {
+            guard try token.refresh_token?.isEmpty == false || credentials.read(clientID: config.clientID, accountID: account.id) != nil else {
                 throw DriveError.reconnect
             }
             let manager = DriveTokenManager(configuration: config, accountID: account.id, credentials: credentials, http: http)

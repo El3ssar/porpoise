@@ -124,7 +124,7 @@ final class ConnectSheet: SecondaryWindowController {
             })
         cloud.spacing = ConnectTile.spacing
         let later = CloudProvider.allCases.filter { !$0.isAvailable }.map(\.title)
-        let more = Self.secondary("More services coming: " + later.joined(separator: ", ") + ".")
+        let more = Self.secondary("Unavailable in this build: " + later.joined(separator: ", ") + ".")
         let servers = NSStackView(
             views: ServerKind.allCases.map { k in
                 let t = ConnectTile(title: k.title, image: Self.symbol(k.symbol), available: k.isAvailable)

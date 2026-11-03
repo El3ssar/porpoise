@@ -167,8 +167,8 @@ import Testing
         #expect(checks == 1 && explained == 1)
     }
 
-    /// Connect (DS-9): tiles wide enough for every name, six across, and services not ready yet on one line, not as tiles.
-    @Test func connectTilesFitTheirNamesAndComingSoonIsOneLine() throws {
+    /// Connect (DS-9): tiles fit every name, six across, and unavailable services share one line.
+    @Test func connectTilesFitTheirNamesAndAvailabilityIsOneLine() throws {
         let titles = ConnectSheet.ServerKind.allCases.map(\.title) + CloudProvider.allCases.map(\.title)
         for t in titles {
             let width = (t as NSString).size(withAttributes: [.font: ConnectTile.titleFont]).width
@@ -188,7 +188,7 @@ import Testing
         let ids = Set(tiles(content).compactMap { $0.identifier?.rawValue })
         for p in CloudProvider.allCases { #expect(ids.contains("tile-" + p.rawValue) == p.isAvailable, "\(p)") }
         let later = CloudProvider.allCases.filter { !$0.isAvailable }
-        let line = texts(in: content).first { $0.hasPrefix("More services coming") }
+        let line = texts(in: content).first { $0.hasPrefix("Unavailable in this build") }
         #expect(later.allSatisfy { line?.contains($0.title) == true })
         #expect(content.frame.width >= ConnectTile.rowWidth(ConnectSheet.ServerKind.allCases.count) + 2 * Tokens.Space.xl)
         // UI-5: the page sits on the sheet's 20-pt margins.
