@@ -1,171 +1,93 @@
-# Roadmap
+# Porpoise roadmap
 
-Porpoise is a native Mac file manager with Dolphin's browsing model, familiar Mac controls,
-and tools for local, server and cloud files. The immediate goal is an excellent daily file
-workspace: precise interactions, a polished appearance and measured responsiveness.
+A fast, beautiful Mac file manager people choose over Finder every day, inspired by
+Dolphin's browsing model and comfortable with local, server and cloud files.
 
-Reviewed 2026-11-02 against **0.19.0 source** (`98e1c881`), after the polish changes passed full CI. This is the current planning
-entry point. [CHANGELOG.md](CHANGELOG.md) records shipped behavior; the
-[documentation index](docs/README.md) separates current contracts from historical designs
-and verification receipts. A plan is not a promise that a feature has shipped.
+This page holds **product direction and priorities**. The [living backlog](docs/STORIES.md)
+holds ideas, research questions, actionable work and completion status. Update an item's
+status there; do not maintain a second checklist here.
 
-Follow-up reviewed 2026-11-03: the everyday polish source (`1ca56528`) adds numeric filename
-ordering in every name mode, recent-minute date labels with exact hover timestamps,
-additional transfer/breadcrumb state coverage, Compact geometry improvements and obsolete
-thumbnail cancellation. [Its dated receipt](docs/validation/BROWSING-POLISH.md) separates
-implemented changes, measured results and remaining work; release validation is a separate gate.
+Planning review: **2026-11-03**, after [v0.19.1](https://github.com/El3ssar/porpoise/releases/tag/v0.19.1).
+Priorities are an ordering for discussion, not release dates or implementation promises.
 
-## Already shipped
+## What we are building toward
 
-These are foundations to improve, not future feature milestones:
+| Direction | What success feels like |
+| --- | --- |
+| An excellent daily workspace | Finding, inspecting, renaming, moving and undoing are obvious and dependable; small interactions feel considered. |
+| Responsive at real-world scale | Large folders, previews, search and transfers keep the foreground responsive. Improvements have measurements. |
+| Trustworthy across locations | Local, removable, mounted, server and cloud files have honest capabilities, useful errors and recoverable operations. |
+| Comfortable Mac integration | Keyboard, accessibility, reveal requests and folder opening work predictably, with clear limits and reversible setup. |
+| A compelling reason to install | A substantial extra capability earns its maintenance cost without slowing or complicating the file manager. |
 
-- Tabs, split and linked browsing; Icons, Compact, Details and Columns. Columns has its own
-  hierarchical browser and preview; selecting it closes split view.
-- Places/Folders sidebar tabs, Information, Terminal and Shelf; per-folder view preferences,
-  named workspaces, session restoration and both Mac and Dolphin shortcut presets.
-- Local file operations, conflicts, Undo, transfer recovery, verification, retry/backoff,
-  bandwidth limits, exclusions and sleep/network interruption handling. Transfers uses a
-  compact window with current-file information and an expandable speed graph.
-- Indexed and streamed search, tags/comments, previews, batch rename, file comparison,
-  checksums, disk usage, duplicates, app cleanup and templates. Local zip/7z/tar archives
-  browse read-only without whole-archive extraction; opening or copying extracts the requested item.
-  Other archive formats retain the bounded extracted-cache fallback.
-- Saved server connections, SFTP, FTP/FTPS, mounted network shares, S3, Google Drive and
-  Dropbox, plus implemented OneDrive and Box adapters. Cloud files support offline copies
-  and edit-in-place. Provider capabilities and real-account availability are separate.
-- Read-only Git status, custom tools, six Shortcuts actions, the bundled `porpoise` CLI,
-  compatible installed Automator Quick Actions, Share and AirDrop integration.
-- Local diagnostic export, MetricKit crash/hang summaries and retained release symbols.
-- Reviewed fast PR test selection, full main/release validation, the 92% coverage minimum,
-  strict matched performance budgets and content-checked compiler caches. Identical fully
-  tested inputs can reuse trusted CI evidence after merge; a fast PR pass cannot certify a release.
+## Recommended next steps
 
-Shipped does not mean every state, device, account or supported OS has been independently
-validated. The contracts and dated receipts describe their actual evidence boundaries.
+1. **Remove the remaining initial Compact-view stall (P-001).** The 100,000-short-name
+   fixture still spends about 0.74 seconds measuring labels. Preserve sizing, selection
+   and scroll position while keeping that work away from interaction.
+2. **Measure and finish the daily browsing loop (P-002 / P-003).** Navigation and Back,
+   sorting, view changes, previews, search and transfers should remain responsive
+   together. Distinguish model timings from displayed frames and attended interaction.
 
-## Now: finish everyday interactions
+These continue the current performance/polish direction. The backlog contains their
+next actions and acceptance criteria. Nothing is currently marked In progress.
 
-### Transfers
+## After that
 
-Implemented in 0.19.0: a live-only Dolphin-inspired window, automatic dismissal after successful
-or cleanly cancelled transfers, an in-place speed graph and separate custom-tool output.
-The compact/expanded light/dark fixtures and hosted completion checks passed. Keep the current filename, honest processed/total file and folder counts, progress, speed,
-remaining time and useful Pause/Cancel/error actions easy to scan. The expanded detail is a
-speed history, not a queue of filenames. Successful and cancelled operations leave the
-progress surface; it hides when no live operation or unresolved failure needs it. Past-transfer
-history is not part of this UI. Internal Undo and recovery records remain. The current window
-contract belongs in [TRANSFER-PROGRESS.md](docs/TRANSFER-PROGRESS.md); the old toolbar/popover
-proposal is superseded. Automatic presentation must preserve the user's focus.
+- **Compatibility and confidence:** exercise the daily file-operation loop across providers,
+  permission failures, reconnects and supported macOS versions. Built adapters are separate
+  from actual OAuth registration and real-account acceptance.
+- **Finder integration:** investigate reveal, folder-opening and volume-opening behavior
+  separately, including exact restoration of previous preferences. Keep platform limits
+  visible; see [the integration contract](docs/FINDER-INTEGRATION.md).
+- **Drive interoperability:** decide whether to select an isolated read-only ext4 image
+  experiment. Qualify in-app access separately from system-wide mounts and NTFS writing;
+  see [existing research](docs/research/filesystem-support.md).
 
-The follow-up adds minimum-width light/dark state fixtures, concurrent-operation scrolling,
-honest discovered/unknown counts, preserved failure emphasis, stopped paused animations and
-ended-state progress handling. **Remaining finish validation:** attended use of actual conflict
-sheets, keyboard dispatch and active native materials; retain the no-activation contract.
+Research can conclude that we should not build something. Listing an idea or research
+question does not authorize implementation or changing the user's system.
 
-### Location bar
+## Ideas worth exploring
 
-Implemented in 0.19.0: padded full-height folder targets, balanced name shortening that retains
-the parent/current folders and overflow, and Down Arrow access to children. Pointer and layout
-fixtures passed; hosted main-window captures passed in both appearances. Preserve the distinction between opening a parent and opening its child-folder menu; retain
-full-path editing, overflow access, drag behavior, keyboard navigation and accessibility.
+Filesystem interoperability and disk-image inspection could form one substantial direction.
+Image-content search, verified OS-image writing and cross-platform nearby sharing remain
+candidates to brainstorm, not selected features. The bar is: **would someone install
+Porpoise for this capability alone?**
 
-**Remaining finish validation:** attended pointer/keyboard/VoiceOver use confirms that hover/focus makes the
-target clear; shortened, deep, long-name and narrow split-pane paths remain fully reachable.
-The follow-up adds Places/root keyboard and accessibility actions, Command-Return new tabs
-and invalidation of delayed folder menus after navigation, editing, detachment or focus loss.
+Use the [idea entries](docs/STORIES.md#ideas-and-research) and
+[differentiator notes](docs/research/product-differentiators.md) to challenge value,
+existing overlap, feasibility and maintenance cost before scheduling work. The previously
+rejected picker-assistance, guided-import, vault and drive-troubleshooting shortlist is not approved.
 
-### Documentation
+## Decisions and boundaries
 
-The 0.19.0 refresh reconciled shipped status, indexed the existing documents and corrected live
-contracts while preserving historical evidence. Maintain this roadmap and the documentation index.
-Correct live settings paths,
-architecture, security and feature contracts alongside code. Preserve dated plans, audit
-findings and test receipts with an explicit historical scope, rather than presenting old
-findings as a fresh defect list. Screenshots need their own current-build visual review.
+Keep these decisions until we explicitly revisit them:
 
-## Now: measured performance
-
-Implemented in 0.19.0 for **Get Info on large folders**: streamed metadata batches, lower temporary
-memory, earlier counts and explicit partial-result labels. The five-pair optimized local 100k-file
-comparison improved first useful count from 1.765 s to 0.256 s, completion from 1.846 s to 1.515 s,
-and process peak RSS from 72.4 MB to 23.0 MB. Deep/wide fixtures establish no throughput improvement.
-See [the measurement receipt](docs/validation/FOLDER-INFO-PERFORMANCE.md) for warm-cache and non-GUI limits.
-
-Next establish whole-app release-build baselines
-for time to first useful information, incremental count updates, complete totals, cancellation,
-CPU and memory. Include many small files, deep trees, packages, hard links, symlinks, removable
-filesystems and slow/unreadable locations. Cached or partial values must say what they represent.
-A faster scan must retain the same counting semantics and report incomplete results honestly.
-
-The 2026-11-03 optimized offscreen browsing baseline now covers model publication and
-Icons/Details/Compact layouts. Compact's long-name first layout and repeated resizes avoid
-unnecessary work; initial measurement of 100,000 short labels still takes about 0.74 seconds
-and remains a concrete next target. Thumbnail cancellation now follows actual viewport/window
-ownership changes without polling. See [the scoped results](docs/validation/BROWSING-POLISH.md).
-
-Then measure the complete browsing loop: navigation and Back, sorting/view changes, thumbnails
-and previews, search/indexing, transfers and their overlap. Prioritize measured bottlenecks;
-share scan work only where freshness and counting contracts match. Keep foreground work
-responsive, bound obsolete work and stop it when its owner closes or navigates away.
-
-**Done when:** each optimization has comparable before/after release measurements, correct
-results and cancellation tests. Existing launch/listing/search/idle CI workloads remain useful
-but do not certify Get Info, every view, presented frames or a long-session energy budget.
-
-## Next: compatibility evidence and integration
-
-- Validate the daily locate → inspect → rename → copy/move → Undo loop across local,
-  mounted, protocol and cloud locations, including permission failures and reconnects.
-- Extend attended keyboard/VoiceOver coverage, large-session memory/energy checks, frame
-  delivery measurements and oldest-supported-macOS smoke coverage. Keep these separate
-  from structural UI assertions and isolated performance fixtures.
-- Track actual reveal, folder-opening and volume-opening integration separately. Preserve
-  and restore the previous handler exactly. Explicit Finder targets can bypass reveal
-  preferences; replacing the global macOS Open/Save panel is not a supported app registration.
-  See [Finder integration](docs/FINDER-INTEGRATION.md).
-- Check current Google/Dropbox approval and OneDrive/Box application registration with the
-  operator. The adapter being built is not evidence that a distributed OAuth client is
-  registered, approved or accepted by a real account today. No current console status is claimed here.
-
-## Explore: more reasons to install Porpoise
-
-The approved investigation is **access to drives macOS cannot use natively**, including ext4
-and NTFS. Establish the difference between read-only browsing/extraction inside Porpoise and
-an OS-wide mounted filesystem before choosing an implementation. Assess supported formats,
-write safety, recovery, maintenance, redistribution terms, installation/privilege requirements
-and the effect on free distribution. Start with an evidence-backed feasibility decision;
-full read/write mounting is not a shipped feature or an unconditional commitment. See the
-[filesystem investigation](docs/research/filesystem-support.md).
-
-Additional bundled perks remain **under discussion**. Choose them from concrete unmet tasks
-and existing overlap, with explicit cost, maintenance and validation boundaries. The earlier
-suggested perk shortlist was not accepted and is not scheduled by this roadmap. The
-[new candidate directions](docs/research/product-differentiators.md) also need an explicit selection.
-
-## Deferred and intentionally excluded
-
-These earlier decisions remain in force unless explicitly reopened:
-
-- Gallery is optional future exploration; MTP without USB debugging and camera PTP remain
-  device work. Current Android access uses adb. Actual hardware acceptance is required.
-- No Intel support or macOS before 15. Current supported platform: Apple Silicon, macOS 15+.
+- Apple Silicon and macOS 15+; no Intel or older-macOS support.
+- Preserve identities, revision checks, recovery and Undo. Speed must not weaken data safety.
+- Automatic UI must not activate Porpoise or steal focus. Local verification must respect that too.
 - No replacing Finder's Desktop, device backup or other system-owned services.
 - No two-way folder sync or folder comparison; linked browsing and file comparison remain.
 - No unrestricted third-party extension SDK or outside code in the privileged helper path.
-- No separate Azure Blob/Google Cloud Storage engines; revisit only for a concrete requested workflow.
+- No separate Azure Blob/Google Cloud Storage engines without a concrete requested workflow.
 - No iOS app-document access through unsupported interfaces.
-- Writable archive locations remain excluded; existing read-only zip/7z/tar browsing and
-  extracted-cache fallback are already shipped. Localisation, a search builder and pending-edit
-  recovery for SFTP/FTP/S3 were explicitly dropped.
-- Developer ID/notarisation and paid CASA remain excluded under the existing no-maintainer-cost
-  decision. Releases use the established signing identity and signed updater; installation
-  guidance must describe the actual Gatekeeper steps. Revisit costs explicitly rather than
-  silently assuming the decision changed.
+- Writable archive locations remain excluded. Read-only zip/7z/tar browsing and the
+  extracted-cache fallback already exist.
+- Localisation, a search builder and pending-edit recovery for SFTP/FTP/S3 remain dropped.
+- Gallery, MTP without USB debugging and camera PTP remain optional/device work.
+  Current Android access uses adb; actual hardware acceptance is required.
+- Developer ID/notarisation and paid CASA remain excluded under the no-maintainer-cost
+  decision. Revisit costs explicitly before selecting a dependency or distribution path.
 
-## Delivery rules
+## Keep planning alive
 
-Preserve file identities, revision checks, recovery records and Undo; never trade away data
-safety for benchmark speed. Keep Core, FileSystem, HelperKit, Services and app boundaries clear.
-Use isolated fixtures and accounts; local verification must not launch or activate normal
-Porpoise windows without the user's instruction. Measure changes, update their current
-contracts, and publish only from green full validation.
+- Add new ideas to the backlog inbox with a stable ID and a concrete user problem.
+- Keep a small, ordered set of ready work; expand acceptance criteria when work is selected.
+- Update status, next action and evidence in the same change that implements or validates an item.
+- Track unfinished acceptance separately from shipped implementation. A passing fixture
+  does not prove every device, account, interaction or supported OS.
+- Preserve parked/rejected decisions with a reason; do not revive them silently from old plans.
+- At each release, move completed work out of the active shortlist and choose the next priorities.
+
+[Changelog](CHANGELOG.md) records releases. [Documentation](docs/README.md) indexes current
+contracts and dated evidence. Historical plans and audit findings are references, not another backlog.
