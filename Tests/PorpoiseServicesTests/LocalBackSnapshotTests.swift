@@ -184,7 +184,9 @@ import Testing
         } else {
             gate.failures[a] = .permission
             // Simulate the platform access gate rejecting a cached read, with an authoritative permission error delivered later.
-            model.validateLocalSnapshot = { _, _, complete in complete(false); return LocationLoad() }
+            model.validateLocalSnapshot = { _, _, complete in
+                complete(false); return LocationLoad()
+            }
         }
         gate.held.insert(a)
         defer { gate.release(a) }
@@ -212,9 +214,10 @@ import Testing
         model.setLocation(c); try await settled(model, at: c)
         #expect(model.localSnapshotRowsForTesting == 1)
         // A source may retain many identities even when few rows are visible; those must obey the bound too.
-        gate.extraKeys = Dictionary(uniqueKeysWithValues: (0...DirectoryModel.maximumLocalSnapshotRows).map {
-            (a.appendingPathComponent("unused-\($0)"), "unused-\($0)")
-        })
+        gate.extraKeys = Dictionary(
+            uniqueKeysWithValues: (0...DirectoryModel.maximumLocalSnapshotRows).map {
+                (a.appendingPathComponent("unused-\($0)"), "unused-\($0)")
+            })
         model.setLocation(a); try await settled(model, at: a)
         model.setLocation(b); try await settled(model, at: b)
         #expect(model.localSnapshotRowsForTesting == 0)
@@ -292,7 +295,8 @@ import Testing
         case "tags": model.props.sortRole = .tags; try await settled(model, at: a)
         case "columns": model.props.mode = .columns
         case "edit":
-            model.applyEdit(ListingEdit(folder: a, added: [FileItem(url: a.appendingPathComponent("optimistic"), name: "optimistic", isDirectory: false)]))
+            model.applyEdit(
+                ListingEdit(folder: a, added: [FileItem(url: a.appendingPathComponent("optimistic"), name: "optimistic", isDirectory: false)]))
         case "listing": model.reload()
         default:
             let incoming = Activity(kind: .copy, sources: [], destination: a, job: nil)

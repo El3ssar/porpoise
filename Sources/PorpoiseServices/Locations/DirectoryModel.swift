@@ -174,7 +174,8 @@ public final class DirectoryModel {
             sortedTop.count <= Self.maximumLocalSnapshotRows, fileKeyCache.count <= Self.maximumLocalSnapshotRows,
             (rowFileKeys?.count ?? 0) <= Self.maximumLocalSnapshotRows, (rowIndex?.count ?? 0) <= Self.maximumLocalSnapshotRows,
             (rowIndexByPath?.count ?? 0) <= Self.maximumLocalSnapshotRows,
-            tagCache.count <= Self.maximumLocalSnapshotRows, folderCounts.count <= Self.maximumLocalSnapshotRows else { return nil }
+            tagCache.count <= Self.maximumLocalSnapshotRows, folderCounts.count <= Self.maximumLocalSnapshotRows
+        else { return nil }
         return LocalSnapshot(
             location: location, identity: localIdentity, props: props, filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles,
