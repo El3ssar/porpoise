@@ -41,3 +41,30 @@ Compare alternating fresh-process samples, discard the warmup, and retain the ra
 preparation queue can start a newer request. It does not measure an entire navigation,
 filesystem listing, row publication, or a presented frame. Successful sorts retain the exact
 same comparator and stable ordering; cancellation never publishes a partially sorted array.
+
+## Navigation, Back and view changes
+
+The real-folder diagnostic enumerates 100,000 temporary files through `LocalSource`,
+then opens a child, goes Back, changes sorting and switches through every view mode.
+It retains an unordered, non-key window and draws visible rows into a bitmap:
+
+```sh
+PORPOISE_NAVIGATION_BENCHMARK=1 PORPOISE_NAVIGATION_FILES=100000 \
+  PORPOISE_NAVIGATION_ROOT=/tmp/porpoise-navigation-fixture \
+  PORPOISE_VIEW_GEOMETRY_BENCHMARK=1 \
+  swift test --skip-build -c release \
+  --filter 'NavigationPerformanceTests|ViewGeometryPerformanceTests'
+```
+
+Use the optimized test build above. A persistent fixture root lets alternating separate
+processes reuse the same filesystem-warm directory. `_call_ms` measures synchronous action
+work; callback maxima measure UI publication work. `_ready_ms` includes first usable rows,
+layout and visible offscreen drawing. `_refreshed_ms` waits for the authoritative disk
+listing as well: Back can display a validated previous-folder snapshot first. These are
+not compositor presentation timings. `peak_rss_mib` is the entire test process high-water
+mark, not the memory cost of the snapshot alone.
+
+The geometry diagnostic separately checks anchor correctness through twenty resizes.
+Run without concurrent builds or benchmarks, discard one warmup pair, and retain five
+alternating pairs. See [navigation results](../../docs/validation/NAVIGATION-RESPONSIVENESS.md)
+for the measured improvement, cache limits and remaining filesystem costs.
