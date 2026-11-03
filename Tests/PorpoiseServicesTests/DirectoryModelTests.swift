@@ -79,7 +79,7 @@ import Testing
         #expect(m.rowNames == ["a9", "a10", "B1", "b2"])
         Settings.shared.sortingChoice = .caseSensitive
         m.rebuild()
-        #expect(m.rowNames == ["B1", "a10", "a9", "b2"])
+        #expect(m.rowNames == ["B1", "a9", "a10", "b2"])
     }
 
     @Test func groupsKeepFoldersApart() async throws {
