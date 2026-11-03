@@ -136,6 +136,9 @@ extension ItemListView {
         let maxChars = Settings.shared.compactMaxWidth
         let limit = (maxChars > 0 ? CGFloat(maxChars) : CompactColumns.defaultChars(iconSize: iconSize)) * charWidth
         let widest = compactWidestText(roles: roles, limit: limit)
+        // A large first pass can evict the common font metric from the bounded text cache.
+        // Keep it alongside the scalar result so resizing/zooming need no fresh measurement.
+        textWidthCache["x"] = charWidth
         let text = CompactColumns.textWidth(
             widest: widest, iconSize: iconSize, charWidth: charWidth, maxChars: maxChars,
             minimum: 5 * lineHeight)
