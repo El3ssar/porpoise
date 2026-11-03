@@ -68,8 +68,17 @@ public final class DirectoryModel {
             return (item, activity.incomingFraction)
         }
         let next = pairs.map { $0.0 }
-        incomingProgress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
-        if incomingItems != next { incomingItems = next; rebuild() } else if !next.isEmpty { onChange?() }
+        let progress = Dictionary(pairs.map { ($0.0.url, $0.1) }, uniquingKeysWith: max)
+        let progressChanged = incomingProgress != progress
+        incomingProgress = progress
+        if incomingItems != next {
+            incomingItems = next
+            rebuild()
+        } else if progressChanged {
+            // The same incoming rows only need their bars repainted. A full model change makes
+            // browsing panes lay out and measure their labels again while the copy is running.
+            if let onIncomingProgressChanged { onIncomingProgressChanged() } else { onChange?() }
+        }
     }
     deinit {
         searchSortWork?.cancel()
@@ -291,6 +300,8 @@ public final class DirectoryModel {
     public var anchorURL: URL?
 
     public var onChange: (() -> Void)?
+    /// Fractions changed without changing row content, order or geometry.
+    public var onIncomingProgressChanged: (() -> Void)?
     public var onSelectionChanged: (() -> Void)?
     public var onPropsChanged: (() -> Void)?
     public var onLoaded: (() -> Void)?

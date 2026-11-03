@@ -268,6 +268,9 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
             // Rows rebuilt (a listing, or a watched change applied): what shows an item can catch up.
             NotificationCenter.default.post(name: Self.listingReloaded, object: self)
         }
+        model.onIncomingProgressChanged = { [weak self] in
+            self?.list.redrawIncomingProgress()
+        }
         model.onRemoteUpdate = { [weak self] apply in
             guard let self else { return apply() }
             self.animatingRemoteChange(apply)

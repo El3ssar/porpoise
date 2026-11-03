@@ -5,6 +5,18 @@ import PorpoiseServices
 // MARK: - Drawing
 
 extension ItemListView {
+    /// Icons and Compact put the thin bar below the label, outside its cell. Include its
+    /// full height and antialiasing when only a transfer fraction changed.
+    func incomingProgressRedrawRect(_ index: Int) -> CGRect { frames[index].insetBy(dx: -8, dy: -8) }
+
+    func redrawIncomingProgress() {
+        for url in model.incomingProgress.keys {
+            if let index = model.index(of: url), index < frames.count {
+                setNeedsDisplay(incomingProgressRedrawRect(index))
+            }
+        }
+    }
+
     override func draw(_ dirty: NSRect) {
         defer { scheduleRelativeDateRefresh() }
         // Inactive split pane: View color at alpha 150/255 over the window color (measured #1a1e2a).
