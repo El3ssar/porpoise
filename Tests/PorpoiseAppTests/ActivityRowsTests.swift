@@ -160,6 +160,34 @@ import Testing
         }
     }
 
+    @Test(.isolatedSettings) func pausingStopsTheUnknownBandAndDeterminateGlideWithoutLosingProgress() throws {
+        let reducesMotion = Animator.reducesMotion
+        Animator.reducesMotion = { false }
+        defer { Animator.reducesMotion = reducesMotion }
+        let activity = Activity(kind: .copy, sources: [], destination: nil, job: nil)
+        activity.state = .running; activity.progress?.phase = .preparing
+        let card = TransferProgressView(window: nil); card.update(activity)
+        card.frame = CGRect(x: 0, y: 0, width: 400, height: card.preferredHeight)
+        card.layoutSubtreeIfNeeded()
+        let progress = try #require(descendants(card, as: ThinProgressView.self).first)
+        let band = try #require(progress.subviews.first?.subviews.first)
+        #expect(band.layer?.animation(forKey: "indeterminate") != nil)
+        activity.state = .paused; card.update(activity); card.layoutSubtreeIfNeeded()
+        #expect(progress.isIndeterminate, "Pausing does not turn an unknown total into zero-percent progress")
+        #expect(band.layer?.animation(forKey: "indeterminate") == nil)
+        #expect(band.frame.width > 0 && abs(band.frame.midX - progress.bounds.midX) < 0.5)
+        activity.state = .running; card.update(activity); card.layoutSubtreeIfNeeded()
+        #expect(band.layer?.animation(forKey: "indeterminate") != nil)
+        activity.state = .paused; activity.progress?.phase = .transferring
+        activity.progress?.totalBytes = 100; activity.progress?.doneBytes = 25
+        card.update(activity); card.layoutSubtreeIfNeeded()
+        #expect(!progress.isIndeterminate && band.layer?.animationKeys()?.isEmpty != false)
+        #expect(abs(band.frame.width - progress.bounds.width * 0.25) < 0.5)
+        activity.progress?.doneBytes = 50; card.update(activity); card.layoutSubtreeIfNeeded()
+        #expect(abs(band.frame.width - progress.bounds.width * 0.5) < 0.5)
+        #expect(band.layer?.animationKeys()?.isEmpty != false)
+    }
+
     @Test(.isolatedSettings) func detailsExpandOnlyTheSpeedGraphAndPreserveMeasuredSamples() throws {
         let activity = Activity(kind: .copy, sources: [URL(fileURLWithPath: "/fixture/source")], destination: nil, job: nil)
         activity.state = .running

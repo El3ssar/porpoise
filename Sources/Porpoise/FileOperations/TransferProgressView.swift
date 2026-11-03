@@ -135,6 +135,7 @@ final class TransferProgressView: NSView {
         current.toolTip = activity.state.isEnded ? activity.statusText : summary.currentName
         current.textColor = presentation.hasFailures ? Theme.transferDanger : Theme.viewText
         progress.fraction = activity.state == .completed && !presentation.hasFailures ? 1 : summary.fraction
+        progress.isPaused = presentation.isPaused
         progress.isIndeterminate = presentation.isIndeterminate
         progress.alphaValue = presentation.isPaused ? 0.5 : 1
         percentage.isHidden = isExpanded || presentation.isIndeterminate
