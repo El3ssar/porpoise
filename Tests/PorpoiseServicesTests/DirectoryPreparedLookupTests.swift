@@ -71,4 +71,51 @@ import Testing
         #expect(model.rows.count == 1 && model.index(of: items[2000].url) == 0)
         #expect(model.index(of: items[0].url) == nil)
     }
+
+    @Test func expandedAndSearchRowsReplaceThePreparedLookupGeneration() async throws {
+        let scratch = try Scratch("lookup-expanded-search")
+        let folder = try scratch.folder("folder")
+        let child = try scratch.file("folder/child.txt")
+        Settings.shared.folderSizeMode = .none
+        Settings.shared.showGitStatus = false
+        let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        model.props.mode = .details
+        let items = [try #require(FileItem.load(folder))] + (0..<2000).map {
+            FileItem(url: scratch.path("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false)
+        }
+        model.applyEdit(ListingEdit(folder: scratch.url, added: items))
+        try #require(await eventually { !model.isLoading && model.rows.count == 2001 })
+        model.setExpanded(folder, true)
+        try #require(await eventually { !model.isLoading && model.rows.count == 2002 })
+        let childRow = try #require(model.rows.firstIndex { $0.item.url == child })
+        #expect(model.index(of: child) == childRow && model.rows[childRow].depth == 1)
+        model.props.mode = .icons
+        try #require(await eventually { !model.isLoading && model.rows.count == 2001 })
+        #expect(model.index(of: child) == nil)
+        model.searchResults = [try #require(FileItem.load(child))]
+        #expect(model.index(of: child) == 0 && model.index(of: items[1].url) == nil)
+        model.searchResults = nil
+        try #require(await eventually { !model.isLoading && model.rows.count == 2001 })
+        #expect(model.index(of: child) == nil && model.index(of: items[1].url) != nil)
+    }
+
+    @Test func borrowedPreparedListingReindexesForItsOwnSortAndFilter() async throws {
+        let scratch = try Scratch("lookup-borrowed")
+        let a = try scratch.file("a.txt"), z = try scratch.file("z.txt")
+        Settings.shared.folderSizeMode = .none
+        Settings.shared.showGitStatus = false
+        // Tag sorting goes through real background preparation even for this small physical fixture.
+        let lender = try await DirectoryModel.loaded(scratch.url) { $0.props.sortRole = .tags }
+        #expect(lender.index(of: a) == 0 && lender.index(of: z) == 1)
+        let borrower = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        borrower.props.sortRole = .tags
+        borrower.props.sortOrder = .descending
+        #expect(borrower.takeListing(of: lender))
+        try #require(await eventually { !borrower.isLoading })
+        #expect(borrower.index(of: z) == 0 && borrower.index(of: a) == 1)
+        borrower.filter = NameFilter(text: "a.txt")
+        try #require(await eventually { !borrower.isLoading })
+        #expect(borrower.index(of: a) == 0 && borrower.index(of: z) == nil)
+        #expect(lender.index(of: a) == 0 && lender.index(of: z) == 1)
+    }
 }
