@@ -21,12 +21,11 @@ extension ItemListView {
             guard let self else { return }
             self.relativeDateTimer = nil
             guard self.window?.occlusionState.contains(.visible) == true, !self.isHiddenOrHasHiddenAncestor else { return }
-            if self.mode == .compact {
-                self.compactTextMeasurement = nil
-                self.relayout()
-            } else {
-                self.needsDisplay = true
-            }
+            // Refresh visible strings in place. A Compact relayout would measure every
+            // label in large folders and make the columns jump once per minute. The
+            // width cache refreshes on a real layout after the next clock minute or
+            // a content/settings change; longer labels elide safely in the meantime.
+            self.needsDisplay = true
         }
         timer.tolerance = 0.5
         relativeDateTimer = timer

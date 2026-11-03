@@ -154,6 +154,39 @@ import Testing
             }
         }
     }
+
+    @Test func clockRepaintsCompactWithoutMeasuringOrMovingItsColumns() throws {
+        let scratch = try Scratch()
+        let now = Date()
+        let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        model.searchResults = (0..<1000).map { i in
+            FileItem(
+                url: scratch.url.appendingPathComponent("\(i)"), name: "\(i)", isDirectory: false,
+                modificationDate: now.addingTimeInterval(-59))
+        }
+        model.props.mode = .compact
+        model.props.setRoles([.modificationTime], for: .compact)
+        let list = ItemListView(model: model)
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 900, height: 300))
+        scroll.documentView = list
+        let window = VisibleDateFixtureWindow(contentRect: scroll.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = scroll
+        defer { list.stopRelativeDateRefresh(); window.close() }
+        list.computeLayout()
+        let measurement = try #require(list.compactTextMeasurement)
+        let frames = Array(list.frames), rowsRevision = model.rowsRevision, count = list.textMeasurementCount
+        list.scheduleRelativeDateRefresh(now: now)
+        let timer = try #require(list.relativeDateTimer)
+        list.needsDisplay = false
+        timer.fire(); timer.invalidate()
+        #expect(list.needsDisplay)
+        #expect(list.relativeDateTimer == nil)
+        #expect(list.textMeasurementCount == count && model.rowsRevision == rowsRevision)
+        #expect(Array(list.frames) == frames)
+        let after = try #require(list.compactTextMeasurement)
+        #expect(after.width == measurement.width && after.revision == measurement.revision && after.relativeMinute == measurement.relativeMinute)
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
 }
 
 /// Reports a visible viewport to exercise scheduling, without ever ordering a native window.
