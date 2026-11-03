@@ -72,6 +72,8 @@ public final class DirectoryModel {
         let progressChanged = incomingProgress != progress
         incomingProgress = progress
         if incomingItems != next {
+            previousLocalSnapshot = nil
+            cancelLocalSnapshotValidation()
             incomingItems = next
             rebuild()
         } else if progressChanged {
@@ -81,6 +83,7 @@ public final class DirectoryModel {
         }
     }
     deinit {
+        localSnapshotValidation?.cancel()
         searchSortWork?.cancel()
         rowPreparation?.cancel(); currentLoad?.cancel(); folderPrefetch?.cancel(); hoverPrefetch?.cancel();
         for load in childLoads.values { load.cancel() }
@@ -122,6 +125,110 @@ public final class DirectoryModel {
     public private(set) var locationVanished = false
     /// The last location that loaded without an error.
     private var lastLoaded: URL?
+    static let maximumLocalSnapshotRows = 200_000
+    private struct LocalSnapshot {
+        let location: URL
+        let identity: LocalFolderIdentity
+        let props: ViewProperties
+        let filter: NameFilter
+        let choice: SortingChoice
+        let hideBackups: Bool
+        let folderSizeMode: FolderSizeMode
+        let folderSizeDepth: Int
+        let items: [FileItem]
+        let ordered: [FileItem]
+        let rows: [Row]
+        let groups: [ItemGroup]
+        let keys: [String]?
+        let keyCache: [URL: String]
+        let index: [URL: Int]?
+        let indexByPath: [String: Int]?
+        let folderCounts: [URL: Int]
+    }
+    private var previousLocalSnapshot: LocalSnapshot?
+    private var pendingLocalSnapshot: LocalSnapshot?
+    private var localIdentity: LocalFolderIdentity?
+    private var localSnapshotValidation: LocationLoad?
+    private var localSnapshotRefresh = false
+    private var refreshingRowsPending = false
+    var validateLocalSnapshot = LocalSource.validate
+    #if PORPOISE_TEST_HOOKS
+    var localSnapshotRowsForTesting: Int { previousLocalSnapshot?.rows.count ?? 0 }
+    var pendingLocalSnapshotRowsForTesting: Int { pendingLocalSnapshot?.rows.count ?? 0 }
+    #endif
+
+    private func cancelLocalSnapshotValidation() {
+        localSnapshotValidation?.cancel()
+        localSnapshotValidation = nil
+        pendingLocalSnapshot = nil
+    }
+
+    private func captureLocalSnapshot() -> LocalSnapshot? {
+        guard source is LocalSource, location.isFileURL, !isLoading, !isRefreshing,
+            loadError == nil, lastLoaded == location, let localIdentity, let sortedTop,
+            !isSearching, !browsesColumns, props.mode != .columns, expanded.isEmpty, children.isEmpty,
+            edits.isEmpty, incomingItems.isEmpty, (props.sortRole != .size || pendingCounts.isEmpty),
+            !watchReloadPending, props.sortRole != .tags, props.effectiveGroupRole != .tags,
+            items.count <= Self.maximumLocalSnapshotRows, rows.count <= Self.maximumLocalSnapshotRows,
+            sortedTop.count <= Self.maximumLocalSnapshotRows, fileKeyCache.count <= Self.maximumLocalSnapshotRows,
+            (rowFileKeys?.count ?? 0) <= Self.maximumLocalSnapshotRows, (rowIndex?.count ?? 0) <= Self.maximumLocalSnapshotRows,
+            (rowIndexByPath?.count ?? 0) <= Self.maximumLocalSnapshotRows,
+            folderCounts.count <= Self.maximumLocalSnapshotRows
+        else { return nil }
+        let snapshot = LocalSnapshot(
+            location: location, identity: localIdentity, props: props, filter: filter,
+            choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles,
+            folderSizeMode: Settings.shared.folderSizeMode, folderSizeDepth: Settings.shared.folderSizeDepth,
+            items: items, ordered: sortedTop, rows: rows, groups: groups, keys: rowFileKeys,
+            keyCache: fileKeyCache, index: rowIndex, indexByPath: rowIndexByPath, folderCounts: folderCounts)
+        return canShowLocalSnapshot(snapshot) ? snapshot : nil
+    }
+
+    private func canShowLocalSnapshot(_ snapshot: LocalSnapshot) -> Bool {
+        source is LocalSource && snapshot.location == location && snapshot.props == props && snapshot.filter == filter
+            && snapshot.choice == Settings.shared.sortingChoice && snapshot.hideBackups == Settings.shared.hideBackupFiles
+            && snapshot.folderSizeMode == Settings.shared.folderSizeMode && snapshot.folderSizeDepth == Settings.shared.folderSizeDepth
+            && !isSearching && !browsesColumns && props.mode != .columns && expanded.isEmpty && children.isEmpty
+            && edits.isEmpty && incomingItems.isEmpty
+            && !FileOperationsController.shared.activities.contains {
+                guard $0.state.isActive, let incoming = $0.incomingItem else { return false }
+                let parent = incoming.url.deletingLastPathComponent().path
+                return parent == snapshot.location.path || parent == snapshot.identity.path
+            }
+    }
+
+    private func beginLocalSnapshotValidation(_ snapshot: LocalSnapshot, token: Int) {
+        guard token == loadToken, loadingListing, canShowLocalSnapshot(snapshot) else { return }
+        pendingLocalSnapshot = snapshot
+        localSnapshotRefresh = true
+        isRefreshing = true
+        let validation = validateLocalSnapshot(location, snapshot.identity) { [weak self] matches in
+            guard let self, token == self.loadToken, self.loadingListing, let snapshot = self.pendingLocalSnapshot else { return }
+            self.pendingLocalSnapshot = nil
+            self.localSnapshotValidation = nil
+            guard matches, self.canShowLocalSnapshot(snapshot) else {
+                self.localSnapshotRefresh = false
+                self.isRefreshing = false
+                return
+            }
+            self.items = snapshot.items
+            self.sortedTop = snapshot.ordered
+            self.rows = snapshot.rows
+            self.groups = snapshot.groups
+            self.rowFileKeys = snapshot.keys
+            self.fileKeyCache = snapshot.keyCache
+            self.rowIndex = snapshot.index
+            self.rowIndexByPath = snapshot.indexByPath
+            self.folderCounts = snapshot.folderCounts
+            self.loadingListing = false
+            self.localSnapshotRefresh = true
+            self.isRefreshing = true
+            self.onChange?()
+            guard token == self.loadToken else { return }
+            self.notifyLoaded()
+        }
+        if token == loadToken, pendingLocalSnapshot != nil { localSnapshotValidation = validation } else { validation.cancel() }
+    }
     public var props: ViewProperties {
         didSet {
             guard props != oldValue else { return }
@@ -260,6 +367,8 @@ public final class DirectoryModel {
     }
 
     private func show(_ edit: ListingEdit) {
+        previousLocalSnapshot = nil
+        cancelLocalSnapshotValidation()
         items = edit.apply(to: items, in: location)
         for (folder, list) in children { children[folder] = edit.apply(to: list, in: folder) }
         selection.subtract(edit.removed)
@@ -310,7 +419,7 @@ public final class DirectoryModel {
     /// made in the browser or on another device): the view runs `apply` inside an animation, so rows appear, rename
     /// or vanish in place. Unset: applied at once.
     public var onRemoteUpdate: ((_ apply: () -> Void) -> Void)?
-    /// A cloud folder shown from its saved listing while Drive is asked again (the status bar says "Updating…").
+    /// A known local or cloud listing is shown while its authoritative source is read again.
     public private(set) var isRefreshing = false
 
     /// Runs a change to a listing that was already shown through `onRemoteUpdate`.
@@ -415,12 +524,15 @@ public final class DirectoryModel {
     /// `lender`: a model whose current listing of `url` is taken instead of reading the folder (`takeListing`).
     public func setLocation(_ url: URL, takingListingOf lender: DirectoryModel? = nil) {
         let changed = url.standardizedFileURL != location.standardizedFileURL
+        let returning = changed && previousLocalSnapshot?.location == url ? previousLocalSnapshot : nil
+        if changed { previousLocalSnapshot = captureLocalSnapshot() }
         location = url
         observeGit()
         if changed {
             libraryPresentationEnabled = !Settings.store.bool(forKey: Self.applicationFilesKey)
             loadedNotificationPending = false
             incomingItems = []; incomingProgress = [:]
+            localIdentity = nil
             expanded = []
             children = [:]
             folderCounts = [:]
@@ -444,7 +556,7 @@ public final class DirectoryModel {
             updateWatcher()
             if let lender, takeListing(of: lender) { return }
         }
-        reload()
+        reload(changedOnly: false, cachedLocalSnapshot: returning)
     }
 
     // MARK: Per-item metadata (read lazily for drawn items, cleared on reload)
@@ -459,6 +571,8 @@ public final class DirectoryModel {
         return t
     }
     public func refreshTags() {
+        previousLocalSnapshot = nil
+        cancelLocalSnapshotValidation()
         tagCache = [:]
         resetMetadataRequests()
         if props.sortRole == .tags || props.effectiveGroupRole == .tags { rebuild() }
@@ -587,7 +701,14 @@ public final class DirectoryModel {
 
     /// `changedOnly`: a change in the folder (FSEvents), not a new visit or the user's reload: item counts are taken
     /// again only for folders that changed.
-    private func reload(keepSelection: Bool = true, changedOnly: Bool) {
+    private func reload(keepSelection: Bool = true, changedOnly: Bool, cachedLocalSnapshot: LocalSnapshot? = nil) {
+        let snapshotToValidate = cachedLocalSnapshot ?? (changedOnly ? pendingLocalSnapshot : nil)
+        let keepingKnownLocalRows = changedOnly && localSnapshotRefresh && source is LocalSource && !rows.isEmpty
+        cancelLocalSnapshotValidation()
+        localSnapshotRefresh = keepingKnownLocalRows
+        refreshingRowsPending = false
+        localIdentity = nil
+        if source is LocalSource { isRefreshing = keepingKnownLocalRows }
         observeGit()
         if !changedOnly && gitHasDelivered { gitObservation?.retry() }
         loadedNotificationPending = false
@@ -596,6 +717,7 @@ public final class DirectoryModel {
         let replacement = sourceFactory(location, appLibraryPresentationEnabled)
         replacement.retainMetadata(for: expanded.union([location]))
         source = replacement
+        if !(source is LocalSource), localSnapshotRefresh { localSnapshotRefresh = false; isRefreshing = false }
         folderPrefetch?.cancel(); folderPrefetch = nil
         hoverPrefetch?.cancel(); hoverPrefetch = nil
         for load in childLoads.values { load.cancel() }
@@ -626,15 +748,17 @@ public final class DirectoryModel {
                 items = listed
                 rebuild()
             }
+            guard token == loadToken else { return }
             loadingListing = false
             isRefreshing = true
             lastLoaded = url
             notifyLoaded()
         } else {
-            loadingListing = true
+            loadingListing = !localSnapshotRefresh
             if source.traits.paintsCache { isRefreshing = false }
         }
-        currentLoad = source.load(url, expanded: expanded) { [weak self] listing in
+        guard token == loadToken else { return }
+        let load = source.load(url, expanded: expanded) { [weak self] listing in
             guard let self, token == self.loadToken else { return }
             switch listing.part {
             case .whole: self.apply(listing, of: url, from: source, token: token, keepSelection: keepSelection, changedOnly: changedOnly)
@@ -642,6 +766,10 @@ public final class DirectoryModel {
             case .end: self.finish(listing, of: url, from: source, hadCache: cached != nil)
             }
         }
+        // A synchronous source or delivery callback may have navigated/reloaded again.
+        guard token == loadToken else { load.cancel(); return }
+        currentLoad = load
+        if let snapshotToValidate { beginLocalSnapshotValidation(snapshotToValidate, token: token) }
     }
 
     /// A paging source finished: the expanded folders are listed again and the visible ones read ahead. A failure
@@ -665,7 +793,13 @@ public final class DirectoryModel {
     private func apply(
         _ listing: LocationListing, of url: URL, from source: LocationContentSource, token: Int, keepSelection: Bool, changedOnly: Bool = false
     ) {
+        cancelLocalSnapshotValidation()
         let traits = source.traits
+        if isRefreshing && (source is LocalSource || traits.paintsCache) { refreshingRowsPending = true }
+        if source is LocalSource {
+            localIdentity = listing.error == nil ? listing.localIdentity : nil
+            if listing.error != nil { previousLocalSnapshot = nil }
+        }
         if fileKeyCache.isEmpty { fileKeyCache = listing.entryKeys } else { fileKeyCache.merge(listing.entryKeys) { _, new in new } }
         if traits.optimisticEdits, listing.complete { listingArrived(token) }
         let before = changedOnly ? folderDates() : [:]
@@ -689,6 +823,12 @@ public final class DirectoryModel {
             if traits.clearsCurrentItem, let c = currentURL, !alive.contains(c) { currentURL = nil }
         }
         rebuild()
+        guard token == loadToken else { return }
+        if refreshingRowsPending, rowPreparation == nil {
+            localSnapshotRefresh = false
+            refreshingRowsPending = false
+            isRefreshing = false
+        }
         if traits.watch != .none { updateWatcher() }
         notifyLoaded()
     }
@@ -784,6 +924,13 @@ public final class DirectoryModel {
             self.tagCache = result.tags
             self.rowFileKeys = result.keys
             self.fileKeyCache = result.keyCache
+            self.rowIndex = result.rowIndex
+            self.rowIndexByPath = result.rowIndexByPath
+            if self.refreshingRowsPending, !self.loadingListing {
+                self.localSnapshotRefresh = false
+                self.refreshingRowsPending = false
+                self.isRefreshing = false
+            }
             self.requestFolderCounts()
             self.onChange?()
             if self.loadedNotificationPending {
@@ -972,7 +1119,7 @@ public final class DirectoryModel {
         expanded = []
         children = [:]
         updateWatcher()
-        rebuild()
+        rebuild(keepingOrder: true)
     }
 
     public func setExpanded(_ url: URL, _ on: Bool) {
@@ -991,7 +1138,8 @@ public final class DirectoryModel {
             if let a = anchorURL, inside(a) { anchorURL = url }
         }
         updateWatcher()
-        rebuild()
+        // Expanding changes tree rows, not the order of the unchanged top-level listing.
+        rebuild(keepingOrder: true)
     }
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
@@ -1009,11 +1157,11 @@ public final class DirectoryModel {
             case .page: return
             case .whole:
                 self.children[url] = listing.items
-                self.rebuild()
+                self.rebuild(keepingOrder: true)
             case .end:
                 guard listing.error == nil else { return }
                 let edited = self.withEdits(listing.items, in: url)
-                if self.children[url] != edited { self.children[url] = edited; self.rebuild() }
+                if self.children[url] != edited { self.children[url] = edited; self.rebuild(keepingOrder: true) }
             }
             self.childLoads[url] = nil
         }
@@ -1028,7 +1176,7 @@ public final class DirectoryModel {
 
     // MARK: Queries
 
-    /// URL → row, built on first use after `rows` changes: views look rows up per hover, draw and key press.
+    /// URL → row. Large local preparations supply it from their worker; small listings build it on first use.
     private var rowIndex: [URL: Int]?
     /// URLs `index(of:)` didn't find in the current rows.
     private(set) var missedLookups: Set<URL> = []
@@ -1289,6 +1437,11 @@ public final class DirectoryModel {
             other.loadError == nil, other.edits.isEmpty, Self.sameFolder(other.location, location),
             other.lastLoaded.map({ Self.sameFolder($0, location) }) == true
         else { return false }
+        cancelLocalSnapshotValidation()
+        localSnapshotRefresh = false
+        refreshingRowsPending = false
+        isRefreshing = false
+        localIdentity = nil
         cancelRowPreparation()
         currentLoad?.cancel(); currentLoad = nil
         loadToken += 1

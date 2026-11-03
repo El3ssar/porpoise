@@ -115,4 +115,4 @@ Focused optimized Compact checks passed 27 tests separately. Light/dark unordere
 and loading captures were inspected; no app window was activated or made key. Tests do not
 certify real VoiceOver use, physical-volume throughput or all end-to-end navigation latency.
 Hosted validation is assessed separately for the final PR head. The broader navigation/Back
-roadmap item remains open until those remaining delays are measured and addressed.
+follow-up is now measured and addressed in [Navigation responsiveness](NAVIGATION-RESPONSIVENESS.md).

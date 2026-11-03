@@ -27,6 +27,8 @@ struct DirectoryModelPreparation {
         let tags: [URL: [FinderTags.Tag]]
         let keys: [String]
         let keyCache: [URL: String]
+        let rowIndex: [URL: Int]
+        let rowIndexByPath: [String: Int]
         let alive: Set<URL>
     }
 
@@ -148,8 +150,21 @@ struct DirectoryModelPreparation {
             }
         }
         guard !cancelled() else { return nil }
+        // First selection, Back restoration and thumbnail misses need these lookups as soon as rows
+        // arrive. Build them alongside the authoritative identities, rather than on that first UI event.
+        var rowIndex: [URL: Int] = [:]
+        var rowIndexByPath: [String: Int] = [:]
+        rowIndex.reserveCapacity(urls.count)
+        rowIndexByPath.reserveCapacity(urls.count)
+        for (index, url) in urls.enumerated() {
+            if index & 255 == 0, cancelled() { return nil }
+            if let first = rowIndex.updateValue(index, forKey: url) { rowIndex[url] = first }
+            if let first = rowIndexByPath.updateValue(index, forKey: keys[index]) { rowIndexByPath[keys[index]] = first }
+        }
+        guard !cancelled() else { return nil }
         return Result(
             top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: keyCache,
+            rowIndex: rowIndex, rowIndexByPath: rowIndexByPath,
             alive: Set(items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url) + children.values.flatMap { $0.map(\.url) }))
     }
 }

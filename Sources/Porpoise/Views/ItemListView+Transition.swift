@@ -244,8 +244,12 @@ extension ItemListView {
 
     /// The row showing the item `k`, if any.
     func row(forKey k: String) -> Int? {
-        if rowKeys.count != model.rows.count {
+        if rowKeysRevision != model.rowsRevision {
             rowKeys = Dictionary(model.rows.indices.map { (key(ofRow: $0), $0) }, uniquingKeysWith: { a, _ in a })
+            rowKeysRevision = model.rowsRevision
+            #if PORPOISE_TEST_HOOKS
+            rowKeyBuildCount += 1
+            #endif
         }
         guard let i = rowKeys[k], i < frames.count, i < model.rows.count else { return nil }
         return i
