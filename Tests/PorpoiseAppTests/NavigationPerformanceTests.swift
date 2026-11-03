@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import PorpoiseCore
 import PorpoiseServicesTestSupport
 import PorpoiseTestSupport
@@ -69,7 +70,14 @@ import Testing
             metrics[name + "_call_ms"] = (ProcessInfo.processInfo.systemUptime - start) * 1000
             try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == count && pane.list.frames.count == count })
             try paint()
+            // First presentable content can be a validated previous-folder snapshot.
             metrics[name + "_ready_ms"] = (ProcessInfo.processInfo.systemUptime - start) * 1000
+            if pane.model.isRefreshing {
+                try #require(
+                    await eventually { !pane.model.isRefreshing && !pane.model.isLoading && pane.list.frames.count == pane.model.rows.count })
+                try paint()
+            }
+            metrics[name + "_refreshed_ms"] = (ProcessInfo.processInfo.systemUptime - start) * 1000
         }
         try await action("open", count: count + 1) { pane.setURL(directory) }
         let current = directory.appendingPathComponent("file-500.txt")
@@ -84,6 +92,8 @@ import Testing
             try await action("mode_" + mode.rawValue, count: count + 1) { pane.setMode(mode) }
         }
         #expect(!window.isVisible && !window.isKeyWindow)
+        var usage = rusage()
+        if getrusage(RUSAGE_SELF, &usage) == 0 { metrics["peak_rss_mib"] = Double(usage.ru_maxrss) / (1024 * 1024) }
         let data = try JSONSerialization.data(withJSONObject: ["files": count, "metrics": metrics], options: [.sortedKeys])
         print("NAVIGATION_BENCHMARK \(String(decoding: data, as: UTF8.self))")
     }

@@ -19,8 +19,9 @@ import Testing
             items = (0..<count).map { FileItem(url: location.appendingPathComponent("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false) }
         }
         func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+            let items = self.items
             let publish = {
-                deliver(LocationListing(items: self.items, entryKeys: Dictionary(uniqueKeysWithValues: self.items.map { ($0.url, $0.url.path) })))
+                deliver(LocationListing(items: items, entryKeys: Dictionary(uniqueKeysWithValues: items.map { ($0.url, $0.url.path) })))
             }
             if held { deliveries.append(publish) } else { publish() }
             return LocationLoad()

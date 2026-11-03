@@ -39,7 +39,9 @@ import Testing
         Settings.shared.folderSizeMode = .none
         Settings.shared.showGitStatus = false
         var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
-        model.prepareRows = { input, done in pending.append((input, done)); return LocationLoad() }
+        model.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
         let items = (0..<2001).map {
             FileItem(url: scratch.path("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false)
         }
@@ -80,9 +82,11 @@ import Testing
         Settings.shared.showGitStatus = false
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
         model.props.mode = .details
-        let items = [try #require(FileItem.load(folder))] + (0..<2000).map {
-            FileItem(url: scratch.path("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false)
-        }
+        let items =
+            [try #require(FileItem.load(folder))]
+            + (0..<2000).map {
+                FileItem(url: scratch.path("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false)
+            }
         model.applyEdit(ListingEdit(folder: scratch.url, added: items))
         try #require(await eventually { !model.isLoading && model.rows.count == 2001 })
         model.setExpanded(folder, true)

@@ -18,7 +18,9 @@ import Testing
         Settings.shared.showGitStatus = false
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
         var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
-        model.prepareRows = { input, done in pending.append((input, done)); return LocationLoad() }
+        model.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
         model.props.mode = .details
         model.props.sortRole = role
         let files = (0..<2000).reversed().map {
@@ -59,7 +61,9 @@ import Testing
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
         model.props.mode = .details
         var pending: [(DirectoryModelPreparation, (DirectoryModelPreparation.Result) -> Void)] = []
-        model.prepareRows = { input, done in pending.append((input, done)); return LocationLoad() }
+        model.prepareRows = { input, done in
+            pending.append((input, done)); return LocationLoad()
+        }
         let files = (0..<2000).map {
             FileItem(url: scratch.path("file-\($0).txt"), name: "file-\($0).txt", isDirectory: false)
         }
