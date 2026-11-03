@@ -33,6 +33,8 @@ struct LocationListing {
     var children: [URL: [FileItem]]?
     /// Entry identities resolved on the listing worker, never by a rendering callback.
     var entryKeys: [URL: String] = [:]
+    /// Only authoritative physical directory listings may seed the bounded local Back snapshot.
+    var localIdentity: LocalFolderIdentity?
     var complete = true
     var error: LocationLoadError?
     /// The folder itself is gone (only sources that can tell say so).
