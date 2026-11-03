@@ -974,7 +974,7 @@ public final class DirectoryModel {
         expanded = []
         children = [:]
         updateWatcher()
-        rebuild()
+        rebuild(keepingOrder: true)
     }
 
     public func setExpanded(_ url: URL, _ on: Bool) {
@@ -993,7 +993,8 @@ public final class DirectoryModel {
             if let a = anchorURL, inside(a) { anchorURL = url }
         }
         updateWatcher()
-        rebuild()
+        // Expanding changes tree rows, not the order of the unchanged top-level listing.
+        rebuild(keepingOrder: true)
     }
 
     /// Lists an expanded folder off the main thread (it may be huge or on a slow mount), then shows its rows.
@@ -1011,11 +1012,11 @@ public final class DirectoryModel {
             case .page: return
             case .whole:
                 self.children[url] = listing.items
-                self.rebuild()
+                self.rebuild(keepingOrder: true)
             case .end:
                 guard listing.error == nil else { return }
                 let edited = self.withEdits(listing.items, in: url)
-                if self.children[url] != edited { self.children[url] = edited; self.rebuild() }
+                if self.children[url] != edited { self.children[url] = edited; self.rebuild(keepingOrder: true) }
             }
             self.childLoads[url] = nil
         }
