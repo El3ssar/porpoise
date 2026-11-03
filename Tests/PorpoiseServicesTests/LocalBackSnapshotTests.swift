@@ -117,6 +117,30 @@ import Testing
         #expect(model.location == c && model.rows.map(\.item.name) == ["current.txt"] && !model.isRefreshing)
     }
 
+    @Test func cachedSourceRowCallbackCannotChangeANewerLoadsPhase() async throws {
+        configure()
+        let scratch = try Scratch("cached-source-reentry")
+        let a = try scratch.folder("a"), b = try scratch.folder("b")
+        try scratch.file("b/current.txt")
+        let model = DirectoryModel(location: a, prefetchFolders: false), gate = Gate()
+        let cached = ReentrantCachedSource(location: a)
+        gate.install(on: model)
+        let localFactory = model.sourceFactory
+        model.sourceFactory = { folder, enabled in
+            if folder == a { return cached }
+            return localFactory(folder, enabled)
+        }
+        gate.held.insert(b)
+        defer { gate.release(b) }
+        model.onChange = { if model.location == a, !model.rows.isEmpty { model.setLocation(b) } }
+        model.reload()
+        try #require(await eventually { gate.pending[b]?.isEmpty == false })
+        #expect(model.location == b && model.rows.isEmpty && model.isLoading && !model.isRefreshing)
+        #expect(cached.loads == 0)
+        gate.release(b); try await settled(model, at: b)
+        #expect(model.rows.map(\.item.name) == ["current.txt"])
+    }
+
     @Test func aSupersededIdentityCheckCannotPaintItsSnapshot() async throws {
         configure()
         let scratch = try Scratch("local-back-stale-validation")
@@ -310,5 +334,19 @@ import Testing
         }
         model.setLocation(b); try await settled(model, at: b)
         #expect(model.localSnapshotRowsForTesting == 0)
+    }
+}
+
+private final class ReentrantCachedSource: LocationContentSource {
+    let location: URL
+    var loads = 0
+    init(location: URL) { self.location = location }
+    var traits: LocationTraits { LocationTraits(paintsCache: true) }
+    func cached(_ folder: URL) -> [FileItem]? {
+        [FileItem(url: location.appendingPathComponent("cached.txt"), name: "cached.txt", isDirectory: false)]
+    }
+    func load(_ folder: URL, expanded: Set<URL>, deliver: @escaping (LocationListing) -> Void) -> LocationLoad {
+        loads += 1
+        return LocationLoad()
     }
 }
