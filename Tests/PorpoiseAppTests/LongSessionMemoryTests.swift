@@ -199,6 +199,33 @@ import Testing
         #expect(!window.isVisible && !window.isKeyWindow)
     }
 
+    @Test func lateColumnSelectionDefersPreviewWorkUntilTheTabReturns() async throws {
+        Settings.shared.infoShowPreview = false
+        Settings.shared.infoShowHovered = false
+        Settings.shared.showGitStatus = false
+        Settings.shared.folderSizeMode = .none
+        let scratch = try Scratch(), first = try scratch.file("first.bin", "one"), second = try scratch.file("second.bin", "two")
+        let pane = ViewContainer(url: scratch.url)
+        try #require(await eventually { pane.model.rows.count == 2 && !pane.model.isLoading })
+        pane.list.select(first)
+        let column = ColumnPreviewView(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
+        defer { window.contentView = nil; window.close() }
+        window.contentView = column
+        column.show(first, container: pane)
+        window.contentView = nil
+        await mainTurn(); await mainTurn()
+        pane.list.select(second)
+        column.show(second, container: pane)
+        await mainTurn(); await mainTurn()
+        #expect(column.shownURL == nil)
+        #expect(try preview(in: column.information).image == nil)
+        window.contentView = column
+        await mainTurn(); await mainTurn()
+        #expect(column.shownURL == second)
+        #expect(try preview(in: column.information).image != nil)
+        #expect(!window.isVisible && !window.isKeyWindow)
+    }
+
     @Test func delayedHoverCannotRestartAParkedInspector() async throws {
         Settings.shared.infoShowPreview = false
         Settings.shared.infoShowHovered = true

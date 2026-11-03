@@ -8,6 +8,7 @@ final class ColumnPreviewView: NSView {
     /// The file shown (nil: none).
     private(set) var shownURL: URL?
     private weak var container: ViewContainer?
+    private var isParked = false
 
     override var isFlipped: Bool { true }
 
@@ -37,6 +38,8 @@ final class ColumnPreviewView: NSView {
     /// Shows the focused column's one selected file.
     func show(_ url: URL, container: ViewContainer) {
         self.container = container
+        // A delayed column-selection callback may arrive after the tab left its window.
+        guard !isParked else { return }
         guard url != shownURL else { return }
         shownURL = url
         information.show(hovered: nil, container: container)
@@ -51,6 +54,7 @@ final class ColumnPreviewView: NSView {
     /// Out of the window, the panel stops what plays and forgets what it showed: shown again, it reads it afresh.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        isParked = window == nil
         guard window != nil else {
             // Keep only the weak source so returning to a parked tab can read its current selection again.
             shownURL = nil
