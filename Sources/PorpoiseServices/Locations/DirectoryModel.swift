@@ -143,7 +143,6 @@ public final class DirectoryModel {
         let keyCache: [URL: String]
         let index: [URL: Int]?
         let indexByPath: [String: Int]?
-        let tags: [URL: [FinderTags.Tag]]
         let folderCounts: [URL: Int]
     }
     private var previousLocalSnapshot: LocalSnapshot?
@@ -174,14 +173,14 @@ public final class DirectoryModel {
             sortedTop.count <= Self.maximumLocalSnapshotRows, fileKeyCache.count <= Self.maximumLocalSnapshotRows,
             (rowFileKeys?.count ?? 0) <= Self.maximumLocalSnapshotRows, (rowIndex?.count ?? 0) <= Self.maximumLocalSnapshotRows,
             (rowIndexByPath?.count ?? 0) <= Self.maximumLocalSnapshotRows,
-            tagCache.count <= Self.maximumLocalSnapshotRows, folderCounts.count <= Self.maximumLocalSnapshotRows
+            folderCounts.count <= Self.maximumLocalSnapshotRows
         else { return nil }
         let snapshot = LocalSnapshot(
             location: location, identity: localIdentity, props: props, filter: filter,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles,
             folderSizeMode: Settings.shared.folderSizeMode, folderSizeDepth: Settings.shared.folderSizeDepth,
             items: items, ordered: sortedTop, rows: rows, groups: groups, keys: rowFileKeys,
-            keyCache: fileKeyCache, index: rowIndex, indexByPath: rowIndexByPath, tags: tagCache, folderCounts: folderCounts)
+            keyCache: fileKeyCache, index: rowIndex, indexByPath: rowIndexByPath, folderCounts: folderCounts)
         return canShowLocalSnapshot(snapshot) ? snapshot : nil
     }
 
@@ -220,7 +219,6 @@ public final class DirectoryModel {
             self.fileKeyCache = snapshot.keyCache
             self.rowIndex = snapshot.index
             self.rowIndexByPath = snapshot.indexByPath
-            self.tagCache = snapshot.tags
             self.folderCounts = snapshot.folderCounts
             self.loadingListing = false
             self.localSnapshotRefresh = true

@@ -269,6 +269,29 @@ import Testing
         gate.release(a); try await settled(model, at: a)
     }
 
+    @Test func returningSnapshotDoesNotRestoreTagsChangedWhileAway() async throws {
+        configure()
+        let scratch = try Scratch("local-back-tag-freshness")
+        let a = try scratch.folder("a"), b = try scratch.folder("b")
+        let file = try scratch.file("a/item.txt")
+        try FinderTags.set(["Red"], on: file)
+        let model = DirectoryModel(location: a, prefetchFolders: false), gate = Gate()
+        gate.install(on: model); model.reload(); try await settled(model, at: a)
+        let original = try #require(model.rows.first?.item)
+        try #require(await eventually { model.shownTags(for: original).map(\.name) == ["Red"] })
+        model.setLocation(b); try await settled(model, at: b)
+        try FinderTags.set(["Blue"], on: file)
+        gate.held.insert(a)
+        defer { gate.release(a) }
+        model.setLocation(a)
+        try #require(await eventually { !model.isLoading && model.isRefreshing })
+        let shown = try #require(model.rows.first?.item)
+        try #require(await eventually { model.shownTags(for: shown).map(\.name) == ["Blue"] })
+        gate.release(a); try await settled(model, at: a)
+        let refreshed = try #require(model.rows.first?.item)
+        #expect(model.shownTags(for: refreshed).map(\.name) == ["Blue"])
+    }
+
     @Test(arguments: [false, true])
     func onlyIncomingTransfersIntoTheCachedFolderBlockReuse(sameFolder: Bool) async throws {
         configure()
