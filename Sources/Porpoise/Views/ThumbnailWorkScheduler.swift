@@ -70,6 +70,10 @@ final class ThumbnailWorkScheduler {
 
         fileprivate var isWanted: Bool { interests.contains { $0.isWanted } }
 
+        /// Current redraw targets, even if the running work was cancelled before an owner returned.
+        /// Folder collages retain their shown-as URL rather than the child file used to make them.
+        var wantedURLs: Set<URL> { Set(interests.filter { $0.isWanted }.map(\.url)) }
+
         /// What stops the running work: a Quick Look request, a process, a task.
         func onCancel(_ handler: @escaping () -> Void) {
             if cancelled { handler() } else { cancelHandler = handler }
