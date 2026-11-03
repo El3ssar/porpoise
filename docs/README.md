@@ -8,9 +8,8 @@ The 2026-11-03 [everyday polish receipt](validation/BROWSING-POLISH.md) records 
 interaction/performance follow-up, its source and local evidence, including the remaining
 short-name Compact measurement cost. Hosted/release validation is assessed separately.
 
-[ROADMAP.md](../ROADMAP.md) is the single planning document for direction, priorities,
-ideas, research, acceptance checks and completion status. It was reviewed after v0.19.1
-on 2026-11-03; release receipts below retain their original evidence boundaries.
+[ROADMAP.md](../ROADMAP.md) is the single forward-looking checklist for upcoming work,
+research and ideas. Release history and verification receipts stay in their own documents.
 
 ## Current contracts
 
@@ -65,9 +64,8 @@ requirements before changing an application's configuration.
 
 ## Future decisions and historical design
 
-[ROADMAP.md](../ROADMAP.md) owns direction, priorities, statuses and standing scope decisions.
-Ideas, research, planned work, verification, completed deliveries and parked proposals all
-live in that one file. Historical plans and audits are supporting references.
+[ROADMAP.md](../ROADMAP.md) lists upcoming work, research and ideas to discuss.
+Historical plans and audits are supporting references, not its contents.
 Drive-format support is a feasibility investigation; additional install-attracting perks are
 still a discussion. Old brainstorms do not become scheduled features merely by being retained.
 
