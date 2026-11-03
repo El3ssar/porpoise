@@ -189,7 +189,8 @@ extension ItemListView {
         let count = model.rows.count
         var n: Int
         if let c = model.currentURL.flatMap({ model.index(of: $0) }) {
-            let pageRows = max(1, Int(visibleHeight / max(1, frames.first?.height ?? 20)) - 1)
+            let pendingHeight = 2 * Self.pad + max(iconSize, lineHeight * CGFloat(1 + model.props.roles(for: .compact).count)) + 2
+            let pageRows = max(1, Int(visibleHeight / max(1, frames.first?.height ?? pendingHeight)) - 1)
             switch (mode, m) {
             case (.icons, .up): n = iconsRowNeighbor(of: c, below: false) ?? 0
             case (.icons, .down): n = iconsRowNeighbor(of: c, below: true) ?? c
@@ -240,6 +241,7 @@ extension ItemListView {
     /// Compact ←/→: the item of the column left/right that is nearest in y. Groups start new (possibly short) columns,
     /// so stepping by `rowsPerColumn` would land on the wrong row. Nil when there is no such column.
     private func compactColumnNeighbor(of c: Int, right: Bool) -> Int? {
+        if isPreparingCompact { return preparingCompactColumnNeighbor(of: c, right: right) }
         let x = frames[c].minX, y = frames[c].minY
         let step = right ? 1 : -1
         var j = c
@@ -254,6 +256,40 @@ extension ItemListView {
         return best
     }
 
+    /// Column membership depends on group boundaries and row height, not on the
+    /// text width still being measured. Arrow keys can therefore respond immediately.
+    private func preparingCompactColumnNeighbor(of current: Int, right: Bool) -> Int? {
+        let starts = geometryHeaderStarts
+        var lo = 0, hi = starts.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if starts[mid] <= current { lo = mid + 1 } else { hi = mid }
+        }
+        let group = lo - 1
+        let start = group >= 0 ? starts[group] : 0
+        let end = lo < starts.count ? starts[lo] : model.rows.count
+        let column = start + ((current - start) / rowsPerColumn) * rowsPerColumn
+        let offset = current - column
+        let target: Int, targetEnd: Int
+        if right {
+            target = column + rowsPerColumn < end ? column + rowsPerColumn : end
+            guard target < model.rows.count else { return nil }
+            let groupEnd = target < end ? end : (lo + 1 < starts.count ? starts[lo + 1] : model.rows.count)
+            targetEnd = min(groupEnd, target + rowsPerColumn)
+        } else {
+            if column > start {
+                target = column - rowsPerColumn
+                targetEnd = column
+            } else {
+                guard start > 0 else { return nil }
+                let previousStart = group > 0 ? starts[group - 1] : 0
+                target = previousStart + ((start - previousStart - 1) / rowsPerColumn) * rowsPerColumn
+                targetEnd = start
+            }
+        }
+        return target + min(offset, targetEnd - target - 1)
+    }
+
     func select(_ url: URL, scroll: Bool = true) {
         selecting.select(url)
         if scroll, let i = model.index(of: url) { scrollToItem(i) }
@@ -261,6 +297,11 @@ extension ItemListView {
     }
 
     func scrollToItem(_ i: Int) {
+        if isPreparingCompact, model.rows.indices.contains(i) {
+            compactPendingScrollItem = model.rows[i].item.url
+            compactPendingAnchor = nil
+            return
+        }
         guard i < frames.count else { return }
         let r =
             mode == .details

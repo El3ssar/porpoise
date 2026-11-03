@@ -1,0 +1,418 @@
+{
+  "baseline_source": "1ca56528",
+  "baseline_equivalence": "No diff1ca56528..37e29b38 for Layout.swift, DirectoryModel.swift and original benchmark",
+  "rows": [
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.22566667757928371,
+        "compact_ready_ms": 388.9944999245927,
+        "compact_resize_20_ms": 0.22879161406308413,
+        "compact_snapshot_max_ms": 0.04329171497374773,
+        "details_initial_ms": 0.044791726395487785,
+        "details_ready_ms": 0.0459583243355155,
+        "details_resize_20_ms": 0.1532500609755516,
+        "icons_initial_ms": 6.421750062145293,
+        "icons_ready_ms": 6.429541623219848,
+        "icons_resize_20_ms": 0.408999971114099,
+        "model_ms": 50.23220833390951
+      },
+      "implementation": "candidate",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.0562082277610898,
+        "compact_ready_ms": 0.0569166149944067,
+        "compact_resize_20_ms": 0.13537495397031307,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.005458248779177666,
+        "details_ready_ms": 0.006291666068136692,
+        "details_resize_20_ms": 0.1337499124929309,
+        "icons_initial_ms": 4.8229999374598265,
+        "icons_ready_ms": 4.829916637390852,
+        "icons_resize_20_ms": 0.2511250786483288,
+        "model_ms": 41.80320829618722
+      },
+      "implementation": "candidate",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 670.6982916221023,
+        "compact_resize_20_ms": 0.17274997662752867,
+        "details_initial_ms": 0.04291674122214317,
+        "details_resize_20_ms": 0.1824999926611781,
+        "icons_initial_ms": 5.442958441562951,
+        "icons_resize_20_ms": 0.3762083360925317,
+        "model_ms": 45.78050004784018
+      },
+      "implementation": "baseline",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05870824679732323,
+        "compact_resize_20_ms": 0.12387498281896114,
+        "details_initial_ms": 0.005958369001746178,
+        "details_resize_20_ms": 0.136125017888844,
+        "icons_initial_ms": 4.459791700355709,
+        "icons_resize_20_ms": 0.23424997925758362,
+        "model_ms": 43.98558323737234
+      },
+      "implementation": "baseline",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 649.089916725643,
+        "compact_resize_20_ms": 0.17070828471332788,
+        "details_initial_ms": 0.04283338785171509,
+        "details_resize_20_ms": 0.14958332758396864,
+        "icons_initial_ms": 5.693083279766142,
+        "icons_resize_20_ms": 0.38233341183513403,
+        "model_ms": 45.69625004660338
+      },
+      "implementation": "baseline",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05979160778224468,
+        "compact_resize_20_ms": 0.12412492651492357,
+        "details_initial_ms": 0.005791662260890007,
+        "details_resize_20_ms": 0.13625004794448614,
+        "icons_initial_ms": 5.243041669018567,
+        "icons_resize_20_ms": 0.2473333152011037,
+        "model_ms": 44.02629169635475
+      },
+      "implementation": "baseline",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.2735833404585719,
+        "compact_ready_ms": 393.87504174374044,
+        "compact_resize_20_ms": 0.2515832893550396,
+        "compact_snapshot_max_ms": 0.032250070944428444,
+        "details_initial_ms": 0.07595831993967295,
+        "details_ready_ms": 0.07854169234633446,
+        "details_resize_20_ms": 0.17800007481127977,
+        "icons_initial_ms": 5.466375034302473,
+        "icons_ready_ms": 5.47566672321409,
+        "icons_resize_20_ms": 0.4485415993258357,
+        "model_ms": 44.99491665046662
+      },
+      "implementation": "candidate",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.06916665006428957,
+        "compact_ready_ms": 0.07020833436399698,
+        "compact_resize_20_ms": 0.13458332978188992,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.00679155346006155,
+        "details_ready_ms": 0.009458279237151146,
+        "details_resize_20_ms": 0.13887498062103987,
+        "icons_initial_ms": 7.173416670411825,
+        "icons_ready_ms": 7.186208269558847,
+        "icons_resize_20_ms": 0.5774167366325855,
+        "model_ms": 57.84554162528366
+      },
+      "implementation": "candidate",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.28033333364874125,
+        "compact_ready_ms": 389.8227916797623,
+        "compact_resize_20_ms": 0.24658336769789457,
+        "compact_snapshot_max_ms": 0.05225010681897402,
+        "details_initial_ms": 0.04254165105521679,
+        "details_ready_ms": 0.043625012040138245,
+        "details_resize_20_ms": 0.1884583616629243,
+        "icons_initial_ms": 5.664708325639367,
+        "icons_ready_ms": 5.673333304002881,
+        "icons_resize_20_ms": 0.37391670048236847,
+        "model_ms": 45.262833358719945
+      },
+      "implementation": "candidate",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05941675044596195,
+        "compact_ready_ms": 0.06083340849727392,
+        "compact_resize_20_ms": 0.14316674787551165,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.005749985575675964,
+        "details_ready_ms": 0.006875023245811462,
+        "details_resize_20_ms": 0.14441669918596745,
+        "icons_initial_ms": 5.2452083909884095,
+        "icons_ready_ms": 5.253499955870211,
+        "icons_resize_20_ms": 0.2696666633710265,
+        "model_ms": 45.28133326675743
+      },
+      "implementation": "candidate",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 657.4685416417196,
+        "compact_resize_20_ms": 0.19970827270299196,
+        "details_initial_ms": 0.04837499000132084,
+        "details_resize_20_ms": 0.14245836064219475,
+        "icons_initial_ms": 5.691166617907584,
+        "icons_resize_20_ms": 0.4110416630282998,
+        "model_ms": 45.39062501862645
+      },
+      "implementation": "baseline",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.054875039495527744,
+        "compact_resize_20_ms": 0.12904161121696234,
+        "details_initial_ms": 0.005541602149605751,
+        "details_resize_20_ms": 0.13866659719496965,
+        "icons_initial_ms": 5.579416756518185,
+        "icons_resize_20_ms": 0.2610832452774048,
+        "model_ms": 45.95316667109728
+      },
+      "implementation": "baseline",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 648.6459166044369,
+        "compact_resize_20_ms": 0.18500001169741154,
+        "details_initial_ms": 0.04041660577058792,
+        "details_resize_20_ms": 0.13787508942186832,
+        "icons_initial_ms": 5.378166679292917,
+        "icons_resize_20_ms": 0.35512493923306465,
+        "model_ms": 43.48562506493181
+      },
+      "implementation": "baseline",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.06362504791468382,
+        "compact_resize_20_ms": 0.13333337847143412,
+        "details_initial_ms": 0.005541602149605751,
+        "details_resize_20_ms": 0.13954169116914272,
+        "icons_initial_ms": 5.167291732504964,
+        "icons_resize_20_ms": 0.23579166736453772,
+        "model_ms": 45.28945835772902
+      },
+      "implementation": "baseline",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.21641666535288095,
+        "compact_ready_ms": 394.829916767776,
+        "compact_resize_20_ms": 0.19795831758528948,
+        "compact_snapshot_max_ms": 0.03075005952268839,
+        "details_initial_ms": 0.04366668872535229,
+        "details_ready_ms": 0.04475004971027374,
+        "details_resize_20_ms": 0.14320830814540386,
+        "icons_initial_ms": 5.880666663870215,
+        "icons_ready_ms": 5.892041721381247,
+        "icons_resize_20_ms": 0.41116669308394194,
+        "model_ms": 45.286416658200324
+      },
+      "implementation": "candidate",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.048458343371748924,
+        "compact_ready_ms": 0.049166614189743996,
+        "compact_resize_20_ms": 0.13062497600913048,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.005208421498537064,
+        "details_ready_ms": 0.005958252586424351,
+        "details_resize_20_ms": 0.14362495858222246,
+        "icons_initial_ms": 5.297416704706848,
+        "icons_ready_ms": 5.3038750775158405,
+        "icons_resize_20_ms": 0.23812497965991497,
+        "model_ms": 43.524624896235764
+      },
+      "implementation": "candidate",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.282333348877728,
+        "compact_ready_ms": 410.3068750118837,
+        "compact_resize_20_ms": 0.31029165256768465,
+        "compact_snapshot_max_ms": 0.0684583792462945,
+        "details_initial_ms": 0.05808332934975624,
+        "details_ready_ms": 0.06104167550802231,
+        "details_resize_20_ms": 0.15170825645327568,
+        "icons_initial_ms": 6.096625002101064,
+        "icons_ready_ms": 6.1079999431967735,
+        "icons_resize_20_ms": 0.48904167488217354,
+        "model_ms": 46.05283332057297
+      },
+      "implementation": "candidate",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05200004670768976,
+        "compact_ready_ms": 0.052749994210898876,
+        "compact_resize_20_ms": 0.13054173905402422,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.005541718564927578,
+        "details_ready_ms": 0.00641669612377882,
+        "details_resize_20_ms": 0.1408749958500266,
+        "icons_initial_ms": 5.047708284109831,
+        "icons_ready_ms": 5.054958281107247,
+        "icons_resize_20_ms": 0.22662500850856304,
+        "model_ms": 44.43770833313465
+      },
+      "implementation": "candidate",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 640.9768332960084,
+        "compact_resize_20_ms": 0.20037498325109482,
+        "details_initial_ms": 0.04808325320482254,
+        "details_resize_20_ms": 0.19004172645509243,
+        "icons_initial_ms": 5.706624942831695,
+        "icons_resize_20_ms": 0.42970827780663967,
+        "model_ms": 45.36883323453367
+      },
+      "implementation": "baseline",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05233322735875845,
+        "compact_resize_20_ms": 0.1269166823476553,
+        "details_initial_ms": 0.005458365194499493,
+        "details_resize_20_ms": 0.1414165599271655,
+        "icons_initial_ms": 4.72308334428817,
+        "icons_resize_20_ms": 0.2465415745973587,
+        "model_ms": 43.67041669320315
+      },
+      "implementation": "baseline",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 642.6597916288301,
+        "compact_resize_20_ms": 0.16724993474781513,
+        "details_initial_ms": 0.050333328545093536,
+        "details_resize_20_ms": 0.15587499365210533,
+        "icons_initial_ms": 5.9647917514666915,
+        "icons_resize_20_ms": 0.4166249418631196,
+        "model_ms": 44.5002083433792
+      },
+      "implementation": "baseline",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.06079161539673805,
+        "compact_resize_20_ms": 0.1304582692682743,
+        "details_initial_ms": 0.006500049494206905,
+        "details_resize_20_ms": 0.14620833098888397,
+        "icons_initial_ms": 5.0793333211913705,
+        "icons_resize_20_ms": 0.26745826471596956,
+        "model_ms": 43.109708349220455
+      },
+      "implementation": "baseline",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 0.2457916270941496,
+        "compact_ready_ms": 401.6086666379124,
+        "compact_resize_20_ms": 0.24366669822484255,
+        "compact_snapshot_max_ms": 0.028958311304450035,
+        "details_initial_ms": 0.05112495273351669,
+        "details_ready_ms": 0.05262496415525675,
+        "details_resize_20_ms": 0.15087495557963848,
+        "icons_initial_ms": 5.861291661858559,
+        "icons_ready_ms": 5.871916655451059,
+        "icons_resize_20_ms": 0.40541670750826597,
+        "model_ms": 46.34124995209277
+      },
+      "implementation": "candidate",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.056750024668872356,
+        "compact_ready_ms": 0.0573332654312253,
+        "compact_resize_20_ms": 0.13295828830450773,
+        "compact_snapshot_max_ms": 0,
+        "details_initial_ms": 0.006375019438564777,
+        "details_ready_ms": 0.007333350367844105,
+        "details_resize_20_ms": 0.14450005255639553,
+        "icons_initial_ms": 6.384458392858505,
+        "icons_ready_ms": 6.394791649654508,
+        "icons_resize_20_ms": 0.2629583468660712,
+        "model_ms": 42.299208347685635
+      },
+      "implementation": "candidate",
+      "trial": 4
+    }
+  ],
+  "bundles": {
+    "baseline": "c4390495057b08eca7c0308d2a763f8b4f1af5123e8c1184adaf8c367009397e",
+    "candidate": "a96675b695ec595da228a4940a683dc0891e75e102f91ff45600de2c7b481dc1"
+  }
+}

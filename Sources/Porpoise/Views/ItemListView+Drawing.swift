@@ -24,6 +24,13 @@ extension ItemListView {
         bg.setFill()
         dirty.fill()
         if frames.count != model.rows.count { computeLayout() }
+        if isPreparingCompact {
+            let text = (visibleRect.width < 200 ? "Loading…" : "Loading Compact view…") as NSString
+            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: Theme.viewText.withAlphaComponent(0.7)]
+            let size = text.size(withAttributes: attrs)
+            text.draw(at: CGPoint(x: visibleRect.midX - size.width / 2, y: visibleRect.midY - size.height / 2), withAttributes: attrs)
+            return
+        }
 
         for (gi, gr) in groupHeaderFrames.enumerated() where gr.intersects(dirty) && gi < model.groups.count {
             drawGroupHeader(model.groups[gi].title, in: gr)

@@ -277,7 +277,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         }
         model.onMetadataLoaded = { [weak self] in
             guard let self else { return }
-            if self.model.props.roles(for: .compact).contains(.tags) { self.list.compactTextMeasurement = nil }
+            if self.model.props.roles(for: .compact).contains(.tags) { self.list.invalidateCompactMetadata() }
             // A Tags column or label sizes itself to the tags just read.
             if self.model.props.roles(for: self.model.props.mode).contains(.tags) { self.list.relayout() } else { self.list.needsDisplay = true }
         }
@@ -640,7 +640,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         if u != url {
             pendingRename = nil
             visits += 1
-            viewPositions[url] = (list.visibleRect.origin, model.currentURL)
+            viewPositions[url] = (list.scrollOriginForRestoration, model.currentURL)
             if viewPositions.count > 200 { viewPositions.removeAll() }
             pendingPosition = nil
         }
@@ -694,7 +694,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
     }
 
     /// Where the list is scrolled, or will be once its folder has loaded.
-    var scrollOrigin: CGPoint { pendingPosition?.origin ?? list.visibleRect.origin }
+    var scrollOrigin: CGPoint { pendingPosition?.origin ?? list.scrollOriginForRestoration }
 
     /// Up works in local folders and on remote servers (sftp/ftp/adb) below their root; virtual lists have no parent.
     var canGoUp: Bool {
@@ -783,7 +783,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
 
     private func modelChanged() {
         // Folder counts can arrive without replacing rows; a Size label may have become wider.
-        if !list.committingZoom, model.props.roles(for: .compact).contains(.size) { list.compactTextMeasurement = nil }
+        if !list.committingZoom, model.props.roles(for: .compact).contains(.size) { list.invalidateCompactMetadata() }
         if showsApps { apps?.reload() }
         list.relayout()
         list.transitions.itemsDelivered(loading: model.isLoading)
@@ -966,7 +966,7 @@ final class ViewContainer: NSView, ItemListViewDelegate, FilterBarDelegate, Sear
         list.transitions.change(.remote, duration: Motion.remote) {
             change()
             list.computeLayout()
-            if let anchor, let i = list.row(forKey: anchor.key) {
+            if let anchor, let i = list.row(forKey: anchor.key), i < list.frames.count {
                 let y = list.frames[i].minY - anchor.offset
                 if abs(y - list.visibleRect.minY) > 0.5 { list.scroll(CGPoint(x: list.visibleRect.minX, y: max(0, y))) }
             }

@@ -55,6 +55,14 @@ extension ItemListView {
     var maxLabelLines: Int { Settings.shared.iconsMaxLines == 0 ? 6 : Settings.shared.iconsMaxLines }
 
     func computeLayout() {
+        if mode != .compact {
+            compactTextPreparation = nil
+            compactMetadataChangedWhilePreparing = false
+            compactPendingScroll = nil
+            compactPendingScrollItem = nil
+            compactPendingAnchor = nil
+            compactPendingRename = nil
+        }
         cloudRects = [:]
         rowKeys = [:]
         cacheGeometryTopology()
@@ -74,6 +82,7 @@ extension ItemListView {
             ? contentSize : NSSize(width: max(contentSize.width, visibleWidth, frame.width), height: contentSize.height)
         if frame.size != size { setFrameSize(size) }
         dropStaleIndexes()
+        if mode == .compact, !isPreparingCompact { restoreCompactPosition() }
         if let i = renamingIndex, i < frames.count { positionRenameField(i) }
         thumbnailVisibilityChanged()
     }
@@ -135,7 +144,12 @@ extension ItemListView {
         let charWidth = textWidth("x")
         let maxChars = Settings.shared.compactMaxWidth
         let limit = (maxChars > 0 ? CGFloat(maxChars) : CompactColumns.defaultChars(iconSize: iconSize)) * charWidth
-        let widest = compactWidestText(roles: roles, limit: limit)
+        guard let widest = compactWidestText(roles: roles, limit: limit) else {
+            // No guessed column widths: publish the final geometry once, after exact
+            // measurement. Old rows must not remain clickable under a new listing.
+            frames = ItemCellFrames()
+            return NSSize(width: width, height: visibleHeight)
+        }
         // A large first pass can evict the common font metric from the bounded text cache.
         // Keep it alongside the scalar result so resizing/zooming need no fresh measurement.
         textWidthCache["x"] = charWidth
@@ -165,7 +179,7 @@ extension ItemListView {
     }
 
     /// Geometry changes reuse one scalar. A new listing/rename/filter, changed roles or loaded metadata rebuild it.
-    private func compactWidestText(roles: [ItemRole], limit: CGFloat) -> CGFloat {
+    private func compactWidestText(roles: [ItemRole], limit: CGFloat) -> CGFloat? {
         let minute =
             Settings.shared.dateStyle == .relative
                 && roles.contains(where: {
@@ -175,6 +189,19 @@ extension ItemListView {
             // commitZoom synchronously rebuilds identical rows while saving only their icon size.
             if committingZoom { cached.revision = model.rowsRevision; compactTextMeasurement = cached }
             if cached.revision == model.rowsRevision, cached.complete || cached.width >= limit { return cached.width }
+        }
+        if let pending = compactTextPreparation {
+            if committingZoom { pending.revision = model.rowsRevision }
+            if pending.revision == model.rowsRevision, pending.roles == roles,
+                pending.relativeMinute == minute, pending.font == font, pending.limit == limit { return nil }
+            if pending.revision != model.rowsRevision {
+                compactPendingScroll = nil
+                compactPendingScrollItem = nil
+                compactPendingAnchor = nil
+                compactPendingRename = nil
+            }
+            compactTextPreparation = nil
+            compactMetadataChangedWhilePreparing = false
         }
         var widest: CGFloat = 0
         var complete = true
@@ -187,10 +214,113 @@ extension ItemListView {
                 complete = index == model.rows.count - 1
                 break
             }
+            // Most capped folders finish above with just one or two labels. A large
+            // uncapped scan must not monopolize the event loop on its first layout.
+            if index == 15, model.rows.count >= 2000 {
+                let request = CompactTextPreparation(
+                    revision: model.rowsRevision, roles: roles, relativeMinute: minute,
+                    font: font, limit: limit, nextRow: index + 1, widest: widest)
+                if compactPendingScroll == nil { compactPendingScroll = visibleRect.origin }
+                compactTextPreparation = request
+                NSAccessibility.post(element: self, notification: .valueChanged)
+                prepareCompactBatch(request)
+                return nil
+            }
         }
         compactTextMeasurement = CompactTextMeasurement(
             revision: model.rowsRevision, roles: roles, relativeMinute: minute, width: widest, complete: complete)
         return widest
+    }
+
+    /// Metadata reads started by role snapshots may finish during the pass. Let that
+    /// pass visit every row rather than repeatedly restarting its prefix; coalesce the
+    /// changed labels into one follow-up pass before publishing final geometry.
+    func invalidateCompactMetadata() {
+        if compactTextPreparation != nil {
+            compactMetadataChangedWhilePreparing = true
+        } else {
+            compactTextMeasurement = nil
+        }
+    }
+
+    /// Snapshot a bounded piece on main (role formatting can consult model caches),
+    /// then measure away from the event loop. Cancellation drops the request identity;
+    /// at most this one small batch can remain in flight for an obsolete listing.
+    private func prepareCompactBatch(_ request: CompactTextPreparation) {
+        guard compactTextPreparation === request, mode == .compact, request.revision == model.rowsRevision else { return }
+        #if PORPOISE_TEST_HOOKS
+        let snapshotStart = ProcessInfo.processInfo.systemUptime
+        #endif
+        let end = min(model.rows.count, request.nextRow + CompactTextPreparation.rowsPerBatch)
+        var labels: [String] = []
+        labels.reserveCapacity((end - request.nextRow) * (request.roles.count + 1))
+        for row in model.rows[request.nextRow..<end] {
+            labels.append(model.displayName(for: row.item))
+            for role in request.roles { labels.append(model.text(for: role, of: row.item)) }
+        }
+        #if PORPOISE_TEST_HOOKS
+        compactSnapshotMaxMilliseconds = max(compactSnapshotMaxMilliseconds, (ProcessInfo.processInfo.systemUptime - snapshotStart) * 1000)
+        #endif
+        let font = request.font
+        let snapshot = labels
+        CompactTextPreparation.queue.async { [weak self] in
+            let widest = CompactTextPreparation.widest(snapshot, font: font)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.compactTextPreparation === request,
+                    self.mode == .compact, self.model.rowsRevision == request.revision else { return }
+                request.widest = max(request.widest, widest)
+                request.nextRow = end
+                #if PORPOISE_TEST_HOOKS
+                self.textMeasurementCount += snapshot.count
+                #endif
+                if request.widest < request.limit, end < self.model.rows.count {
+                    self.prepareCompactBatch(request)
+                    return
+                }
+                self.compactTextPreparation = nil
+                if self.compactMetadataChangedWhilePreparing {
+                    self.compactMetadataChangedWhilePreparing = false
+                    self.compactTextMeasurement = nil
+                    self.relayout()
+                    return
+                }
+                self.compactTextMeasurement = CompactTextMeasurement(
+                    revision: request.revision, roles: request.roles, relativeMinute: request.relativeMinute,
+                    width: request.widest, complete: end == self.model.rows.count)
+                self.relayout()
+                guard !self.isPreparingCompact else { return }
+                self.restoreCompactPosition()
+                if let rename = self.compactPendingRename {
+                    self.compactPendingRename = nil
+                    if self.window?.isKeyWindow == true, self.window?.firstResponder === self,
+                        self.userActions == rename.userActions, self.model.index(of: rename.url) != nil {
+                        self.beginRename(rename.url)
+                    }
+                }
+                self.refreshHover()
+                self.onCompactLayoutReady?()
+                NSAccessibility.post(element: self, notification: .valueChanged)
+                NSAccessibility.post(element: self, notification: .layoutChanged)
+            }
+        }
+    }
+
+    private func restoreCompactPosition() {
+        if let point = compactPendingScroll {
+            compactPendingScroll = nil
+            scroll(point)
+        }
+        if let anchor = compactPendingAnchor {
+            compactPendingAnchor = nil
+            if let index = model.index(of: anchor.url), index < frames.count {
+                let origin = frames[index].origin
+                scroll(CGPoint(x: max(0, origin.x - anchor.offset.x), y: max(0, origin.y - anchor.offset.y)))
+            }
+        }
+        if let url = compactPendingScrollItem {
+            compactPendingScrollItem = nil
+            if let index = model.index(of: url) { scrollToItem(index) }
+        }
     }
 
     /// Details: one row per item; Name takes the width the other columns leave, unless the user sized it.

@@ -13,6 +13,7 @@ extension ItemListView {
         model.location.lastPathComponent
     }
 
+    override func accessibilityValue() -> Any? { isPreparingCompact ? "Loading Compact view" : nil }
     override func accessibilityChildren() -> [Any]? { accessibilityRows(in: visibleRect) }
     /// Every item in the folder, not only those on screen.
     override func accessibilityRowCount() -> Int { model.rows.count }

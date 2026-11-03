@@ -61,7 +61,24 @@ final class ItemListView: NSView {
     /// Widths of strings in `font`: Compact layout measures every name, so zooming a big folder must not re-measure.
     var textWidthCache: [String: CGFloat] = [:]
     /// The widest Compact label belongs to the current rows, not to the pane's dimensions or icon size.
-    var compactTextMeasurement: CompactTextMeasurement?
+    var compactTextMeasurement: CompactTextMeasurement? {
+        didSet {
+            if compactTextMeasurement == nil {
+                compactTextPreparation = nil
+                compactMetadataChangedWhilePreparing = false
+            }
+        }
+    }
+    var compactTextPreparation: CompactTextPreparation?
+    var compactMetadataChangedWhilePreparing = false
+    var isPreparingCompact: Bool { mode == .compact && compactTextPreparation != nil }
+    /// Geometry may arrive after a Back restoration or a type-ahead selection.
+    var compactPendingScroll: CGPoint?
+    var compactPendingScrollItem: URL?
+    var compactPendingAnchor: (url: URL, offset: CGPoint)?
+    var compactPendingRename: (url: URL, userActions: Int)?
+    var onCompactLayoutReady: (() -> Void)?
+    var scrollOriginForRestoration: CGPoint { compactPendingScroll ?? visibleRect.origin }
     struct CompactTextMeasurement {
         var revision: UInt64
         let roles: [ItemRole]
@@ -71,6 +88,7 @@ final class ItemListView: NSView {
     }
     #if PORPOISE_TEST_HOOKS
     var textMeasurementCount = 0
+    var compactSnapshotMaxMilliseconds: Double = 0
     #endif
     /// Wrapped and elided Icons-mode labels, used by drawing and by hit testing on every mouse move.
     var iconsLabelCache: [IconsLabelKey: (label: NSAttributedString, size: CGSize)] = [:]
@@ -240,6 +258,11 @@ final class ItemListView: NSView {
         needsDisplay = true
     }
 
+    override func scroll(_ point: NSPoint) {
+        guard !isPreparingCompact else { compactPendingScroll = point; return }
+        super.scroll(point)
+    }
+
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -314,6 +337,9 @@ final class ItemListView: NSView {
         transitions.reflow {
             liveIconSize = s
             computeLayout()
+            if isPreparingCompact, let i = anchorIndex, model.rows.indices.contains(i) {
+                compactPendingAnchor = (model.rows[i].item.url, CGPoint(x: before.x - vr.minX, y: before.y - vr.minY))
+            }
             if let i = anchorIndex, i < frames.count {
                 let after = frames[i].origin
                 let target = CGPoint(x: mode == .compact ? max(0, vr.minX + after.x - before.x) : vr.minX, y: max(0, vr.minY + after.y - before.y))
@@ -344,7 +370,7 @@ final class ItemListView: NSView {
         var p = model.props
         p.setIconSize(s.rounded(), for: p.mode)
         // Saving the size must not move the view: the pinch already placed it around the fingers.
-        let origin = visibleRect.origin
+        let origin = scrollOriginForRestoration
         committingZoom = true
         defer { committingZoom = false }
         // The rounded size may hold one item more or less per row: that glides too.

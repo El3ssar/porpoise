@@ -10,7 +10,7 @@ import Testing
 
 @Suite(.serialized, .isolatedSettings) @MainActor struct PerformanceRoutingTests {
     init() { _ = NSApplication.shared }
-    @Test func compactResizeAndSavedZoomReuseMeasurementsUntilContentChanges() throws {
+    @Test func compactResizeAndSavedZoomReuseMeasurementsUntilContentChanges() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch()
         let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
@@ -24,6 +24,7 @@ import Testing
         scroll.documentView = view
         model.onChange = { [weak view] in view?.relayout() }
         view.computeLayout()
+        await expectEventually { !view.isPreparingCompact && view.frames.count == model.rows.count }
         let count = view.textMeasurementCount
         for size: CGFloat in [64, 65, 80] {
             scroll.frame.size.width += 1
@@ -34,6 +35,7 @@ import Testing
         #expect(view.textMeasurementCount == count)
         let oldWidth = view.frames[0].width
         model.searchResults = [items[0].named(String(repeating: "wide ", count: 30))] + items.dropFirst()
+        await expectEventually { !view.isPreparingCompact && view.frames.count == model.rows.count }
         #expect(view.textMeasurementCount > count)
         #expect(view.frames[0].width > oldWidth)
         model.filter = NameFilter(text: "no-such-name")

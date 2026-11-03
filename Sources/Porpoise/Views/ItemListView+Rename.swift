@@ -10,7 +10,11 @@ extension ItemListView: NSTextFieldDelegate {
     var renamingIndex: Int? { renamingItem.flatMap { model.index(of: $0.url) } }
 
     func beginRename(_ url: URL) {
-        guard let i = model.index(of: url) else { return }
+        if isPreparingCompact {
+            compactPendingRename = (url, userActions)
+            return
+        }
+        guard let i = model.index(of: url), i < frames.count else { return }
         commitRename()
         scrollToItem(i)
         let item = model.rows[i].item
@@ -46,7 +50,7 @@ extension ItemListView: NSTextFieldDelegate {
     }
 
     func positionRenameField(_ i: Int) {
-        guard let f = renameField else { return }
+        guard let f = renameField, i < frames.count else { return }
         let tr = nameTextRect(i)
         if mode == .icons {
             // As tall as the name being typed wraps to (up to the label's lines), not the whole text area below the
