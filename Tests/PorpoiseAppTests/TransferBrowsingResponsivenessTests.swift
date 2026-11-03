@@ -68,7 +68,7 @@ import Testing
         #expect(reloads > 0)
     }
 
-    @Test func browsingAndNewSearchResultsProceedWhilePreviewAndContentReadsWait() async throws {
+    @Test(.timeLimit(.minutes(1))) func browsingAndNewSearchResultsProceedWhilePreviewAndContentReadsWait() async throws {
         _ = NSApplication.shared
         let scratch = try Scratch("busy-browsing")
         let folder = URL(fileURLWithPath: scratch.url.path, isDirectory: true)
@@ -83,7 +83,7 @@ import Testing
         }
         pane.model.applyEdit(ListingEdit(folder: folder, added: items))
         try #require(await eventually { !pane.model.isLoading && pane.model.rows.count == items.count })
-        pane.model.selection = [items[0].url]
+        pane.model.selection = [items[1].url]
 
         let remote = URL(string: "sftp://busy-\(UUID().uuidString.lowercased()).invalid/")!
         let server = GatedServer(png: ThumbnailSchedulingTests.png)
@@ -99,22 +99,44 @@ import Testing
         let reading = AsyncStream.makeStream(of: Void.self)
         var reads = reading.stream.makeAsyncIterator()
         let results = DirectoryModel(location: folder, prefetchFolders: false)
-        var runner: SearchRunner!
-        runner = SearchRunner(text: "needle", scope: folder, contents: true) { items, _ in
-            let matches = SearchMatches(text: "needle", contents: true, snippets: runner.snippets)
-            results.sortSearchResults(items) { apply in results.searchMatches = matches; apply() }
+        weak var activeRunner: SearchRunner?
+        let runner = SearchRunner(text: "needle", scope: folder, contents: true) { items, _ in
+            guard let activeRunner else { return }
+            let matches = SearchMatches(text: "needle", contents: true, snippets: activeRunner.snippets)
+            results.sortSearchResults(items) { apply in
+                results.searchMatches = matches; apply()
+            }
         }
+        activeRunner = runner
         let snippetQueue = OperationQueue()
         snippetQueue.maxConcurrentOperationCount = 1
         runner.snippetQueue = snippetQueue
         runner.loadSpotlightItem = { FileItem(url: $0, name: $0.lastPathComponent, isDirectory: false, size: 1) }
-        runner.readSpotlightText = { _, _, _ in reading.continuation.yield(); textGate.wait(); return "a needle in the text" }
+        runner.readSpotlightText = { _, _, _ in
+            reading.continuation.yield(); textGate.wait(); return "a needle in the text"
+        }
         defer { textGate.signal(); runner.stop(); reading.continuation.finish() }
         let paths = [scratch.path("needle.txt").path, scratch.path("body.txt").path]
         runner.publish(paths, done: true)
         try #require(await reads.next() != nil)
         try #require(await eventually { results.rows.count == 2 })
         results.selection = [scratch.path("needle.txt")]
+        let activity = Activity(kind: .copy, sources: [], destination: folder, job: nil)
+        activity.state = .running
+        activity.incomingItem = FileItem(url: items[1].url, name: items[1].name, isDirectory: false, size: 1000)
+        FileOperationsController.shared.activities.append(activity)
+        defer {
+            FileOperationsController.shared.activities.removeAll { $0 === activity }
+            NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+        }
+        NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+        try #require(await eventually { !pane.model.isLoading && pane.model.incomingProgress[items[1].url] != nil })
+        let revision = pane.model.rowsRevision
+        for bytes in 1...100 {
+            activity.progress?.doneBytes = Int64(bytes)
+            NotificationCenter.default.post(name: FileOperationsController.activityChanged, object: nil)
+        }
+        #expect(pane.model.rowsRevision == revision && pane.model.incomingProgress[items[1].url] == 0.1)
         // Snapshot fresh metadata while the prior snippet and preview are still waiting on IO.
         runner.loadSpotlightItem = { FileItem(url: $0, name: $0.lastPathComponent, isDirectory: false, size: 2) }
         runner.publish(paths, done: true, changed: Set(paths))
@@ -122,11 +144,12 @@ import Testing
         pane.model.filter = NameFilter(text: "file-1")
         var heartbeat = false
         DispatchQueue.main.async { heartbeat = true }
-        try #require(await eventually {
-            heartbeat && !pane.model.isLoading && results.rows.count == 2 && results.rows.allSatisfy { $0.item.size == 2 }
-        })
+        try #require(
+            await eventually {
+                heartbeat && !pane.model.isLoading && results.rows.count == 2 && results.rows.allSatisfy { $0.item.size == 2 }
+            })
         #expect(pane.model.rows.allSatisfy { $0.item.name.contains("file-1") })
-        #expect(pane.model.selection == [items[0].url])
+        #expect(pane.model.selection == [items[1].url])
         #expect(results.rows.map(\.item.name) == ["needle.txt", "body.txt"])
         #expect(results.groups.map(\.title) == ["Name matches", "Content matches"])
         #expect(results.selection == [scratch.path("needle.txt")])
