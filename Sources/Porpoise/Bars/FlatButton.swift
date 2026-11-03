@@ -80,7 +80,7 @@ class FlatButton: NSControl {
     }
 
     override func accessibilityPerformShowMenu() -> Bool {
-        guard let m = menuProvider?() else { return false }
+        guard isEnabled, let m = menuProvider?() else { return false }
         popUpMenu(m)
         return true
     }
@@ -140,7 +140,7 @@ class FlatButton: NSControl {
         if menuProvider != nil {
             longPressTimer?.invalidate()
             let t = Timer(timeInterval: Self.longPressDelay, repeats: false) { [weak self] _ in
-                guard let self, self.pressing, let m = self.menuProvider?() else { return }
+                guard let self, self.isEnabled, self.pressing, let m = self.menuProvider?() else { return }
                 self.menuOpenedByLongPress = true
                 self.pressing = false
                 self.popUpMenu(m)
@@ -175,6 +175,7 @@ class FlatButton: NSControl {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
         if let m = menuProvider?() { m.popUp(positioning: nil, at: CGPoint(x: 0, y: bounds.height + 4), in: self) }
     }
 
