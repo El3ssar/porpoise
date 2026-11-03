@@ -4,6 +4,9 @@ Start with [the current roadmap](../ROADMAP.md), [shipped changes](../CHANGELOG.
 [contributor workflow](../CONTRIBUTING.md). Source/status refresh: 2026-11-02, using
 0.19.0 source (`98e1c881`) as the implementation baseline, after full CI passed. Work described
 as planned remains separate from the implemented polish and its scoped validation.
+The 2026-11-03 [everyday polish receipt](validation/BROWSING-POLISH.md) records the next
+interaction/performance follow-up, its source and local evidence, including the remaining
+short-name Compact measurement cost. Hosted/release validation is assessed separately.
 
 ## Current contracts
 
@@ -96,6 +99,7 @@ original evidence. Temporary artifact paths may no longer exist.
 | [Contributor PR/CI review](audits/2026-11-01/pr-and-ci-review.md) | Review of the old PR heads, before their later integration. |
 | [Drive M1 validation](drive/VALIDATION.md) | Initial fake-account engine handoff. |
 | [Folder information performance](validation/FOLDER-INFO-PERFORMANCE.md) | Optimized synthetic baseline/candidate measurements and a reproducible fixture recipe. |
+| [Everyday browsing polish](validation/BROWSING-POLISH.md) | Numeric sorting, date/transfer/path interactions, thumbnail cancellation and optimized layout measurements. |
 | [Fast transfers/previews](validation/M4-FASTPREVIEW.md) | W-70 fixtures, performance numbers and replay receipts. |
 | [Module split](validation/R16-MODULE-SPLIT.md) | Target-boundary refactor validation. |
 | [Credential isolation](verification/W-58-keychain-isolation.md) | Worker checkpoint for test/review credential isolation. |

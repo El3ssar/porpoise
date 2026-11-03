@@ -67,7 +67,7 @@ import Testing
         }
         let view = ItemListView(model: model)
         view.layoutWidthOverride = 1000
-        for mode in [ViewMode.icons, .details, .columns] {
+        for mode in [ViewMode.icons, .details, .columns, .compact] {
             model.props.mode = mode
             view.previewZoom(32, commitAfter: nil)
             view.computeLayout()
@@ -81,6 +81,105 @@ import Testing
             let target = view.frames[99_999]
             #expect(view.candidateIndexes(in: target.insetBy(dx: 1, dy: 1)).contains(99_999))
         }
+    }
+
+    @Test func compactBandsMatchEveryLegacyCellAndKeepHeaderGaps() throws {
+        let scratch = try Scratch()
+        let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        model.searchResults = (0..<127).map {
+            let name = ["A", "B", "C"][$0 % 3] + "\($0)." + String(repeating: "long-extension-", count: $0 % 3 + 2)
+            return FileItem(url: scratch.url.appendingPathComponent(name), name: name, isDirectory: false)
+        }
+        model.props.mode = .compact
+        let view = ItemListView(model: model)
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 900, height: 600))
+        scroll.documentView = view
+        for roles: [ItemRole] in [[], [.size, .modificationTime]] {
+            model.props.setRoles(roles, for: .compact)
+            for role: ItemRole? in [nil, .name, .extension_] {
+                model.props.groupRole = role
+                for height: CGFloat in [80, 301, 600] {
+                    scroll.frame.size.height = height
+                    for size: CGFloat in [16, 47.3, 128] {
+                        view.previewZoom(size, commitAfter: nil)
+                        view.computeLayout()
+                        let first = try #require(view.frames.first)
+                        let headerH = model.groups.isEmpty ? 0 : view.lineHeight + 14
+                        let font = NSFont.systemFont(ofSize: Theme.fontSize, weight: .semibold)
+                        var x = ItemListView.margin, i = 0
+                        while i < model.rows.count {
+                            let group = model.rows[i].group, groupX = x
+                            var groupEnd = i
+                            while groupEnd < model.rows.count && model.rows[groupEnd].group == group { groupEnd += 1 }
+                            while i < groupEnd {
+                                let end = min(groupEnd, i + view.rowsPerColumn)
+                                for j in i..<end {
+                                    let expected = CGRect(
+                                        x: x, y: ItemListView.margin + headerH + CGFloat(j - i) * first.height,
+                                        width: first.width, height: first.height)
+                                    expectClose(view.frames[j], expected)
+                                    #expect(view.candidateIndexes(in: expected.insetBy(dx: 1, dy: 1)).contains(j))
+                                    #expect(view.index(at: view.iconRect(j).center) == j)
+                                }
+                                x += first.width
+                                i = end
+                            }
+                            if group >= 0 {
+                                let titleWidth = ceil((model.groups[group].title as NSString).size(withAttributes: [.font: font]).width) + 16
+                                x = max(x, groupX + titleWidth)
+                            }
+                        }
+                        #expect(view.frames.materialized.isEmpty)
+                        #expect(view.frames.bands.count == max(1, model.groups.count))
+                        #expect(view.frame.width == max(view.visibleWidth, x + ItemListView.margin))
+                        for current in [0, 20, 126] {
+                            model.currentURL = model.rows[current].item.url
+                            let targetX = view.frames.dropFirst(current + 1).first { $0.minX > view.frames[current].minX }?.minX
+                            let candidates = view.frames.indices.filter { view.frames[$0].minX == targetX }
+                            let expected =
+                                candidates.min {
+                                    abs(view.frames[$0].minY - view.frames[current].minY) < abs(view.frames[$1].minY - view.frames[current].minY)
+                                } ?? 126
+                            view.keyDown(
+                                with: NSEvent.keyEvent(
+                                    with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                    characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 124)!)
+                            #expect(model.currentURL == model.rows[expected].item.url)
+                        }
+                    }
+                }
+            }
+        }
+        model.searchResults = []
+        view.computeLayout()
+        #expect(view.frames.isEmpty && view.frames.bands.isEmpty && view.groupHeaderFrames.isEmpty)
+        #expect(view.window == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func cappedCompactMeasurementsExpandWhenZoomNeedsMoreText(automatic: Bool) throws {
+        let scratch = try Scratch()
+        let model = DirectoryModel(location: scratch.url, prefetchFolders: false)
+        // The first value exceeds a small cap; the second is wider, and matters at a larger zoom.
+        model.searchResults = ["a" + String(repeating: "w", count: 20), "z" + String(repeating: "w", count: 50)].map {
+            FileItem(url: scratch.url.appendingPathComponent($0), name: $0, isDirectory: false)
+        }
+        model.props.mode = .compact
+        Settings.shared.compactMaxWidth = automatic ? 0 : 10
+        let view = ItemListView(model: model)
+        view.previewZoom(16, commitAfter: nil)
+        view.computeLayout()
+        let small = try #require(view.compactTextMeasurement)
+        #expect(!small.complete)
+        if automatic { view.previewZoom(256, commitAfter: nil) } else { Settings.shared.compactMaxWidth = 45 }
+        view.computeLayout()
+        let large = try #require(view.compactTextMeasurement)
+        #expect(large.width > small.width)
+        let expected = CompactColumns.textWidth(
+            widest: model.rows.map { view.textWidth(model.displayName(for: $0.item)) }.max() ?? 0,
+            iconSize: view.iconSize, charWidth: view.textWidth("x"), maxChars: automatic ? 0 : 45, minimum: 5 * view.lineHeight)
+        let actual = view.frames[0].width - 4 * ItemListView.pad - view.iconSize - 16
+        #expect(actual == ceil(expected))
     }
 
     @Test func treeContinuationsSurviveWidthChangesAndInvalidateAfterCollapse() async throws {

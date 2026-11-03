@@ -79,7 +79,7 @@ import Testing
         #expect(m.rowNames == ["a9", "a10", "B1", "b2"])
         Settings.shared.sortingChoice = .caseSensitive
         m.rebuild()
-        #expect(m.rowNames == ["B1", "a10", "a9", "b2"])
+        #expect(m.rowNames == ["B1", "a9", "a10", "b2"])
     }
 
     @Test func groupsKeepFoldersApart() async throws {
@@ -509,7 +509,7 @@ import Testing
         #expect(m.text(for: .path, of: doc) == s.url.path)
         let drive = DriveLocation(accountID: UUID(), collection: .folder("doc-plan")).url
         #expect(m.text(for: .path, of: FileItem(url: drive, name: "Plan for the move", isDirectory: false)) == "Google Drive")
-        #expect(m.text(for: .modificationTime, of: doc).hasPrefix("Today"))
+        #expect(m.text(for: .modificationTime, of: doc) == "Just now")
         Settings.shared.dateStyle = .absolute
         #expect(!m.text(for: .modificationTime, of: doc).hasPrefix("Today"))
         #expect(m.text(for: .type, of: sub) == "Folder")

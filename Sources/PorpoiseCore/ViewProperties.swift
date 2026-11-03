@@ -89,7 +89,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         switch self {
         case .name: return 320
         case .size: return 90
-        case .modificationTime, .creationTime, .accessTime, .sharedTime: return 170
+        case .modificationTime, .creationTime, .accessTime, .sharedTime: return 200
         case .type: return 160
         case .path, .linkDestination: return 240
         case .permissions: return 110

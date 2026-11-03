@@ -1,7 +1,7 @@
 import AppKit
 
 /// A thin progress track: how far work has got (`fraction`), or a band going across it while that isn't known
-/// (`isIndeterminate`). With Reduce Motion the band stays still in the middle and the fill doesn't glide.
+/// (`isIndeterminate`). While paused or with Reduce Motion, the band stays still and the fill doesn't glide.
 final class ThinProgressView: NSView {
     var fraction: Double = 0 {
         didSet { if fraction != oldValue { needsLayout = true; describe() } }
@@ -12,6 +12,14 @@ final class ThinProgressView: NSView {
             fill.layer?.removeAnimation(forKey: Self.band)
             needsLayout = true
             describe()
+        }
+    }
+    var isPaused = false {
+        didSet {
+            guard isPaused != oldValue else { return }
+            // Stop both the indefinite band and any in-flight determinate glide immediately.
+            fill.layer?.removeAllAnimations()
+            needsLayout = true
         }
     }
     private static let band = "indeterminate"
@@ -60,7 +68,7 @@ final class ThinProgressView: NSView {
         if isIndeterminate {
             let band = min(90, width * 0.3)
             fill.frame = CGRect(x: (width - band) / 2, y: 0, width: band, height: thickness)
-            if Animator.reducesMotion() {
+            if isPaused || Animator.reducesMotion() {
                 fill.layer?.removeAnimation(forKey: Self.band)
             } else if fill.layer?.animation(forKey: Self.band) == nil {
                 let animation = CABasicAnimation(keyPath: "position.x")
@@ -75,7 +83,7 @@ final class ThinProgressView: NSView {
         }
         fill.layer?.removeAnimation(forKey: Self.band)
         let target = CGRect(x: 0, y: 0, width: width * max(0, min(1, fraction)), height: thickness)
-        if Animator.reducesMotion() || fill.frame == .zero {
+        if isPaused || Animator.reducesMotion() || fill.frame == .zero {
             fill.frame = target
         } else {
             NSAnimationContext.runAnimationGroup { context in

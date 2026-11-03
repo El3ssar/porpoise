@@ -28,9 +28,47 @@ private var utc: Calendar {
 
     @Test func choicesDiffer() {
         let input = ["b", "a10", "a9", "B"].map { item($0) }
-        #expect(names(input, ViewProperties(), .caseSensitive) == ["B", "a10", "a9", "b"])
-        #expect(names(input, ViewProperties(), .caseInsensitive).prefix(2) == ["a10", "a9"])
+        #expect(names(input, ViewProperties(), .caseSensitive) == ["B", "a9", "a10", "b"])
+        #expect(names(input, ViewProperties(), .caseInsensitive).prefix(2) == ["a9", "a10"])
         #expect(names(input, ViewProperties(), .natural).prefix(2) == ["a9", "a10"])
+        #expect(ItemSorter.compareNames("a", "A", .caseInsensitive) == .orderedSame)
+        #expect(ItemSorter.compareNames("a", "A", .caseSensitive) == .orderedDescending)
+    }
+
+    @Test(arguments: SortingChoice.allCases)
+    func numericNamesInEveryMode(_ choice: SortingChoice) {
+        #expect(
+            names(["10.txt", "2.txt", "100.txt", "9.txt", "1.txt"].map { item($0) }, ViewProperties(), choice)
+                == ["1.txt", "2.txt", "9.txt", "10.txt", "100.txt"])
+        #expect(
+            names(["part10-2", "part2-10", "part2-9"].map { item($0) }, ViewProperties(), choice)
+                == ["part2-9", "part2-10", "part10-2"])
+        // Values larger than Int64 and padded digit runs must not overflow or use lexical order.
+        #expect(ItemSorter.compareNames("99999999999999999999", "100000000000000000000", choice) == .orderedAscending)
+        #expect(ItemSorter.compareNames("009", "10", choice) == .orderedAscending)
+    }
+
+    @Test(arguments: SortingChoice.allCases)
+    func numericOrderingPreservesSectionsAndMerge(_ choice: SortingChoice) {
+        var p = ViewProperties(); p.sortOrder = .descending; p.hiddenLast = true
+        let input = [item("9"), item("folder10", dir: true), item("2"), item("folder9", dir: true), item("10"), item(".9"), item(".10")]
+        let sorted = ItemSorter.sort(input, props: p, choice: choice)
+        #expect(sorted.map(\.name) == ["folder10", "folder9", "10", "9", "2", ".10", ".9"])
+        #expect(sorted.prefix(2).allSatisfy { $0.isDirectory })
+        let first = ItemSorter.sort(Array(input.prefix(3)), props: p, choice: choice)
+        let merged = ItemSorter.merge(first, adding: Array(input.dropFirst(3)), props: p, choice: choice)
+        #expect(merged == sorted)
+    }
+
+    @Test(arguments: SortingChoice.allCases)
+    func equalNumericNamesKeepADeterministicOrder(_ choice: SortingChoice) {
+        let input = ["02", "2", "002"].map { item($0) }
+        let forward = ItemSorter.sort(input, props: ViewProperties(), choice: choice)
+        let backward = ItemSorter.sort(input.reversed(), props: ViewProperties(), choice: choice)
+        #expect(forward.map(\.url) == backward.map(\.url))
+        let merged = ItemSorter.merge(
+            Array(forward.prefix(1)), adding: Array(forward.dropFirst().reversed()), props: ViewProperties(), choice: choice)
+        #expect(merged.map(\.url) == forward.map(\.url))
     }
 
     @Test func unicodeNamesSortWithTheirLetters() {
@@ -168,7 +206,7 @@ private var utc: Calendar {
     @Test func relativeDates() {
         let cal = utc
         let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 8, hour: 12))!
-        #expect(FileFormat.relativeDate(now, now: now, calendar: cal).hasPrefix("Today at "))
+        #expect(FileFormat.relativeDate(now, now: now, calendar: cal) == "Just now")
         #expect(FileFormat.relativeDate(now.addingTimeInterval(-86400), now: now, calendar: cal).hasPrefix("Yesterday at "))
         #expect(FileFormat.relativeDate(now.addingTimeInterval(-3 * 86400), now: now, calendar: cal).hasPrefix("Monday at "))
         let old = FileFormat.relativeDate(now.addingTimeInterval(-30 * 86400), now: now, calendar: cal)

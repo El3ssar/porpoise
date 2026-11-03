@@ -9,6 +9,12 @@ entry point. [CHANGELOG.md](CHANGELOG.md) records shipped behavior; the
 [documentation index](docs/README.md) separates current contracts from historical designs
 and verification receipts. A plan is not a promise that a feature has shipped.
 
+Follow-up reviewed 2026-11-03: the everyday polish source (`1ca56528`) adds numeric filename
+ordering in every name mode, recent-minute date labels with exact hover timestamps,
+additional transfer/breadcrumb state coverage, Compact geometry improvements and obsolete
+thumbnail cancellation. [Its dated receipt](docs/validation/BROWSING-POLISH.md) separates
+implemented changes, measured results and remaining work; release validation is a separate gate.
+
 ## Already shipped
 
 These are foundations to improve, not future feature milestones:
@@ -51,9 +57,10 @@ history is not part of this UI. Internal Undo and recovery records remain. The c
 contract belongs in [TRANSFER-PROGRESS.md](docs/TRANSFER-PROGRESS.md); the old toolbar/popover
 proposal is superseded. Automatic presentation must preserve the user's focus.
 
-**Remaining finish validation:** beyond those fixtures, long names, preparation, pause, conflicts, failure, completion and
-multiple operations have deliberate layouts; controls remain usable at the compact size;
-progress does not activate Porpoise or take over another app.
+The follow-up adds minimum-width light/dark state fixtures, concurrent-operation scrolling,
+honest discovered/unknown counts, preserved failure emphasis, stopped paused animations and
+ended-state progress handling. **Remaining finish validation:** attended use of actual conflict
+sheets, keyboard dispatch and active native materials; retain the no-activation contract.
 
 ### Location bar
 
@@ -64,6 +71,8 @@ full-path editing, overflow access, drag behavior, keyboard navigation and acces
 
 **Remaining finish validation:** attended pointer/keyboard/VoiceOver use confirms that hover/focus makes the
 target clear; shortened, deep, long-name and narrow split-pane paths remain fully reachable.
+The follow-up adds Places/root keyboard and accessibility actions, Command-Return new tabs
+and invalidation of delayed folder menus after navigation, editing, detachment or focus loss.
 
 ### Documentation
 
@@ -87,6 +96,12 @@ for time to first useful information, incremental count updates, complete totals
 CPU and memory. Include many small files, deep trees, packages, hard links, symlinks, removable
 filesystems and slow/unreadable locations. Cached or partial values must say what they represent.
 A faster scan must retain the same counting semantics and report incomplete results honestly.
+
+The 2026-11-03 optimized offscreen browsing baseline now covers model publication and
+Icons/Details/Compact layouts. Compact's long-name first layout and repeated resizes avoid
+unnecessary work; initial measurement of 100,000 short labels still takes about 0.74 seconds
+and remains a concrete next target. Thumbnail cancellation now follows actual viewport/window
+ownership changes without polling. See [the scoped results](docs/validation/BROWSING-POLISH.md).
 
 Then measure the complete browsing loop: navigation and Back, sorting/view changes, thumbnails
 and previews, search/indexing, transfers and their overlap. Prioritize measured bottlenecks;

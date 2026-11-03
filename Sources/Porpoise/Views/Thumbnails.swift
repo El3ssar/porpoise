@@ -208,14 +208,13 @@ final class Thumbnails {
                         if let item = FileItem.load(url.appendingPathComponent(name)), !item.isDirectory { files.append(item) }
                     }
                     DispatchQueue.main.async { [weak self] in
-                        defer { job.finish() }
-                        guard let self, generation == self.folderGeneration else { return }
+                        guard let self, generation == self.folderGeneration else { job.finish(); return }
                         self.folderScans.remove(version)
                         guard !job.isCancelled else {
-                            // An owner may have returned while its old scan was stopping: let the view request fresh work.
-                            NotificationCenter.default.post(name: Thumbnails.ready, object: url)
+                            self.finishCancelled(job)
                             return
                         }
+                        defer { job.finish() }
                         if self.folderCandidates.count > Self.maxRemembered / 10 { self.folderCandidates.removeAll() }
                         self.folderCandidates[version] = Array(files.filter(Self.wantsPreview).prefix(8))
                         NotificationCenter.default.post(name: Thumbnails.ready, object: url)
@@ -254,6 +253,15 @@ final class Thumbnails {
 
     /// Previews asked for and not made yet (queued, running, or handed between steps).
     var outstanding: Int { pending.count }
+
+    /// An owner can return while cancellation is still settling. Release the old key and lane before
+    /// invalidating only its currently wanted targets, so even synchronous redraws can start fresh work.
+    private func finishCancelled(_ job: ThumbnailWorkScheduler.Job) {
+        pending.remove(job.key)
+        job.finish()
+        let wanted = job.wantedURLs
+        for url in wanted { NotificationCenter.default.post(name: Thumbnails.ready, object: url) }
+    }
 
     /// Settings changed: forget folder previews so they are rebuilt (or dropped).
     func resetFolderPreviews() {
@@ -329,8 +337,7 @@ final class Thumbnails {
             let local = try? await PreviewSource.localFile(for: remote, thumbnail: true)
             guard let self, !job.isCancelled else {
                 if let dir = local?.cleanup { try? FileManager.default.removeItem(at: dir) }
-                _ = self?.pending.remove(k)
-                job.finish()
+                if let self { self.finishCancelled(job) } else { job.finish() }
                 return
             }
             if let local, local.cleanup == nil, let image = NSImage(contentsOf: local.file) {
@@ -380,9 +387,9 @@ final class Thumbnails {
                 let image = await AudioArtwork.load(file).flatMap(NSImage.init(data:))
                 await MainActor.run {
                     if let cleanup { try? FileManager.default.removeItem(at: cleanup) }
+                    guard !job.isCancelled else { self.finishCancelled(job); return }
                     self.pending.remove(k)
                     defer { job.finish() }
-                    guard !job.isCancelled else { return }
                     if let image { self.store(image, k) } else { self.remember(failed: k) }
                     NotificationCenter.default.post(name: Thumbnails.ready, object: item.url)
                 }
@@ -400,8 +407,7 @@ final class Thumbnails {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if job.isCancelled {
-                    self.pending.remove(k)
-                    job.finish()
+                    self.finishCancelled(job)
                 } else if let rep {
                     self.pending.remove(k)
                     let image = item.url.scheme == "gdrive" && file.pathExtension == "pdf" ? Self.paperPreview(rep.nsImage) : rep.nsImage
@@ -436,9 +442,9 @@ final class Thumbnails {
             let img = Self.ffmpegFrame(url, size: size) { cancelled.isSet }
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard !job.isCancelled else { self.finishCancelled(job); return }
                 self.pending.remove(k)
                 defer { job.finish() }
-                guard !job.isCancelled else { return }
                 if let img { self.store(img, k) } else { self.remember(failed: k) }
                 NotificationCenter.default.post(name: Thumbnails.ready, object: url)
             }

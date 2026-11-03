@@ -17,6 +17,7 @@ final class TransferProgressView: NSView {
     private weak var activity: Activity?
     private weak var parentWindow: NSWindow?
     private var actions: [ActivityAction] = []
+    private var hasFailures = false
     private(set) var isExpanded = false
     var onHeightChanged: (() -> Void)?
     var onDismiss: (() -> Void)?
@@ -65,7 +66,7 @@ final class TransferProgressView: NSView {
             layer?.backgroundColor = Theme.windowBackground.cgColor
             title.textColor = Theme.viewText
             counts.textColor = Theme.viewTextInactive
-            current.textColor = Theme.viewText
+            current.textColor = hasFailures ? Theme.transferDanger : Theme.viewText
             for label in [amount, percentage, remaining] { label.textColor = Theme.viewTextInactive }
         }
         speedHistory.needsDisplay = true
@@ -109,20 +110,32 @@ final class TransferProgressView: NSView {
         title.stringValue = activity.title
         title.toolTip = activity.title
         func count(_ done: Int?, _ total: Int?, _ name: String) -> String {
-            guard let done, let total else { return "\(name.capitalized): " + (activity.state.isEnded ? "not counted" : "counting…") }
+            guard let done, let total else {
+                let state = activity.state.isEnded ? "not counted" : activity.state == .running ? "counting…" : "not counted yet"
+                return "\(name.capitalized): " + state
+            }
             let noun = total == 1 ? String(name.dropLast()) : name
             return "\(FileFormat.count(done)) of \(FileFormat.count(total)) \(noun)"
         }
+        hasFailures = presentation.hasFailures
         let knownCounts = summary.totalFiles != nil && summary.totalFolders != nil
         counts.stringValue =
             (knownCounts ? "Processed " : "") + count(summary.completedFiles, summary.totalFiles, "files") + " · "
             + count(summary.completedFolders, summary.totalFolders, "folders")
+        if activity.state == .queued, !knownCounts { counts.stringValue = "Files and folders not counted yet" }
+        if (activity.state == .running || activity.state == .paused), activity.progress?.phase == .preparing, let progress = activity.progress {
+            let files = max(0, progress.totalFiles), folders = max(0, progress.totalFolders)
+            counts.stringValue =
+                "Found \(FileFormat.count(files)) \(files == 1 ? "file" : "files") · \(FileFormat.count(folders)) \(folders == 1 ? "folder" : "folders")"
+        }
         if activity.kind == .move, activity.state == .completed, !knownCounts { counts.stringValue = "Moved · contents not counted" }
+        counts.toolTip = counts.stringValue
         current.stringValue =
             activity.state.isEnded ? presentation.detailLine : summary.currentName.isEmpty ? activity.statusText : summary.currentName
         current.toolTip = activity.state.isEnded ? activity.statusText : summary.currentName
         current.textColor = presentation.hasFailures ? Theme.transferDanger : Theme.viewText
         progress.fraction = activity.state == .completed && !presentation.hasFailures ? 1 : summary.fraction
+        progress.isPaused = presentation.isPaused
         progress.isIndeterminate = presentation.isIndeterminate
         progress.alphaValue = presentation.isPaused ? 0.5 : 1
         percentage.isHidden = isExpanded || presentation.isIndeterminate
@@ -130,12 +143,25 @@ final class TransferProgressView: NSView {
             summary.totalBytes > 0
             ? "\(FileFormat.size(summary.doneBytes)) of \(FileFormat.size(summary.totalBytes))" : FileFormat.size(summary.doneBytes)
         percentage.stringValue = "\(Int((summary.fraction * 100).rounded()))%"
-        remaining.stringValue =
-            activity.state == .paused
-            ? "Paused"
-            : activity.state.isEnded
-                ? activity.state.rawValue.capitalized
-                : [summary.speedText, summary.timeLeftText].compactMap { $0 }.joined(separator: " · ")
+        amount.toolTip = amount.stringValue
+        switch activity.state {
+        case .queued: remaining.stringValue = "Queued"
+        case .paused: remaining.stringValue = "Paused"
+        case .waiting: remaining.stringValue = "Waiting for your answer"
+        case .verifying: remaining.stringValue = "Verifying…"
+        case .completed where presentation.hasFailures: remaining.stringValue = "Completed with errors"
+        case .running:
+            if let notice = presentation.notice {
+                remaining.stringValue = notice
+            } else if activity.progress?.phase == .preparing {
+                remaining.stringValue = "Preparing…"
+            } else if activity.progress?.phase == .verifying {
+                remaining.stringValue = "Verifying move…"
+            } else {
+                remaining.stringValue = [summary.speedText, summary.timeLeftText].compactMap { $0 }.joined(separator: " · ")
+            }
+        default: remaining.stringValue = activity.state.rawValue.capitalized
+        }
         if remaining.stringValue.isEmpty { remaining.stringValue = activity.statusText }
         remaining.toolTip = remaining.stringValue
         speedHistory.currentSpeed = summary.bytesPerSecond
@@ -158,6 +184,8 @@ final class TransferProgressView: NSView {
         if activity.state == .interrupted, !actions.contains(.retry) { actions.insert(.retry, at: 0) }
         setActions(actions, allowsDismissal: activity.state.isEnded)
         setAccessibilityLabel(activity.title + ". " + counts.stringValue + ". " + current.stringValue)
+        setAccessibilityValueDescription(
+            (presentation.isIndeterminate ? "" : percentage.stringValue + ". ") + remaining.stringValue)
         needsLayout = true
     }
 

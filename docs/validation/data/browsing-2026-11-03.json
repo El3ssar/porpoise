@@ -1,0 +1,374 @@
+{
+  "baseline": "8ebb2946460815f30fb6cf17fda6cdda8602472b",
+  "trials": [
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 889.21074999962,
+        "compact_resize_20_ms": 0.21804170683026314,
+        "details_initial_ms": 0.046791741624474525,
+        "details_resize_20_ms": 0.1425000373274088,
+        "icons_initial_ms": 6.375750061124563,
+        "icons_resize_20_ms": 0.4178333329036832,
+        "model_ms": 48.24120830744505
+      },
+      "implementation": "candidate",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.05150004290044308,
+        "compact_resize_20_ms": 0.13012508861720562,
+        "details_initial_ms": 0.005124951712787151,
+        "details_resize_20_ms": 0.17145834863185883,
+        "icons_initial_ms": 4.960499936714768,
+        "icons_resize_20_ms": 0.23641670122742653,
+        "model_ms": 43.04562497418374
+      },
+      "implementation": "candidate",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 793.1337916525081,
+        "compact_resize_20_ms": 6.6119167022407055,
+        "details_initial_ms": 0.15774997882544994,
+        "details_resize_20_ms": 0.2327916445210576,
+        "icons_initial_ms": 6.618749932385981,
+        "icons_resize_20_ms": 1.2554583372548223,
+        "model_ms": 54.6837083529681
+      },
+      "implementation": "baseline",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1757.925125071779,
+        "compact_resize_20_ms": 5.444416659884155,
+        "details_initial_ms": 0.01754169352352619,
+        "details_resize_20_ms": 0.4373749252408743,
+        "icons_initial_ms": 6.045958260074258,
+        "icons_resize_20_ms": 0.4344583721831441,
+        "model_ms": 50.06695829797536
+      },
+      "implementation": "baseline",
+      "trial": -1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 731.3787499442697,
+        "compact_resize_20_ms": 6.341083324514329,
+        "details_initial_ms": 0.06524997297674417,
+        "details_resize_20_ms": 0.14166662003844976,
+        "icons_initial_ms": 5.950374994426966,
+        "icons_resize_20_ms": 0.4299166612327099,
+        "model_ms": 53.844666690565646
+      },
+      "implementation": "baseline",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1727.7814582921565,
+        "compact_resize_20_ms": 4.3749583419412374,
+        "details_initial_ms": 0.006625079549849033,
+        "details_resize_20_ms": 0.20216673146933317,
+        "icons_initial_ms": 6.039875093847513,
+        "icons_resize_20_ms": 0.3263333346694708,
+        "model_ms": 47.30687499977648
+      },
+      "implementation": "baseline",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 801.9906666595489,
+        "compact_resize_20_ms": 0.19345839973539114,
+        "details_initial_ms": 0.3229166613891721,
+        "details_resize_20_ms": 0.7244166918098927,
+        "icons_initial_ms": 12.47349998448044,
+        "icons_resize_20_ms": 4.364291671663523,
+        "model_ms": 67.26875004824251
+      },
+      "implementation": "candidate",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.06624998059123755,
+        "compact_resize_20_ms": 0.14424999244511127,
+        "details_initial_ms": 0.006541609764099121,
+        "details_resize_20_ms": 0.1610000617802143,
+        "icons_initial_ms": 6.616666680201888,
+        "icons_resize_20_ms": 0.2872917102649808,
+        "model_ms": 50.19037495367229
+      },
+      "implementation": "candidate",
+      "trial": 0
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 739.028999931179,
+        "compact_resize_20_ms": 0.19133335445076227,
+        "details_initial_ms": 0.05000003147870302,
+        "details_resize_20_ms": 0.18883333541452885,
+        "icons_initial_ms": 5.745958304032683,
+        "icons_resize_20_ms": 0.40066661313176155,
+        "model_ms": 45.32604163978249
+      },
+      "implementation": "candidate",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.054166652262210846,
+        "compact_resize_20_ms": 0.134666683152318,
+        "details_initial_ms": 0.00541668850928545,
+        "details_resize_20_ms": 0.14391669537872076,
+        "icons_initial_ms": 5.291291628964245,
+        "icons_resize_20_ms": 0.24070835206657648,
+        "model_ms": 45.277958386577666
+      },
+      "implementation": "candidate",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 715.6917083775625,
+        "compact_resize_20_ms": 4.193708300590515,
+        "details_initial_ms": 0.06758328527212143,
+        "details_resize_20_ms": 0.14341657515615225,
+        "icons_initial_ms": 6.468250066973269,
+        "icons_resize_20_ms": 0.4658750258386135,
+        "model_ms": 46.94675002247095
+      },
+      "implementation": "baseline",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1645.5285833217204,
+        "compact_resize_20_ms": 4.607625072821975,
+        "details_initial_ms": 0.005999929271638393,
+        "details_resize_20_ms": 0.13987498823553324,
+        "icons_initial_ms": 6.63866673130542,
+        "icons_resize_20_ms": 0.26679167058318853,
+        "model_ms": 44.794291723519564
+      },
+      "implementation": "baseline",
+      "trial": 1
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 1304.0652916533872,
+        "compact_resize_20_ms": 11.043833335861564,
+        "details_initial_ms": 0.07675006054341793,
+        "details_resize_20_ms": 0.15320838429033756,
+        "icons_initial_ms": 6.06633338611573,
+        "icons_resize_20_ms": 0.49533334095031023,
+        "model_ms": 48.14987501595169
+      },
+      "implementation": "baseline",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1799.071624991484,
+        "compact_resize_20_ms": 5.046874983236194,
+        "details_initial_ms": 0.006249989382922649,
+        "details_resize_20_ms": 0.14470831956714392,
+        "icons_initial_ms": 5.948374979197979,
+        "icons_resize_20_ms": 0.26887503918260336,
+        "model_ms": 46.75616673193872
+      },
+      "implementation": "baseline",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 1074.4218333857134,
+        "compact_resize_20_ms": 0.8378332713618875,
+        "details_initial_ms": 0.053291674703359604,
+        "details_resize_20_ms": 0.16158330254256725,
+        "icons_initial_ms": 5.90687501244247,
+        "icons_resize_20_ms": 0.5467083537951112,
+        "model_ms": 60.28424995020032
+      },
+      "implementation": "candidate",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.1370832324028015,
+        "compact_resize_20_ms": 0.29683334287256,
+        "details_initial_ms": 0.03208336420357227,
+        "details_resize_20_ms": 0.4625417059287429,
+        "icons_initial_ms": 6.355916615575552,
+        "icons_resize_20_ms": 0.7864166982471943,
+        "model_ms": 50.59433332644403
+      },
+      "implementation": "candidate",
+      "trial": 2
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 719.6392916375771,
+        "compact_resize_20_ms": 0.2105833264067769,
+        "details_initial_ms": 0.10516657494008541,
+        "details_resize_20_ms": 0.1558333169668913,
+        "icons_initial_ms": 9.258416714146733,
+        "icons_resize_20_ms": 1.0405000066384673,
+        "model_ms": 48.43395831994712
+      },
+      "implementation": "candidate",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.0685832928866148,
+        "compact_resize_20_ms": 0.13862503692507744,
+        "details_initial_ms": 0.00700005330145359,
+        "details_resize_20_ms": 0.1344582997262478,
+        "icons_initial_ms": 6.709791719913483,
+        "icons_resize_20_ms": 0.28054171707481146,
+        "model_ms": 51.76237504929304
+      },
+      "implementation": "candidate",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 799.4124999968335,
+        "compact_resize_20_ms": 5.78408339060843,
+        "details_initial_ms": 0.07458333857357502,
+        "details_resize_20_ms": 0.17029163427650928,
+        "icons_initial_ms": 6.816999986767769,
+        "icons_resize_20_ms": 0.5023333942517638,
+        "model_ms": 56.14787503145635
+      },
+      "implementation": "baseline",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1716.6619999334216,
+        "compact_resize_20_ms": 5.005791666917503,
+        "details_initial_ms": 0.0072499969974160194,
+        "details_resize_20_ms": 0.15795836225152016,
+        "icons_initial_ms": 6.210208288393915,
+        "icons_resize_20_ms": 0.29262492898851633,
+        "model_ms": 51.4930832432583
+      },
+      "implementation": "baseline",
+      "trial": 3
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 701.5502083813772,
+        "compact_resize_20_ms": 6.659958278760314,
+        "details_initial_ms": 0.0725834397599101,
+        "details_resize_20_ms": 0.16004173085093498,
+        "icons_initial_ms": 5.955208442173898,
+        "icons_resize_20_ms": 0.45179168228060007,
+        "model_ms": 50.62458338215947
+      },
+      "implementation": "baseline",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 1639.0192916151136,
+        "compact_resize_20_ms": 4.87204163800925,
+        "details_initial_ms": 0.004791654646396637,
+        "details_resize_20_ms": 0.13045838568359613,
+        "icons_initial_ms": 5.512791685760021,
+        "icons_resize_20_ms": 0.24316669441759586,
+        "model_ms": 43.106916709803045
+      },
+      "implementation": "baseline",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": false,
+      "metrics": {
+        "compact_initial_ms": 734.9802500102669,
+        "compact_resize_20_ms": 0.19141670782119036,
+        "details_initial_ms": 0.04499999340623617,
+        "details_resize_20_ms": 0.14854164328426123,
+        "icons_initial_ms": 5.6737499544397,
+        "icons_resize_20_ms": 0.43824990279972553,
+        "model_ms": 47.76854161173105
+      },
+      "implementation": "candidate",
+      "trial": 4
+    },
+    {
+      "files": 100000,
+      "longNames": true,
+      "metrics": {
+        "compact_initial_ms": 0.06308325100690126,
+        "compact_resize_20_ms": 0.14658330474048853,
+        "details_initial_ms": 0.00641669612377882,
+        "details_resize_20_ms": 0.15837501268833876,
+        "icons_initial_ms": 5.994208273477852,
+        "icons_resize_20_ms": 0.2699584001675248,
+        "model_ms": 49.21633331105113
+      },
+      "implementation": "candidate",
+      "trial": 4
+    }
+  ],
+  "bundles": {
+    "baseline": "9f47ff06bc9589d6cdcd2391114972b6516a9fbe7217e93ee0b23b56e0cf9a0e",
+    "candidate": "c4390495057b08eca7c0308d2a763f8b4f1af5123e8c1184adaf8c367009397e"
+  },
+  "candidateSourceCommit": "1ca5652882d3e5f913089a549bee4bab38cd870b",
+  "compiler": "Apple Swift version 6.4.2 (swiftlang-6.4.2.1.9 clang-2100.4.1.1)\nTarget: arm64-apple-macosx27.0.0",
+  "os": "27.0.1",
+  "architecture": "arm64",
+  "protocol": "One warmup pair then five alternating separate-process pairs; optimized offscreen model/layout, 100000 synthetic entries; no concurrent build; no A/A calibration"
+}

@@ -67,6 +67,7 @@ final class ItemListView: NSView {
         let roles: [ItemRole]
         let relativeMinute: Int?
         let width: CGFloat
+        let complete: Bool
     }
     #if PORPOISE_TEST_HOOKS
     var textMeasurementCount = 0
@@ -138,6 +139,7 @@ final class ItemListView: NSView {
     /// True while a zoom is being saved (the container then keeps the scroll position).
     private(set) var committingZoom = false
     private var zoomCommitTimer: Timer?
+    var relativeDateTimer: Timer?
     private let zoomAnimator = Animator(name: "list.zoom")
 
     // MARK: Transitions (+Transition)
@@ -180,8 +182,29 @@ final class ItemListView: NSView {
                 self?.thumbnailReady(n)
             })
         observers.append(
+            NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) {
+                [weak self] n in
+                guard let self, let changed = n.object as? NSWindow, changed === self.window else { return }
+                self.stopRelativeDateRefresh()
+                self.thumbnailVisibilityChanged()
+                self.needsDisplay = true
+            })
+        for name in [NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
+            observers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    guard let self, let changed = note.object as? NSWindow, changed === self.window else { return }
+                    self.thumbnailVisibilityChanged()
+                })
+        }
+        observers.append(
+            NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: nil, queue: .main) { [weak self] note in
+                guard let self, let clip = note.object as? NSClipView, clip === self.enclosingScrollView?.contentView else { return }
+                self.thumbnailVisibilityChanged()
+            })
+        observers.append(
             NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
                 self?.settingsChanged(key: n.object as? String)
+                self?.thumbnailVisibilityChanged()
             })
     }
 
@@ -190,9 +213,31 @@ final class ItemListView: NSView {
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
         zoomCommitTimer?.invalidate()
+        relativeDateTimer?.invalidate()
+        Thumbnails.shared.scheduler.requestReconcile()
         hoverFade.stop()
         zoomAnimator.stop()
         transitionAnimator.stop()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopRelativeDateRefresh()
+        enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
+        thumbnailVisibilityChanged()
+        needsDisplay = true
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        stopRelativeDateRefresh()
+        thumbnailVisibilityChanged()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        thumbnailVisibilityChanged()
+        needsDisplay = true
     }
 
     override var isFlipped: Bool { true }
@@ -231,6 +276,7 @@ final class ItemListView: NSView {
         ]
         let changesLayout = key.map(layoutKeys.contains) ?? true
         guard changesLayout || key.map(drawingKeys.contains) == true else { return }
+        if key == nil || key == "dateStyle" { stopRelativeDateRefresh() }
         guard changesLayout else { needsDisplay = true; return }
         let f = Settings.shared.labelFont
         if f != font {

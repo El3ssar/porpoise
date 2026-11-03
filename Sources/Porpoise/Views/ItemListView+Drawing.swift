@@ -6,6 +6,7 @@ import PorpoiseServices
 
 extension ItemListView {
     override func draw(_ dirty: NSRect) {
+        defer { scheduleRelativeDateRefresh() }
         // Inactive split pane: View color at alpha 150/255 over the window color (measured #1a1e2a).
         let bg = isActiveView ? Theme.viewBackground : Theme.inactiveViewBackgroundOpaque
         bg.setFill()

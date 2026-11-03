@@ -135,45 +135,53 @@ public enum FileFormat {
         return fits(word) ? word : (fits("…") ? "…" : "")
     }
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .short
-        return f
-    }()
-
-    private static let dateTimeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private static let longFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .full
-        f.timeStyle = .short
-        return f
-    }()
-
-    /// KFormat::formatRelativeDateTime: "Today at 14:05", "Yesterday at 09:12", otherwise a date.
+    /// Recent changes use elapsed minutes, then the local calendar day and time. Future
+    /// timestamps stay explicit: a clock-skewed file must not be described as modified "ago".
     public static func relativeDate(_ d: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let elapsed = now.timeIntervalSince(d)
+        if elapsed >= 0, elapsed < 60 { return "Just now" }
+        if elapsed >= 60, elapsed < 3600 {
+            let minutes = Int(elapsed / 60)
+            return "\(count(minutes, locale: calendar.locale)) " + (minutes == 1 ? "minute ago" : "minutes ago")
+        }
         let days =
             calendar.dateComponents(
                 [.day], from: calendar.startOfDay(for: d),
                 to: calendar.startOfDay(for: now)
             ).day ?? 99
-        let time = timeFormatter.string(from: d)
+        let time = localizedDate(d, dateStyle: .none, timeStyle: .short, calendar: calendar)
         switch days {
         case 0: return "Today at \(time)"
         case 1: return "Yesterday at \(time)"
         case 2..<7:
             return "\(formatter("EEEE", calendar: calendar).string(from: d)) at \(time)"
-        default: return dateTimeFormatter.string(from: d)
+        default: return localizedDate(d, dateStyle: .medium, timeStyle: .short, calendar: calendar)
         }
     }
 
-    public static func longDate(_ d: Date) -> String { longFormatter.string(from: d) }
+    public static func longDate(_ d: Date, calendar: Calendar = .current) -> String {
+        localizedDate(d, dateStyle: .full, timeStyle: .short, calendar: calendar)
+    }
+
+    /// The unabridged timestamp behind a relative label, including seconds and time zone.
+    public static func exactDate(_ d: Date, calendar: Calendar = .current) -> String {
+        localizedDate(d, dateStyle: .full, timeStyle: .long, calendar: calendar)
+    }
+
+    private static func localizedDate(_ d: Date, dateStyle: DateFormatter.Style, timeStyle: DateFormatter.Style, calendar: Calendar) -> String {
+        // Style formatters are cached with the supplied calendar/zone/locale too. Reusing
+        // a global time formatter ignored test calendars and system time-zone changes.
+        let key =
+            "style:\(dateStyle.rawValue):\(timeStyle.rawValue)|\(calendar.identifier)|\(calendar.timeZone.identifier)|\(calendar.locale?.identifier ?? Locale.current.identifier)"
+        return formatterLock.withLock {
+            if let known = formatterCache[key] { return known.string(from: d) }
+            let f = DateFormatter()
+            f.calendar = calendar; f.timeZone = calendar.timeZone; f.locale = calendar.locale ?? .current
+            f.dateStyle = dateStyle; f.timeStyle = timeStyle
+            formatterCache[key] = f
+            return f.string(from: d)
+        }
+    }
 
     nonisolated(unsafe) private static var formatterCache: [String: DateFormatter] = [:]
     private static let formatterLock = NSLock()
