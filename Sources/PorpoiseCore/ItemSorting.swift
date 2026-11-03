@@ -84,11 +84,13 @@ public enum SortingChoice: String, Codable, CaseIterable, Sendable {
 }
 
 public enum ItemSorter {
+    /// Digit runs use their numeric value in every mode. The choice controls letter/case collation,
+    /// so choosing case-sensitive names never makes "10" come before "9".
     public static func compareNames(_ a: String, _ b: String, _ choice: SortingChoice) -> ComparisonResult {
         switch choice {
         case .natural: return a.localizedStandardCompare(b)
-        case .caseInsensitive: return a.localizedCaseInsensitiveCompare(b)
-        case .caseSensitive: return a.compare(b)
+        case .caseInsensitive: return a.compare(b, options: [.caseInsensitive, .numeric], locale: .current)
+        case .caseSensitive: return a.compare(b, options: .numeric)
         }
     }
 
