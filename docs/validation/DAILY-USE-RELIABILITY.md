@@ -96,6 +96,21 @@ the existing local test bundle's nine images passed static inspection. Static lo
 cannot prove symbol availability, dynamically opened libraries, signing or actual runtime
 behavior. Hosted macOS 15/26 results and final release packaging are separate evidence.
 
+Packaging strips the package copies before final inside-out signing, allowing strip to
+update the linker signature layout itself. It no longer removes that signature separately
+before stripping: the older host rejected that intermediate app image’s LINKEDIT layout.
+The documented strip flag suppresses only the expected temporary signature-invalidation
+warning; stripping, final signing and deep/strict signature verification still run.
+The local packaging-symbol fixture verifies matching symbols and an unchanged linked
+original; copies of the actual app and CLI also strip and verify after signing.
+[Apple’s signing guidance](https://developer.apple.com/documentation/macos-release-notes/macos-big-sur-11_0_1-universal-apps-release-notes)
+requires re-signing after binary mutation.
+
+The older toolchain did not provide the App Intents metadata inputs used by this packaging
+script. Its local UI build omits Shortcuts metadata and reports that limit; shipping release
+packaging still requires the tools/catalog and extracted metadata. A native UI pass alone
+does not certify Shortcuts actions on the older runtime.
+
 No physical external drive was available. Local tests use the owned M5 Mac offscreen;
 hosted Apple Silicon desktops are virtual machines. Wider hardware, physical USB and attended
 VoiceOver checks remain unverified.
