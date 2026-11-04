@@ -44,6 +44,13 @@ review; connected batch-rename chains involving temporary paths do not receive u
 Undo/Redo entries. All involved paths are reported. Trash rollback failures retain origins.
 A file already absent before Undo keeps its retryable record.
 
+Long recovery reports now use a bounded native alert with every original detail in a
+selectable, wrapping text viewport. A 100-path report previously made a 3,336-point-tall
+alert; the bounded factory fits both 100 and 10,000 paths in about 398 points. Tests scroll
+to the final glyph to verify the last path remains reachable. Short single errors keep
+their existing presentation. Light/dark offscreen detail captures were inspected; native
+alert chrome/materials are not fully rendered by unordered view snapshots.
+
 Regression controls using the old failure propagation produced six filesystem issues and
 13 controller issues. The ordinary rollback test was corrected to actually execute an
 initial successful move before the failing one. Tests cover independent move/Trash/rename
@@ -63,7 +70,7 @@ paging and outage/reconnect. SMB remains a mounted-local delegation boundary, no
 SMB authentication/reconnect test. Cloud fixtures are not real account acceptance.
 
 Final optimized local runs: 91 filesystem tests in 11 suites and 64 service tests in 10
-suites passed. The focused app run reported 14 tests in three suites (the opt-in benchmark
+suites passed. The final focused app run reported 18 tests in four suites (the opt-in benchmark
 was skipped there); all 12 separate paired benchmark processes passed. No timeout or safety
 assertion was relaxed. Hosted full validation is recorded separately on the delivery PR.
 
@@ -73,7 +80,8 @@ The app supports Apple Silicon and macOS 15+. Native CI previously ran only on m
 The existing UI workflow now accepts a manual `runner=macos-15` choice, with macOS 26 still
 the default for ordinary CI. The macOS 15 job explicitly selects Xcode 26.3, matching
 the project’s Xcode 26 build requirement while retaining the older runtime. Only these
-two hosted labels can be selected. Toolchain/OS and
+two hosted labels can be selected. Conflict-badge layout uses explicit CGFloat values
+so Swift 6.2 can compile the same geometry without mixed floating-point inference. Toolchain/OS and
 arm64 identity are recorded. The job runs light/dark native acceptance and executes the
 bundled CLI's help plus fd, rg and ffmpeg version commands on that OS.
 
