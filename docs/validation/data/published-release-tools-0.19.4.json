@@ -1,0 +1,24 @@
+{
+  "version": "0.19.4",
+  "source": "0c6599552895737cc2e1588e885f92423e6c386c",
+  "sha256": "121136353eea0b1f673d0bcec0ba722c4bd69b057991d61c793a31b832af066b",
+  "macOS": "27.0.1",
+  "hardware": "Apple M5",
+  "machO": "Porpoise.app: 9 Mach-O images include arm64, target macOS 15 or earlier, and resolve executable load graphs",
+  "fd": "fd 10.5.0",
+  "rg": "ripgrep 15.2.0 (rev e89fff89ac)",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+  "cli": "version, help JSON, copy/move dry-run passed without app socket or launch",
+  "videoPosterBytes": 4399,
+  "signing": "Sparkle Ed25519 and deep strict bundle verified",
+  "cloudConfiguration": {
+    "GoogleDriveClientID": true,
+    "DropboxAppKey": true,
+    "OneDriveClientID": false,
+    "BoxClientID": false,
+    "BoxClientSecret": false
+  },
+  "limits": "No GUI launch, personal account, USB hardware or Gatekeeper quarantine-flow test",
+  "date": "2026-11-04",
+  "execution": "Physical local Mac; bundled tools only, no app GUI or automation socket"
+}

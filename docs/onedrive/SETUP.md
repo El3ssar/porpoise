@@ -1,7 +1,7 @@
 # Register OneDrive for a Porpoise build
 
-> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
-> source/docs review did not inspect provider consoles or authenticate real accounts. Recheck provider requirements before changing registration.
+> Maintainer setup checked against official documentation and local fixtures on 2026-11-04.
+> Provider-console registration, production approval and real-account consent remain unverified.
 
 For the Porpoise maintainer/operator. Register one Microsoft Entra application for the distributed build; ordinary users
 authorize it in their browser with a personal Microsoft account or a work or school account. Porpoise is a **public
@@ -21,17 +21,41 @@ service is needed.
    Then open **Entra ID → App registrations → New registration**, and name the application (for example "Porpoise").
 2. Choose **Accounts in any organizational directory and personal Microsoft accounts** (sign-in audience
    `AzureADandPersonalMicrosoftAccount`). Porpoise signs in through the `common` endpoint, so both kinds of account work.
-3. Add the redirect URI under the **Mobile and desktop applications** platform:
+3. Add all three exact redirect URIs under the **Mobile and desktop applications** public-client platform:
 
    ```text
-   http://127.0.0.1/oauth/callback
+   http://127.0.0.1:61846/oauth/callback
+   http://127.0.0.1:61847/oauth/callback
+   http://127.0.0.1:61848/oauth/callback
    ```
 
-   Microsoft ignores the port of a loopback redirect, so Porpoise listens on a free ephemeral port and the one
-   registration covers it; the path must match exactly. The portal's text box refuses `http` loopback URIs: add it in the
-   application **Manifest**, in `replyUrlsWithType`, as `{"url": "http://127.0.0.1/oauth/callback", "type":
-   "InstalledClient"}`. See [Redirect URI restrictions](https://learn.microsoft.com/entra/identity-platform/reply-url#localhost-exceptions).
-   Register one loopback URI only: Microsoft picks one arbitrarily when several differ only by port.
+   Include each port and path, with no trailing slash. Porpoise tries 61846, then 61847, then 61848 when a port is busy.
+   If all three are occupied, sign-in reports the occupied ports; it never falls back to an unregistered ephemeral port.
+   These are dynamic/private ports, adjacent to but separate from Dropbox's 61843–61845. Only isolated fixtures explicitly
+   select port zero.
+
+   Microsoft's [redirect URI requirements](https://learn.microsoft.com/entra/identity-platform/reply-url#localhost-exceptions)
+   document port-independent matching for `localhost`, not the literal IPv4 address Porpoise binds. Register the full
+   `127.0.0.1` values above rather than relying on that exception. Do not substitute `localhost` or wildcard ports.
+
+   If the portal's text box refuses an `http` literal-loopback URI, edit the application **Manifest**. In the modern
+   [Microsoft Graph manifest](https://learn.microsoft.com/entra/identity-platform/reference-microsoft-graph-app-manifest#publicclient-attribute),
+   merge these values into the existing `publicClient` object:
+
+   ```json
+   "publicClient": {
+     "redirectUris": [
+       "http://127.0.0.1:61846/oauth/callback",
+       "http://127.0.0.1:61847/oauth/callback",
+       "http://127.0.0.1:61848/oauth/callback"
+     ]
+   }
+   ```
+
+   For a portal still showing the legacy Azure AD Graph manifest, the equivalent is three `replyUrlsWithType` entries,
+   each `{"url": "http://127.0.0.1:61846/oauth/callback", "type": "InstalledClient"}` with its corresponding port.
+   Microsoft's redirect page still references that legacy property; use the syntax matching the displayed manifest,
+   preserving any existing registrations. Do not register these callbacks as Web or SPA redirects.
 4. Under **API permissions → Microsoft Graph → Delegated**, add exactly:
 
    | Permission | Porpoise use |
@@ -56,7 +80,7 @@ Porpoise resolves the first nonblank value in this order:
 2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → OneDrive application (client) ID**.
 3. `OneDriveClientID` in the app's Info.plist.
 
-Values are trimmed. Without a resolved ID the OneDrive tile stays **Coming soon**. To embed the ID in a local build,
+Values are trimmed. Without a resolved ID, Connect lists OneDrive as **Unavailable in this build**. To embed the ID in a local build,
 use `PORPOISE_ONEDRIVE_CLIENT_ID='…' scripts/make-app.sh` or the git-ignored `.onedrive-client-id` file. For releases,
 set the repository Actions secret `ONEDRIVE_CLIENT_ID`; `release.yml` passes it as `PORPOISE_ONEDRIVE_CLIENT_ID` and
 checks that the bundle carries it. It is the public application ID, never a secret value. An unset secret leaves
