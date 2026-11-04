@@ -4,17 +4,27 @@ name: UI acceptance
 # recording gives none, which is noted, not failed). Keyboard and VoiceOver checks need a person and aren't run here.
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'macOS version to validate (Apple Silicon)'
+        type: choice
+        options: [macos-15, macos-26]
+        default: macos-26
   workflow_call:
+    inputs:
+      runner:
+        type: string
+        default: macos-26
   schedule:
     - cron: '17 4 * * 1'   # Mondays
 concurrency:
-  group: ui-acceptance-${{ github.workflow }}-${{ github.ref }}
+  group: ui-acceptance-${{ github.workflow }}-${{ github.ref }}-${{ inputs.runner || 'macos-26' }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   ui-acceptance:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner == 'macos-15' && 'macos-15' || 'macos-26' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -22,7 +32,11 @@ jobs:
           fetch-depth: 0
       - name: Toolchain identity
         id: toolchain
-        run: echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        run: |
+          test "$(uname -m)" = arm64
+          sw_vers
+          swift --version
+          echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
         id: ui-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -56,6 +70,13 @@ jobs:
       # A test build: the debug bridge is only in debug builds with PORPOISE_TEST_HOOKS, never in a release.
       - name: Build the test app
         run: CONFIG=debug scripts/make-app.sh
+      - name: Check bundled tools on this macOS
+        run: |
+          python3 scripts/check-mach-o.py build/Porpoise.app
+          build/Porpoise.app/Contents/Helpers/porpoise --help > /dev/null
+          build/Porpoise.app/Contents/Helpers/fd --version
+          build/Porpoise.app/Contents/Helpers/rg --version
+          build/Porpoise.app/Contents/Helpers/ffmpeg -version
       - name: Acceptance run (light and dark)
         env:
           PORPOISE_ALLOW_FOCUS: '1' # Own CI desktop: collect actual active-window appearance, not background thumbnails.

@@ -34,7 +34,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Workflow integrity
-        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py && python3 scripts/test-pr-test-scope.py && python3 scripts/test-ci-profiles.py && python3 scripts/test-cache-source-times.py
+        run: python3 scripts/test-workflow-pins.py WorkflowTests && python3 scripts/test-ci-proof.py && python3 scripts/test-performance-budgets.py && python3 scripts/test-test-completion.py && python3 scripts/test-pr-test-scope.py && python3 scripts/test-ci-profiles.py && python3 scripts/test-cache-source-times.py && python3 scripts/test-check-mach-o.py
       - name: Select relevant PR tests; full validation on main
         id: scope
         env:

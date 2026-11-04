@@ -1,0 +1,193 @@
+{
+  "baselineUISHA": "455ceb4cd507e053661b22fa78dea68ed72a8c62",
+  "command": [
+    "/usr/bin/swift",
+    "test",
+    "--skip-build",
+    "-c",
+    "release",
+    "--filter",
+    "LongSessionMemoryTests/parkedPreviewMemory"
+  ],
+  "environment": {
+    "PORPOISE_MEMORY_BENCHMARK": "1"
+  },
+  "hashes": {
+    "baseline": "cb0bd7dadff60ad827ef56ececb84c1b575b3f98900cbf1733ade72663e59425",
+    "candidate": "a9caedc78a66a238370c3e444f7fa788b79ab77b27ad965489b0f44ed7ecc9f8"
+  },
+  "limitation": "Synthetic offscreen 24 parked previews, 4 MiB RGBA payload each. RSS includes framework/allocator noise; no real-provider or multiday soak claim.",
+  "medians": {
+    "baseline": {
+      "residentAfterParking": 225394688,
+      "residentBefore": 72204288,
+      "residentDelta": 153223168,
+      "retainedImages": 24
+    },
+    "candidate": {
+      "residentAfterParking": 124551168,
+      "residentBefore": 72253440,
+      "residentDelta": 52297728,
+      "retainedImages": 0
+    }
+  },
+  "records": [
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-0-baseline.log",
+      "pair": 0,
+      "panels": 24,
+      "residentAfterParking": 225624064,
+      "residentBefore": 72122368,
+      "residentDelta": 153501696,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 2.838281583,
+      "warmup": true
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-0-candidate.log",
+      "pair": 0,
+      "panels": 24,
+      "residentAfterParking": 124682240,
+      "residentBefore": 72237056,
+      "residentDelta": 52445184,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.830565375,
+      "warmup": true
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-1-candidate.log",
+      "pair": 1,
+      "panels": 24,
+      "residentAfterParking": 124534784,
+      "residentBefore": 72105984,
+      "residentDelta": 52428800,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.8288404590000003,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-1-baseline.log",
+      "pair": 1,
+      "panels": 24,
+      "residentAfterParking": 225427456,
+      "residentBefore": 72204288,
+      "residentDelta": 153223168,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 1.7295906249999993,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-2-baseline.log",
+      "pair": 2,
+      "panels": 24,
+      "residentAfterParking": 225542144,
+      "residentBefore": 72220672,
+      "residentDelta": 153321472,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 1.719454958,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-2-candidate.log",
+      "pair": 2,
+      "panels": 24,
+      "residentAfterParking": 124485632,
+      "residentBefore": 72237056,
+      "residentDelta": 52248576,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.7253414580000008,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-3-candidate.log",
+      "pair": 3,
+      "panels": 24,
+      "residentAfterParking": 124583936,
+      "residentBefore": 72302592,
+      "residentDelta": 52281344,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.707800624999999,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-3-baseline.log",
+      "pair": 3,
+      "panels": 24,
+      "residentAfterParking": 225394688,
+      "residentBefore": 71991296,
+      "residentDelta": 153403392,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 1.7240944169999999,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-4-baseline.log",
+      "pair": 4,
+      "panels": 24,
+      "residentAfterParking": 225132544,
+      "residentBefore": 72204288,
+      "residentDelta": 152928256,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 1.768861042000001,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-4-candidate.log",
+      "pair": 4,
+      "panels": 24,
+      "residentAfterParking": 124665856,
+      "residentBefore": 72269824,
+      "residentDelta": 52396032,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.745470417,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-5-candidate.log",
+      "pair": 5,
+      "panels": 24,
+      "residentAfterParking": 124551168,
+      "residentBefore": 72253440,
+      "residentDelta": 52297728,
+      "retainedImages": 0,
+      "variant": "candidate",
+      "wallSeconds": 1.6983413749999983,
+      "warmup": false
+    },
+    {
+      "bitmapBytesPerPanel": 4194304,
+      "log": "/tmp/porpoise-then-memory-pair-5-baseline.log",
+      "pair": 5,
+      "panels": 24,
+      "residentAfterParking": 225312768,
+      "residentBefore": 72237056,
+      "residentDelta": 153075712,
+      "retainedImages": 24,
+      "variant": "baseline",
+      "wallSeconds": 1.762649917000001,
+      "warmup": false
+    }
+  ],
+  "rootSHA": "f07d6c8527939cc5316a8a1aa91516f57b0105fc"
+}
