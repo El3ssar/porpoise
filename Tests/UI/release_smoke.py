@@ -97,12 +97,24 @@ def validate_bundle(app, tag):
     require(isinstance(metadata.get("actions"), dict) and INTENTS.issubset(metadata["actions"]), "Published bundle is missing required intent metadata.")
 
 
+def canonical_paths(paths):
+    """Compare owned local fixture paths without depending on /var versus /private/var spelling."""
+    require(all(isinstance(path, str) and Path(path).is_absolute() for path in paths), "Expected absolute local fixture paths.")
+    return [str(Path(path).resolve()) for path in paths]
+
+
+def at_folder(context, folder, count):
+    return (canonical_paths([context.get("location")]) == canonical_paths([str(folder)])
+            and context.get("loading") is False and context.get("displayedItems") == count)
+
+
 def poll(callback, timeout=30):
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
         try:
             value = callback()
+            last = None  # A later successful-but-not-ready observation supersedes an earlier startup error.
             if value:
                 return value
         except (subprocess.SubprocessError, ValueError, KeyError) as error:
@@ -135,25 +147,37 @@ def app_smoke(app, work, record, log_path):
     exported = subprocess.run(["/usr/bin/defaults", "export", BUNDLE, "-"], capture_output=True)
     backup = exported.stdout if exported.returncode == 0 else None
     process = None
+    snapshot = {"TMPDIR": os.environ.get("TMPDIR"),
+                "socket_path": str(Path(tempfile.gettempdir()) / "porpoise/automation.sock")}
     try:
         run("/usr/bin/defaults", "write", BUNDLE, "allowCommandLineControl", "-bool", "YES")
         run("/usr/bin/defaults", "write", BUNDLE, "SUEnableAutomaticChecks", "-bool", "NO")
         run("/usr/bin/defaults", "write", BUNDLE, "SUAutomaticallyUpdate", "-bool", "NO")
         run("/usr/bin/defaults", "write", BUNDLE, "confirmCloseTabs", "-bool", "NO")
+        snapshot["allowCommandLineControl"] = run("/usr/bin/defaults", "read", BUNDLE, "allowCommandLineControl").strip() == b"1"
         with log_path.open("wb") as log:
             process = subprocess.Popen([str(app / "Contents/MacOS/Porpoise"), str(demo)], stdout=log, stderr=subprocess.STDOUT)
+            snapshot["pid"] = process.pid
             def command(*args):
                 if process.poll() is not None:
                     raise RuntimeError(f"Owned application exited with status {process.returncode}.")
-                return json.loads(run(cli, *args, "--json", "--timeout", "5", timeout=8))
+                try:
+                    response = json.loads(run(cli, *args, "--json", "--timeout", "5", timeout=8))
+                except subprocess.CalledProcessError as error:
+                    snapshot["last_cli_error"] = {"exit": error.returncode, "stderr": (error.stderr or b"").decode(errors="replace")[-2000:]}
+                    raise
+                snapshot.pop("last_cli_error", None)
+                if args[0] == "status":
+                    snapshot["last_status"] = response
+                return response
             def loaded(folder, count=0):
                 context = command("status")["context"]
-                return context if (context.get("location") == str(folder.resolve()) and not context.get("loading")
-                                   and context.get("displayedItems") == count) else None
+                snapshot["expected_folder"] = str(folder)
+                return context if at_folder(context, folder, count) else None
             poll(lambda: loaded(demo, 3))
             record("shipping app launch and initial listing")
             listing = command("list")
-            require(listing["paths"] == [str(path.resolve()) for path in files], "Published app did not list files in natural order.")
+            require(canonical_paths(listing["paths"]) == canonical_paths([str(path) for path in files]), "Published app did not list files in natural order.")
             record("bundled CLI listing and natural sort")
             command("open", str(other))
             poll(lambda: loaded(other))
@@ -163,14 +187,18 @@ def app_smoke(app, work, record, log_path):
             require(command("status")["context"]["tabs"] >= 3, "Split did not create a tab.")
             record("split through shipping CLI")
             command("reveal", str(files[1]))
-            poll(lambda: command("selection") == [str(files[1].resolve())])
+            poll(lambda: canonical_paths(command("selection")) == canonical_paths([str(files[1])]))
             record("reveal and selection through shipping CLI")
     finally:
-        stop_owned(process)
-        if backup is None:
-            subprocess.run(["/usr/bin/defaults", "delete", BUNDLE], capture_output=True, check=False)
-        else:
-            run("/usr/bin/defaults", "import", BUNDLE, "-", input=backup)
+        snapshot["socket_present"] = Path(snapshot["socket_path"]).exists()
+        try:
+            log_path.with_name("runtime.json").write_text(json.dumps(snapshot, indent=2) + "\n")
+        finally:
+            stop_owned(process)
+            if backup is None:
+                subprocess.run(["/usr/bin/defaults", "delete", BUNDLE], capture_output=True, check=False)
+            else:
+                run("/usr/bin/defaults", "import", BUNDLE, "-", input=backup)
 
 
 def smoke(tag, out):

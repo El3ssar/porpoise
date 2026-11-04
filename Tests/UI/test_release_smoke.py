@@ -102,6 +102,39 @@ class ReleaseIdentityTests(unittest.TestCase):
             smoke.validate_bundle(contents.parent, TAG)
 
 
+class PathObservationTests(unittest.TestCase):
+    def test_aliases_match_without_relaxing_count_loading_or_order(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real, alias = root / "real", root / "alias"
+            real.mkdir()
+            alias.symlink_to(real, target_is_directory=True)
+            actual = str(alias)
+            expected = real.resolve()
+            self.assertNotEqual(actual, str(expected))  # The old lexical comparison fails this control.
+            context = {"location": actual, "loading": False, "displayedItems": 3}
+            self.assertTrue(smoke.at_folder(context, expected, 3))
+            self.assertFalse(smoke.at_folder(dict(context, loading=True), expected, 3))
+            self.assertFalse(smoke.at_folder(context, expected, 2))
+            listed = [str(alias / name) for name in ["1.txt", "9.txt", "10.txt"]]
+            wanted = [str(real / name) for name in ["1.txt", "9.txt", "10.txt"]]
+            self.assertEqual(smoke.canonical_paths(listed), smoke.canonical_paths(wanted))
+            self.assertNotEqual(smoke.canonical_paths(listed[::-1]), smoke.canonical_paths(wanted))
+            self.assertNotEqual(smoke.canonical_paths(listed[:-1]), smoke.canonical_paths(wanted))
+            self.assertEqual(smoke.canonical_paths([listed[1]]), smoke.canonical_paths([wanted[1]]))
+
+    def test_later_valid_observation_replaces_startup_error(self):
+        observations = iter([ValueError("obsolete startup error"), False])
+        def observe():
+            value = next(observations)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        with patch.object(smoke.time, "monotonic", side_effect=[0, 0.1, 0.2, 2]), patch.object(smoke.time, "sleep"):
+            with self.assertRaisesRegex(TimeoutError, "last error: None"):
+                smoke.poll(observe, timeout=1)
+
+
 class RuntimeSafetyTests(unittest.TestCase):
     def test_local_or_wrong_host_is_refused_before_runtime(self):
         environment = {"GITHUB_ACTIONS": "true", "RUNNER_OS": "macOS", "GITHUB_REPOSITORY": smoke.REPOSITORY,
