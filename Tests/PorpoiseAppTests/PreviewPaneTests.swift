@@ -242,6 +242,15 @@ import Testing
         let column = try #require(left.columnBrowser?.preview)
         try #require(await poll { descendant(AVPlayerView.self, in: column)?.player?.currentItem?.status == .readyToPlay })
         let player = try #require(descendant(AVPlayerView.self, in: column)?.player)
+        // This checks layout continuity. The one-second fixture can finish naturally while a busy test
+        // runner services the awaited main-queue work; stretch its real video without a larger fixture.
+        let source = try #require(player.currentItem).asset
+        let range = CMTimeRange(start: .zero, duration: try await source.load(.duration))
+        let composition = AVMutableComposition()
+        try await composition.insertTimeRange(range, of: source, at: .zero)
+        composition.scaleTimeRange(range, toDuration: CMTime(seconds: 3600, preferredTimescale: 600))
+        player.replaceCurrentItem(with: AVPlayerItem(asset: composition))
+        try #require(await poll { player.currentItem?.status == .readyToPlay })
         let currentItem = try #require(player.currentItem)
         let probe = AttachmentProbe()
         column.addSubview(probe)
@@ -253,7 +262,9 @@ import Testing
         try await Task.sleep(for: .milliseconds(100))
         #expect(probe.detachments == 0 && column.shownURL == video)
         #expect(descendant(AVPlayerView.self, in: column)?.player === player && player.currentItem === currentItem)
-        #expect(player.currentTime() >= time && player.rate > 0)
+        #expect(
+            player.currentTime() >= time && player.rate > 0,
+            "time=\(player.currentTime().seconds), duration=\(currentItem.duration.seconds), rate=\(player.rate), status=\(player.timeControlStatus.rawValue)")
     }
 
     @Test func thumbnailMenuTracksTheHighlightedPaneIndependentlyOfInformation() throws {
