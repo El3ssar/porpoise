@@ -1,8 +1,7 @@
 # Register OneDrive for a Porpoise build
 
-> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
-> source/docs review did not inspect provider consoles or authenticate real accounts. The 2026-11-04 callback update
-> was checked against current official documentation and local fixtures; live consent remains unverified.
+> Maintainer setup checked against official documentation and local fixtures on 2026-11-04.
+> Provider-console registration, production approval and real-account consent remain unverified.
 
 For the Porpoise maintainer/operator. Register one Microsoft Entra application for the distributed build; ordinary users
 authorize it in their browser with a personal Microsoft account or a work or school account. Porpoise is a **public

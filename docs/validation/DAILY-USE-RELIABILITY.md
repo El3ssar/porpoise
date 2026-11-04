@@ -121,6 +121,47 @@ No physical external drive was available. Local tests use the owned M5 Mac offsc
 hosted Apple Silicon desktops are virtual machines. Wider hardware, physical USB and attended
 VoiceOver checks remain unverified.
 
+### Published v0.19.4 on physical hardware
+
+On 2026-11-04, the published v0.19.4 disk image was checked on the physical Apple M5
+running macOS 27.0.1. Its SHA-256 matched the release asset and checksum file; its Sparkle
+Ed25519 signature verified against the public key pinned in the repository. The image was
+mounted read-only with Finder auto-opening disabled, and the unchanged app bundle passed
+deep/strict signature verification and all nine Mach-O checks.
+
+Only bundled command-line tools ran locally. CLI version/help JSON and copy/move dry runs
+passed using owned files, without contacting the app's automation socket. Bundled fd and
+ripgrep found the owned fixture; ffmpeg decoded the video fixture to a 4,399-byte JPEG.
+The app GUI stayed closed. This does not certify the quarantined-download Gatekeeper flow,
+physical USB devices, Shortcuts execution or live account consent.
+
+[Sanitized results and release identity](data/published-release-tools-0.19.4.json).
+
+### Published-build compatibility workflow
+
+`Published release compatibility` downloads one exact stable release and exercises that
+binary on hosted macOS 15, 26 and 27 (`xcode-27`). It does not rebuild or re-sign the app.
+Before execution it verifies the source tag, asset digest, checksum manifest and Sparkle
+signature against the repository's public key, then checks bundle signatures, the helper
+code hash, Mach-O load graphs and all six App Intents metadata entries.
+
+The runtime check uses the bundled CLI's normal automation endpoint for initial listing,
+natural order, opening folders, tab creation for split view, reveal and selection. It
+does not use a debug bridge. The runner refuses local/physical Macs, requires the owned
+GitHub-hosted VM, stops only its own process and restores its preferences. Results and the
+app log are retained as workflow artifacts. Ordinary app PRs do not run this matrix;
+only changes to this runner/workflow trigger its self-validation automatically.
+
+```sh
+gh workflow run release-compatibility.yml --ref main -f tag=v0.19.4
+```
+
+This checks shipped-binary runtime behavior, not all 46 debug-bridge UI checks. Split
+validation establishes tab creation and active location, not the secondary pane's contents.
+Metadata checks do not establish Shortcuts registration/execution. Unquarantined CI
+downloads do not certify Gatekeeper's normal first-download approval flow. Physical USB,
+MTP devices, real SMB authentication and attended VoiceOver still need separate acceptance.
+
 ## First-install cloud setup
 
 Callback parsing treated every OAuth error as cancellation, hiding provider/configuration
@@ -134,7 +175,7 @@ The new cloud fixtures reproduced 21 issues before the fix and pass in the integ
 service run. They use in-memory account/credential stores, fake HTTP and a real ephemeral
 loopback callback, without launching a browser or using the system Keychain.
 
-Configuration-presence audit of release settings and installed v0.19.3 metadata:
+Configuration-presence audit of release settings and the published v0.19.4 bundle:
 
 | Service | Built-in registration | Remaining acceptance |
 | --- | --- | --- |
@@ -155,3 +196,22 @@ pending. [Google native-app OAuth](https://developers.google.com/identity/protoc
 and [Dropbox OAuth](https://developers.dropbox.com/oauth-guide) describe registration/redirect
 requirements. [RFC 6749 section 4.1.2.1](https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2.1)
 distinguishes authorization failures from consent cancellation.
+
+### OneDrive callback registration
+
+The earlier OneDrive connector selected an arbitrary literal-IP loopback port. Microsoft
+documents its port-independent exception for `localhost`; Porpoise binds `127.0.0.1`.
+The connector now tries exactly ports 61846, 61847 and 61848, with a readable failure if
+all are occupied. It never silently falls back to an unregistered port. The selected
+redirect is identical in authorization and token exchange; state, host, path, scheme and
+port checks remain in place. Isolated fake Graph fixtures explicitly retain port zero.
+
+The old connector failed the new account-store port regression. With the fix, 39 focused
+tests across seven suites passed with Keychain access denied and no browser activation.
+This proves callback selection and local wire behavior, not Microsoft consent acceptance.
+
+The [OneDrive guide](../onedrive/SETUP.md) supplies the three exact registrations and modern
+Graph manifest syntax. [Box](../box/SETUP.md) and [Dropbox](../dropbox/SETUP.md) setup copy
+now matches current product configuration behavior. Box sends PKCE parameters, but its
+current public documentation does not establish provider enforcement; local fixtures
+cannot establish it either.

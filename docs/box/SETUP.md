@@ -1,7 +1,7 @@
 # Register Box for a Porpoise build
 
-> Operator setup instructions, not proof of current registration or production approval. The 2026-11-02
-> source/docs review did not inspect provider consoles or authenticate real accounts. Recheck provider requirements before changing registration.
+> Maintainer setup reviewed against official documentation on 2026-11-04.
+> Provider-console registration, production approval and real-account consent remain unverified.
 
 For the Porpoise maintainer/operator. Register one Box OAuth 2.0 application for the distributed build; ordinary users
 authorize it in their browser with their own Box account. A free Box account can create the application and nothing is
