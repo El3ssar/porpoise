@@ -73,7 +73,10 @@ extension FileOperationsController {
         guard Self.copiesData(r) else {
             switch revert(r) {
             case .success(let i): if let i { inverse(i) }; stacksChanged()
-            case .failure(let error): back(r); stacksChanged(); showErrors([error.localizedDescription], window: window)
+            case .failure(let error):
+                reconcileLocalFailure(error, record: r, back: back, inverse: inverse)
+                stacksChanged()
+                showErrors([error.localizedDescription], window: window)
             }
             return
         }
@@ -91,8 +94,9 @@ extension FileOperationsController {
         // Items it puts in the Trash (undoing a creation queued behind) can go back where they were.
         TrashService.shared.record([])
         let trash = TrashService.shared.trash
+        let execute = localUndo
         undoQueue.async {
-            let result = Result { try FileActions.undo(r, trash: trash) }
+            let result = Result { try execute(r, trash) }
             DispatchQueue.main.async { [self] in
                 undosRunning -= 1
                 TrashService.shared.flush()
@@ -104,7 +108,7 @@ extension FileOperationsController {
                     }
                     ended(activity, errors: [])
                 case .failure(let error):
-                    back(r)
+                    reconcileLocalFailure(error, record: r, back: back, inverse: inverse)
                     ended(activity, errors: [error.localizedDescription], cause: error)
                     showErrors([error.localizedDescription], window: window)
                 }
@@ -112,6 +116,17 @@ extension FileOperationsController {
                 stacksChanged()
             }
         }
+    }
+
+    /// A partial rollback changes both stacks. Reuse the callers' ordering/generation guards,
+    /// and notify views even though the overall operation reports an error.
+    private func reconcileLocalFailure(
+        _ error: any Error, record: UndoRecord, back: (UndoRecord) -> Void, inverse: (UndoRecord) -> Void
+    ) {
+        guard let partial = error as? FileActions.PartialUndoError else { back(record); return }
+        if let remaining = partial.remaining { back(remaining) }
+        if let applied = partial.inverse { inverse(applied) }
+        Self.notifyChanged(Self.urls(of: record) + partial.paths)
     }
 
     /// The moves undoing `r` makes (where each item is now, and where it goes back to).
@@ -139,14 +154,13 @@ extension FileOperationsController {
         }
     }
 
-    /// FileActions.undo is all-or-nothing, so a record that failed is still valid and goes back on its
-    /// stack for another try (e.g. after the user frees the original name). The stacks are changed by the
-    /// callers before any alert: a job finishing during the alert pushes onto them.
+    /// Ordinary failures restore the record; partial rollback errors carry reconciled subsets.
+    /// The caller updates both stacks before presenting any error.
     private func revert(_ r: UndoRecord) -> Result<UndoRecord?, Error> {
         defer { TrashService.shared.flush() }
         do {
             TrashService.shared.record([])
-            let inverse = try FileActions.undo(r, trash: TrashService.shared.trash)
+            let inverse = try localUndo(r, TrashService.shared.trash)
             if let inverse {
                 // Items Undo put in the Trash can go back where they were (Restore to Former Location).
                 Self.notifyChanged(Self.urls(of: inverse))
