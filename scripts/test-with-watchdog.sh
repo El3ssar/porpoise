@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs `swift test` with the given arguments. If it runs longer than $TEST_TIMEOUT seconds (default 900), prints
+# Runs `swift test` with the given arguments. If a pass runs longer than $TEST_TIMEOUT seconds (default 900), prints
 # the stacks of the test processes (what they're waiting on) and fails, instead of hanging until CI gives up.
 # The tests are built first, outside that time: on a slow runner compiling alone can take minutes.
 # Tests that take what the whole process shares (every core, every cooperative thread: BusyPoolTests; every dispatch
@@ -85,9 +85,7 @@ test_command=(swift)
 if [[ -n "${PORPOISE_DENY_KEYCHAIN_DYLIB:-}" ]]; then
     test_command=(env "DYLD_INSERT_LIBRARIES=$PORPOISE_DENY_KEYCHAIN_DYLIB" "$(xcrun --find swift)")
 fi
-started=$SECONDS
-
-# Waits for one owned process within the shared deadline (discovery is bounded too).
+# Waits for one owned process within its watched pass's shared deadline (discovery is bounded too).
 wait_for_process() {
     local pid=$1 label=$2 status
     while ((SECONDS - started < limit)); do
@@ -112,6 +110,9 @@ wait_for_process() {
 watched() {
     local discovery="$run_artifacts/discovered" output="$run_artifacts/output" fifo="$run_artifacts/live-output"
     local pid tee_pid status
+    # Each pass gets one deadline for discovery, execution and output draining. The isolated
+    # pass must not consume the main pass's budget; wait_for_process shares this local via Bash scope.
+    local started=$SECONDS
     "${test_command[@]}" test "$@" list --skip-build > "$discovery" 2> "$run_artifacts/discovery-errors" &
     pid=$!
     wait_for_process "$pid" 'swift test list'

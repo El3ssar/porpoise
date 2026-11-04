@@ -113,7 +113,7 @@ class WatchdogProcessTests(unittest.TestCase):
         self.bin.mkdir()
         swift = self.bin / 'swift'
         swift.write_text('''#!/usr/bin/env python3
-import json, os, sys, time
+import json, os, subprocess, sys, time
 scenario = json.loads(os.environ['FAKE_SWIFT_SCENARIO'])
 alone = os.environ.get('PORPOISE_TESTS_ALONE') == '1'
 with open(os.environ['FAKE_SWIFT_CALLS'], 'a') as log:
@@ -123,11 +123,14 @@ if '--help-hidden' in sys.argv:
     sys.exit(scenario.get('help_status', 0))
 if sys.argv[1] == 'build': sys.exit(scenario.get('build_status', 0))
 if 'list' in sys.argv:
+    time.sleep(scenario.get('discovery_sleep', 0))
     discovery = scenario.get('discovery', 'AppTests.Buttons/click()')
     print(discovery.replace('Buttons', 'BusyPoolTests') if alone else discovery)
     sys.exit(scenario.get('discovery_status', 0))
 print(scenario['output'].replace('Buttons', 'BusyPoolTests') if alone else scenario['output'], flush=True)
-time.sleep(scenario.get('sleep', 0))
+time.sleep(scenario.get('isolated_sleep' if alone else 'main_sleep', scenario.get('sleep', 0)))
+if scenario.get('drain_sleep'):
+    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(' + str(scenario['drain_sleep']) + ')'])
 sys.exit(scenario.get('status', 0))
 ''')
         swift.chmod(0o755)
@@ -260,6 +263,38 @@ sys.exit(scenario.get('status', 0))
         result = self.watchdog({'output': run_output('Buttons', 1), 'discovery_status': 2})
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertNotIn('Suite Buttons started.', result.stdout)
+
+    def test_each_pass_has_a_deadline_even_when_their_combined_duration_exceeds_it(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'sleep': 2.25}, arguments=(), timeout='4')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('Test completion verified:'), 2)
+        self.assertEqual([call['alone'] for call in self.execution_calls()], [True, False])
+
+    def test_a_hung_main_pass_after_a_healthy_isolated_pass_is_still_bounded(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'isolated_sleep': 2.25, 'main_sleep': 6},
+                               arguments=(), timeout='4')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('Test completion verified:'), 1)
+        self.assertEqual([call['alone'] for call in self.execution_calls()], [True, False])
+        self.assertIn('::error::swift test still running after 4s', result.stdout)
+
+    def test_discovery_and_execution_share_one_pass_deadline(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'discovery_sleep': 2.25, 'sleep': 2.25}, timeout='4')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.execution_calls()), 1)
+        self.assertIn('::error::swift test still running after 4s', result.stdout)
+
+    def test_a_hung_discovery_is_bounded_without_starting_tests(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'discovery_sleep': 6}, timeout='2')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.execution_calls(), [])
+        self.assertIn('::error::swift test list still running after 2s', result.stdout)
+
+    def test_output_draining_does_not_get_a_fresh_deadline(self):
+        result = self.watchdog({'output': run_output('Buttons', 1), 'discovery_sleep': 2.25, 'drain_sleep': 2.25}, timeout='4')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.execution_calls()), 1)
+        self.assertIn('::error::test output stream still running after 4s', result.stdout)
 
     def test_nonzero_test_status_stays_failed(self):
         result = self.watchdog({'output': run_output('Buttons', 1), 'status': 7})
