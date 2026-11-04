@@ -80,7 +80,7 @@ Porpoise resolves the first nonblank value in this order:
 2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → OneDrive application (client) ID**.
 3. `OneDriveClientID` in the app's Info.plist.
 
-Values are trimmed. Without a resolved ID the OneDrive tile stays **Unavailable in this build**. To embed the ID in a local build,
+Values are trimmed. Without a resolved ID, Connect lists OneDrive as **Unavailable in this build**. To embed the ID in a local build,
 use `PORPOISE_ONEDRIVE_CLIENT_ID='…' scripts/make-app.sh` or the git-ignored `.onedrive-client-id` file. For releases,
 set the repository Actions secret `ONEDRIVE_CLIENT_ID`; `release.yml` passes it as `PORPOISE_ONEDRIVE_CLIENT_ID` and
 checks that the bundle carries it. It is the public application ID, never a secret value. An unset secret leaves

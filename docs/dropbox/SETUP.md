@@ -41,7 +41,7 @@ Porpoise resolves the first nonblank value in this order:
 2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → Dropbox app key**.
 3. `DropboxAppKey` in the app’s Info.plist.
 
-Values are trimmed. Blank environment/Settings values allow the next source. Reopen Connect after changing the Settings field; no app restart is needed. Without a resolved key, the Dropbox tile stays **Unavailable in this build** and cannot start sign-in. Its Settings field remains present so it can be configured.
+Values are trimmed. Blank environment/Settings values allow the next source. Reopen Connect after changing the Settings field; no app restart is needed. Without a resolved key, Connect lists Dropbox as **Unavailable in this build** and cannot start sign-in. Its Settings field remains present so it can be configured.
 
 To embed the public key in a local build:
 

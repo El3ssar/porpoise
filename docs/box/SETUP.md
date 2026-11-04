@@ -52,7 +52,7 @@ paired with another application's secret:
    application).
 3. `BoxClientID` and `BoxClientSecret` in the app's Info.plist.
 
-Values are trimmed. Without both values the Box tile stays **Unavailable in this build**. To embed them in a local build, use
+Values are trimmed. Without both values, Connect lists Box as **Unavailable in this build**. To embed them in a local build, use
 `PORPOISE_BOX_CLIENT_ID='…' PORPOISE_BOX_CLIENT_SECRET='…' scripts/make-app.sh`, or put the client ID on the first line
 and the secret on the second of the git-ignored `.box-oauth` file. For releases, set the repository Actions secrets
 `BOX_CLIENT_ID` and `BOX_CLIENT_SECRET`. `release.yml` passes them to `make-app.sh` and checks that the bundle carries

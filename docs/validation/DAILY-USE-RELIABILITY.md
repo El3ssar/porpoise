@@ -164,6 +164,10 @@ MTP devices, real SMB authentication and attended VoiceOver still need separate 
 
 ## First-install cloud setup
 
+Live-account acceptance is deferred. Box and OneDrive remain pending until maintainer
+registrations and authorized test accounts are available; they are outside the current
+roadmap batch. The callback correction below prepares OneDrive without enabling it.
+
 Callback parsing treated every OAuth error as cancellation, hiding provider/configuration
 failures. Only consent denial retains cancellation behavior; malformed callbacks and other
 provider failures now produce readable retry messages. Redirect/state checks still run
