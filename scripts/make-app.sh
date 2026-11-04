@@ -22,10 +22,10 @@ if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 && [ -r "$INTENT_PRO
   INTENTS_AVAILABLE=1
   FLAGS+=(-Xswiftc -emit-const-values -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$COMPILER_INTENT_PROTOCOLS")
 elif [ "${PORPOISE_RELEASE:-}" = 1 ]; then
-  echo "Release packaging requires full Xcode to extract Shortcuts metadata." >&2
+  echo "Release packaging requires the App Intents tools and protocol catalog from a full Xcode toolchain." >&2
   exit 1
 else
-  echo "Warning: packaging without Shortcuts metadata; full Xcode is required for Shortcuts actions." >&2
+  echo "Warning: this toolchain lacks the App Intents tools or protocol catalog; this local build omits Shortcuts metadata." >&2
 fi
 # The debug bridge and the PORPOISE_* test switches (TestEnvironment) are in local and UI-test builds, never in a
 # release (PORPOISE_RELEASE=1, set by .github/workflows/release.yml; scripts/check-release.sh checks the disk image).
@@ -39,11 +39,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
 mkdir -p "$APP/Contents/Helpers"
 cp "$BIN/PorpoiseCLI" "$APP/Contents/Helpers/porpoise"
-# Swift's linker adds ad-hoc signatures. Remove them only from the package copies before mutating them;
-# the original linked products stay intact for symbol capture, and final inside-out signing remains mandatory.
-codesign --remove-signature "$APP/Contents/Helpers/porpoise"
-codesign --remove-signature "$APP/Contents/MacOS/Porpoise"
-strip -S "$APP/Contents/Helpers/porpoise"
+# Mutate package copies, keeping the linked originals intact for symbol capture. Let strip
+# update its own Mach-O layout; removing the linker signature first breaks older-host LINKEDIT.
+# Its temporary invalid-signature warning is expected: final inside-out signing and strict
+# verification below are mandatory after every mutation.
+strip -S -no_code_signature_warning "$APP/Contents/Helpers/porpoise"
 if [ "$INTENTS_AVAILABLE" = 1 ]; then
   python3 scripts/build-app-intents.py --configuration "$CONFIG" --output "$APP/Contents/Resources"
 fi
@@ -56,7 +56,7 @@ if [ "$CONFIG" = release ]; then
   xcrun dsymutil --num-threads 2 "$BIN/Porpoise" -o build/symbols/Porpoise.dSYM
   python3 scripts/check-symbols.py verify "$BIN/Porpoise" build/symbols/Porpoise.dSYM
 fi
-strip -S "$APP/Contents/MacOS/Porpoise"
+strip -S -no_code_signature_warning "$APP/Contents/MacOS/Porpoise"
 # Sparkle (in-app updates). Its XPC services are only for sandboxed apps; Porpoise isn't sandboxed.
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$BIN/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"

@@ -223,10 +223,14 @@ final class ConflictDialog: NSObject {
         let date = label(dateText, CGRect(x: x + 86, y: 217, width: newer ? 124 : 176, height: 16), size: 10.5, secondary: !newer)
         date.lineBreakMode = .byTruncatingTail; date.toolTip = dateText
         if newer { date.textColor = Theme.transferChanged }
-        for (text, value, y, fontSize, shown) in [("Newer", dateText, 217.0, 10.5, newer), ("Larger", sizeText, 235.0, 12.0, larger)] where shown {
+        let comparisons: [(String, String, CGFloat, CGFloat, Bool)] = [
+            ("Newer", dateText, 217, 10.5, newer), ("Larger", sizeText, 235, 12, larger),
+        ]
+        for (text, value, y, fontSize, shown) in comparisons where shown {
             let width = (value as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize)]).width
+            let offset: CGFloat = min(124, width.rounded(.up))
             let badge = ConflictBadge(text: text)
-            badge.frame = CGRect(x: x + 86 + min(124, ceil(width)) + 6, y: y, width: 46, height: 16)
+            badge.frame = CGRect(x: x + 86 + offset + 6, y: y, width: 46, height: 16)
             window.contentView!.addSubview(badge)
         }
         let badges = [newer ? "Newer" : nil, larger ? "Larger" : nil].compactMap { $0 }.joined(separator: " · ")

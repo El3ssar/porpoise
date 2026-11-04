@@ -61,8 +61,7 @@ class PackagingSymbolTests(unittest.TestCase):
             original, dsym, packaged = root / 'original', root / 'original.dSYM', root / 'packaged'
             original_bytes = original.read_bytes()
             shutil.copy2(original, packaged)
-            self.run_tool(['codesign', '--remove-signature', str(packaged)], root)
-            self.run_tool(['strip', '-S', str(packaged)], root)
+            self.run_tool(['strip', '-S', '-no_code_signature_warning', str(packaged)], root)
             self.run_tool(['install_name_tool', '-add_rpath', '@executable_path/../Frameworks', str(packaged)], root)
             self.run_tool(['codesign', '--force', '--sign', '-', str(packaged)], root)
             self.run_tool(['codesign', '--verify', '--strict', str(packaged)], root)
@@ -88,8 +87,7 @@ class SymbolTests(unittest.TestCase):
         subprocess.run(['xcrun', 'dsymutil', str(cls.binary), '-o', str(cls.dsym)], check=True)
         cls.stripped = cls.root / 'stripped'
         shutil.copy2(cls.binary, cls.stripped)
-        subprocess.run(['codesign', '--remove-signature', str(cls.stripped)], check=True)
-        subprocess.run(['strip', '-S', str(cls.stripped)], check=True)
+        subprocess.run(['strip', '-S', '-no_code_signature_warning', str(cls.stripped)], check=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -128,8 +126,7 @@ class SymbolTests(unittest.TestCase):
             dsym = root / 'synthetic-helper.dSYM'
             subprocess.run(compiler + [str(root / 'main.o'), str(root / 'kit.o'), '-o', str(binary)], check=True)
             subprocess.run(['xcrun', 'dsymutil', '--num-threads', '2', str(binary), '-o', str(dsym)], check=True)
-            subprocess.run(['codesign', '--remove-signature', str(binary)], check=True)
-            subprocess.run(['strip', '-S', str(binary)], check=True)
+            subprocess.run(['strip', '-S', '-no_code_signature_warning', str(binary)], check=True)
             self.assertTrue(symbols.verify(binary, dsym))
 
     def test_rejects_empty_matching_dsym(self):

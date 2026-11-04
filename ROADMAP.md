@@ -11,11 +11,13 @@ Make Porpoise the file manager people want to use every day: fast, polished and 
 
 ## Then
 
-- [ ] Improve memory use and responsiveness during long sessions with many tabs.
-- [ ] Check copy, move, rename and Undo across local drives, external drives, servers
-  and cloud storage, including disconnections and permission errors.
+- [x] Improve memory use and responsiveness during long sessions with many tabs.
+- [x] Check copy, move, rename and Undo using local files, mounted disk images and
+  controlled server/cloud fixtures, including disconnections and permission errors.
 - [ ] Test the app across supported macOS versions and real devices.
-- [ ] Confirm that cloud sign-in and account setup work for people installing Porpoise.
+- [ ] Confirm live cloud sign-in for new users; Box and OneDrive need app registrations.
+
+Automated coverage and remaining hardware/account checks: [validation notes](docs/validation/DAILY-USE-RELIABILITY.md).
 
 ## Research
 

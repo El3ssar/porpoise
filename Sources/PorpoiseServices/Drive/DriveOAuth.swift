@@ -141,5 +141,6 @@ func driveOAuthError(_ error: Error) -> Error {
     case .invalidResponse: return DriveError.invalidResponse
     case .timeout: return DriveError.oauthTimeout
     case .random(let status): return DriveError.keychain(status)
+    case .authorization: return error
     }
 }

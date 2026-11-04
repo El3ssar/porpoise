@@ -42,6 +42,10 @@ public final class FileOperationsController {
 
     var undoStack: [UndoRecord] = []
     /// Undo and redo that copy data between volumes run here, one at a time and in order.
+    /// Per-controller execution seam; jobs capture it before leaving the main thread.
+    var localUndo: (UndoRecord, ([URL]) throws -> [(original: URL, inTrash: URL)]) throws -> UndoRecord? = {
+        try FileActions.undo($0, trash: $1)
+    }
     let undoQueue = DispatchQueue(label: "porpoise.undo", qos: .userInitiated)
     /// Undos and redos still running (off the main thread, or at a service): until they're done there's no other.
     var undosRunning = 0

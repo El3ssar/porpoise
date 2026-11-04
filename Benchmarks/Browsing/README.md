@@ -68,3 +68,20 @@ The geometry diagnostic separately checks anchor correctness through twenty resi
 Run without concurrent builds or benchmarks, discard one warmup pair, and retain five
 alternating pairs. See [navigation results](../../docs/validation/NAVIGATION-RESPONSIVENESS.md)
 for the measured improvement, cache limits and remaining filesystem costs.
+
+## Parked preview memory
+
+After the optimized App test build above, run:
+
+```sh
+PORPOISE_MEMORY_BENCHMARK=1 swift test --skip-build -c release \
+  --filter LongSessionMemoryTests/parkedPreviewMemory
+```
+
+The fixture retains 24 parked preview columns, each initially holding a distinct, touched
+4 MiB bitmap. It checks that windows remain unordered/non-key and records weak-image
+retention and process resident memory before/after parking. Use one warmup pair and five
+alternating fresh-process pairs with no concurrent builds or tests. Known bitmap payload
+and weak-image counts are the direct ownership evidence; RSS also includes AppKit caches
+and allocator behavior. This is not a multiday or live-provider soak.
+See [daily-use validation](../../docs/validation/DAILY-USE-RELIABILITY.md).

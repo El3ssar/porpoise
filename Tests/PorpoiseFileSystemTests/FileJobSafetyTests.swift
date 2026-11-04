@@ -322,8 +322,8 @@ import Testing
         // "b" can't go back: its original name was taken in the meantime.
         try write("squatter", src.appendingPathComponent("b"))
         let record = UndoRecord.moved([
-            (from: src.appendingPathComponent("a"), to: dst.appendingPathComponent("a")),
             (from: src.appendingPathComponent("b"), to: dst.appendingPathComponent("b")),
+            (from: src.appendingPathComponent("a"), to: dst.appendingPathComponent("a")),
         ])
         #expect(throws: (any Error).self) { try FileActions.undo(record) }
         #expect(listing(dst) == ["a", "b"])  // "a" was rolled back
