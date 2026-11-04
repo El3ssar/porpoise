@@ -264,7 +264,8 @@ import Testing
         #expect(descendant(AVPlayerView.self, in: column)?.player === player && player.currentItem === currentItem)
         #expect(
             player.currentTime() >= time && player.rate > 0,
-            "time=\(player.currentTime().seconds), duration=\(currentItem.duration.seconds), rate=\(player.rate), status=\(player.timeControlStatus.rawValue)")
+            "time=\(player.currentTime().seconds), duration=\(currentItem.duration.seconds), rate=\(player.rate), status=\(player.timeControlStatus.rawValue)"
+        )
     }
 
     @Test func thumbnailMenuTracksTheHighlightedPaneIndependentlyOfInformation() throws {

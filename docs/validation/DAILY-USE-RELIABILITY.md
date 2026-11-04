@@ -74,6 +74,12 @@ suites passed. The final focused app run reported 18 tests in four suites (the o
 was skipped there); all 12 separate paired benchmark processes passed. No timeout or safety
 assertion was relaxed. Hosted full validation is recorded separately on the delivery PR.
 
+The existing video-layout continuity test used a one-second clip, which could naturally
+finish during a busy runner's main-queue yield. A headless AVPlayer control reproduced
+the same retained-item/zero-rate state with an end notification. The test now stretches
+that clip in memory, retaining its playback, player/item identity and attachment assertions
+and its original waits/deadlines.
+
 ## macOS compatibility
 
 The app supports Apple Silicon and macOS 15+. Native CI previously ran only on macOS 26.
