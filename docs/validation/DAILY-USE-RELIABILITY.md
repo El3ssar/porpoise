@@ -139,6 +139,11 @@ physical USB devices, Shortcuts execution or live account consent.
 
 ### Published-build compatibility workflow
 
+The [v0.19.4 published-binary run](https://github.com/El3ssar/porpoise/actions/runs/41820153638)
+passed all ten checks on macOS 15.8.2, 26.6.2 and 27.0.1. Each job verified the same
+released DMG and exercised app launch, listing/natural order, opening, split-tab creation,
+reveal and selection. Final bundle signatures remained valid after execution.
+
 `Published release compatibility` downloads one exact stable release and exercises that
 binary on hosted macOS 15, 26 and 27 (`xcode-27`). It does not rebuild or re-sign the app.
 Before execution it verifies the source tag, asset digest, checksum manifest and Sparkle
@@ -153,7 +158,7 @@ app log are retained as workflow artifacts. Ordinary app PRs do not run this mat
 only changes to this runner/workflow trigger its self-validation automatically.
 
 ```sh
-gh workflow run release-compatibility.yml --ref main -f tag=v0.19.4
+gh workflow run release-compatibility.yml --ref main -f tag="$(gh release view --json tagName --jq .tagName)"
 ```
 
 This checks shipped-binary runtime behavior, not all 46 debug-bridge UI checks. Split
