@@ -53,11 +53,41 @@ final class FileOperationsDialogs: FileOperationsUI {
     }
 
     func showErrors(_ errs: [String], window: AnyObject?) {
+        Self.errorAlert(errs).runSheet(for: window as? NSWindow)  // a job can outlive its window
+    }
+
+    /// Recovery errors can contain every affected path. Keep their full, copyable text
+    /// without letting an unbounded message make the alert taller than the screen.
+    static func errorAlert(_ errs: [String]) -> NSAlert {
         let a = NSAlert()
         a.alertStyle = .warning
-        a.messageText = errs.count == 1 ? errs[0] : "\(errs.count) items could not be processed."
-        if errs.count > 1 { a.informativeText = errs.prefix(8).joined(separator: "\n") }
-        a.runSheet(for: window as? NSWindow)  // a job can outlive its window
+        if let message = errs.first, errs.count == 1, message.utf16.count <= 160, message.rangeOfCharacter(from: .newlines) == nil {
+            a.messageText = message
+            return a
+        }
+        a.messageText = errs.count > 1 ? "\(errs.count) items could not be processed." : "The operation could not be completed."
+        a.informativeText = "Review the details below."
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 500, height: 180))
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        let details = NSTextView(frame: CGRect(origin: .zero, size: scroll.contentSize))
+        details.isEditable = false
+        details.isSelectable = true
+        details.isRichText = false
+        details.font = Tokens.font(.body)
+        details.textContainerInset = NSSize(width: 8, height: 8)
+        details.isVerticallyResizable = true
+        details.isHorizontallyResizable = false
+        details.autoresizingMask = [.width]
+        details.textContainer?.widthTracksTextView = true
+        details.textContainer?.lineBreakMode = .byCharWrapping
+        details.layoutManager?.allowsNonContiguousLayout = true
+        details.setAccessibilityLabel("Operation error details")
+        details.string = errs.joined(separator: "\n\n")
+        scroll.documentView = details
+        a.accessoryView = scroll
+        return a
     }
 
     func resolveConflict(_ info: ConflictInfo, kind: FileOperationKind) -> ConflictAnswer {
