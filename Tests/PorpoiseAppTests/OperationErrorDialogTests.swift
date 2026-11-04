@@ -47,6 +47,20 @@ import Testing
         #expect(text.textContainer?.lineBreakMode == .byCharWrapping, "Unbroken paths must wrap within the details viewport")
         #expect(text.layoutManager?.allowsNonContiguousLayout == true)
         expectBoundedAndUnshown(alert)
+        if count > 1 {
+            // Exercise the same action as scrolling to the end; preserving the string
+            // alone would not prove that the final affected path can actually be read.
+            let tail = NSRange(location: message.utf16.count - 1, length: 1)
+            text.scrollRangeToVisible(tail)
+            let layout = try #require(text.layoutManager)
+            let container = try #require(text.textContainer)
+            let glyphs = layout.glyphRange(forCharacterRange: tail, actualCharacterRange: nil)
+            let frame = layout.boundingRect(forGlyphRange: glyphs, in: container)
+                .offsetBy(dx: text.textContainerOrigin.x, dy: text.textContainerOrigin.y)
+            #expect(scroll.documentVisibleRect.minY > 0)
+            #expect(scroll.documentVisibleRect.contains(frame), "The final path's last glyph must be visible after scrolling")
+            #expect(!alert.window.isVisible && !alert.window.isKeyWindow)
+        }
     }
 
     @Test func longSingleLinesAndAllErrorsRemainAvailableWithoutTruncation() throws {
