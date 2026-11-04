@@ -39,7 +39,9 @@ import Testing
             let url = try #require(URL(string: "\(redirect)?state=\(state)&error=access_denied"))
             do { _ = try transaction.code(from: url); Issue.record("A denied authorization must fail") } catch {
                 let result = CloudConnectError.from(error, account: { _ in nil })
-                if state == transaction.state { #expect(result == .cancelled) } else {
+                if state == transaction.state {
+                    #expect(result == .cancelled)
+                } else {
                     guard case .failed = result else { Issue.record("An invalid state must not look cancelled"); return }
                 }
             }
@@ -81,17 +83,18 @@ import Testing
             baseURL: URL(string: "https://fixture.invalid/drive/v3/")!)
         var pages: [Task<Data, Error>] = []
         let browser: @MainActor (URL) -> Void = { address in
-            pages.append(Task {
-                let source = try #require(URLComponents(url: address, resolvingAgainstBaseURL: false))
-                let redirect = try #require(source.queryItems?.first { $0.name == "redirect_uri" }?.value)
-                let state = try #require(source.queryItems?.first { $0.name == "state" }?.value)
-                var callback = try #require(URLComponents(string: redirect))
-                guard callback.host == "127.0.0.1" else { throw CloudOAuthError.invalidResponse }
-                callback.queryItems = [.init(name: "state", value: state), .init(name: "code", value: "fixture-code")]
-                let session = URLSession(configuration: .ephemeral)
-                defer { session.invalidateAndCancel() }
-                return try await session.data(from: try #require(callback.url)).0
-            })
+            pages.append(
+                Task {
+                    let source = try #require(URLComponents(url: address, resolvingAgainstBaseURL: false))
+                    let redirect = try #require(source.queryItems?.first { $0.name == "redirect_uri" }?.value)
+                    let state = try #require(source.queryItems?.first { $0.name == "state" }?.value)
+                    var callback = try #require(URLComponents(string: redirect))
+                    guard callback.host == "127.0.0.1" else { throw CloudOAuthError.invalidResponse }
+                    callback.queryItems = [.init(name: "state", value: state), .init(name: "code", value: "fixture-code")]
+                    let session = URLSession(configuration: .ephemeral)
+                    defer { session.invalidateAndCancel() }
+                    return try await session.data(from: try #require(callback.url)).0
+                })
         }
         defer {
             pages.forEach { $0.cancel() }

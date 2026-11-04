@@ -28,9 +28,10 @@ import Testing
     }
 
     private func bitmap(side: Int) throws -> NSImage {
-        let rep = try #require(NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
-            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: side * 4, bitsPerPixel: 32))
+        let rep = try #require(
+            NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: side * 4, bitsPerPixel: 32))
         let bytes = try #require(rep.bitmapData)
         bytes.initialize(repeating: 127, count: rep.bytesPerRow * rep.pixelsHigh)
         let image = NSImage(size: NSSize(width: CGFloat(side), height: CGFloat(side)))
@@ -147,7 +148,8 @@ import Testing
         defer { server.open(); RemoteFS.use(nil, for: root) }
         let pane = ViewContainer(url: root)
         try #require(await eventually { !pane.model.isLoading })
-        let item = FileItem(url: root.appendingPathComponent("image.png"), name: "image.png", isDirectory: false, size: 100, contentType: "public.png")
+        let item = FileItem(
+            url: root.appendingPathComponent("image.png"), name: "image.png", isDirectory: false, size: 100, contentType: "public.png")
         pane.model.searchResults = [item]; pane.model.selection = [item.url]
         let panel = InformationPanel(frame: NSRect(x: 0, y: 0, width: 300, height: 600)), window = window()
         window.contentView = panel
@@ -282,9 +284,11 @@ import Testing
             parked.append(column)
             await mainTurn(); await mainTurn()
         }
-        let record: [String: Any] = ["panels": parked.count, "bitmapBytesPerPanel": 1024 * 1024 * 4,
-                                    "retainedImages": images.filter { $0.value != nil }.count,
-                                    "residentBefore": before, "residentAfterParking": residentBytes()]
+        let record: [String: Any] = [
+            "panels": parked.count, "bitmapBytesPerPanel": 1024 * 1024 * 4,
+            "retainedImages": images.filter { $0.value != nil }.count,
+            "residentBefore": before, "residentAfterParking": residentBytes(),
+        ]
         print("PARKED_PREVIEW_MEMORY " + String(decoding: try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]), as: UTF8.self))
         #expect(!window.isVisible && !window.isKeyWindow)
         withExtendedLifetime(parked) {}
