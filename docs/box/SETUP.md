@@ -5,8 +5,10 @@
 
 For the Porpoise maintainer/operator. Register one Box OAuth 2.0 application for the distributed build; ordinary users
 authorize it in their browser with their own Box account. A free Box account can create the application and nothing is
-paid for. Porpoise signs in with the authorization code flow, a loopback callback on this Mac and PKCE S256. No hosted
-callback service is needed.
+paid for. Porpoise signs in with the authorization code flow and a loopback callback on this Mac. It also sends PKCE S256
+parameters, but Box’s current [authorization](https://developer.box.com/reference/get-authorize/) and
+[token](https://developer.box.com/reference/post-oauth2-token/) references do not document their enforcement. Local
+fixtures cannot establish provider-enforced PKCE protection. No hosted callback service is needed.
 
 Box differs from Dropbox and OneDrive here: its token endpoint requires the application's **client secret** for every
 code exchange and refresh, desktop apps included
@@ -50,7 +52,7 @@ paired with another application's secret:
    application).
 3. `BoxClientID` and `BoxClientSecret` in the app's Info.plist.
 
-Values are trimmed. Without both values the Box tile stays **Coming soon**. To embed them in a local build, use
+Values are trimmed. Without both values the Box tile stays **Unavailable in this build**. To embed them in a local build, use
 `PORPOISE_BOX_CLIENT_ID='…' PORPOISE_BOX_CLIENT_SECRET='…' scripts/make-app.sh`, or put the client ID on the first line
 and the secret on the second of the git-ignored `.box-oauth` file. For releases, set the repository Actions secrets
 `BOX_CLIENT_ID` and `BOX_CLIENT_SECRET`. `release.yml` passes them to `make-app.sh` and checks that the bundle carries

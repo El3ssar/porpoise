@@ -20,7 +20,8 @@ public final class FakeGraphServer {
     }
     public var config: OneDriveConfiguration {
         OneDriveConfiguration(
-            clientID: "fixture-client", authorizationURL: base.appendingPathComponent("auth"), tokenURL: base.appendingPathComponent("token"),
+            clientID: "fixture-client", loopbackPort: 0, authorizationURL: base.appendingPathComponent("auth"),
+            tokenURL: base.appendingPathComponent("token"),
             graphURL: base.appendingPathComponent("v1.0"), pollInterval: 1)
     }
     public func client(id: UUID = UUID(), drive: String = FakeGraphServer.drive, directory: URL? = nil) throws -> OneDriveClient {

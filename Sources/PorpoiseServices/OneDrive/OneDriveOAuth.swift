@@ -1,23 +1,37 @@
 import Foundation
 import PorpoiseCore
 
-/// Microsoft identity platform (v2.0) public client: PKCE, no client secret, a loopback redirect whose port Microsoft
-/// ignores for native apps (https://learn.microsoft.com/entra/identity-platform/reply-url#localhost-exceptions).
+/// Microsoft identity platform (v2.0) public client: PKCE, no client secret, and exactly registered IPv4 loopback redirects.
 public struct OneDriveConfiguration: Sendable {
     public var clientID: String
     public var isConfigured: Bool { !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Microsoft documents port-independent matching for localhost, not literal IPv4 loopback redirects.
+    /// Register all three exact URIs; zero is reserved for isolated loopback fixtures.
+    public var loopbackPort: UInt16
+    public static let registeredLoopbackPort: UInt16 = 61846
+    public var loopbackPorts: [UInt16] {
+        loopbackPort == 0 ? [0] : (0...2).compactMap { UInt16(exactly: Int(loopbackPort) + $0) }
+    }
+    public func makeLoopbackListener() throws -> CloudOAuthLoopback { try makeLoopbackListener(bind: CloudOAuthLoopback.init(port:)) }
+    func makeLoopbackListener<Listener>(bind: (UInt16) throws -> Listener) throws -> Listener {
+        for port in loopbackPorts {
+            do { return try bind(port) } catch is CloudOAuthLoopback.PortInUse { continue }
+        }
+        throw OneDriveCallbackError.portsBusy(loopbackPorts)
+    }
     public var authorizationURL: URL
     public var tokenURL: URL
     public var graphURL: URL
     /// How long the change feed waits between delta checks (Graph has no long poll for a desktop app).
     public var pollInterval: TimeInterval
     public init(
-        clientID: String,
+        clientID: String, loopbackPort: UInt16 = registeredLoopbackPort,
         authorizationURL: URL = URL(string: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize")!,
         tokenURL: URL = URL(string: "https://login.microsoftonline.com/common/oauth2/v2.0/token")!,
         graphURL: URL = URL(string: "https://graph.microsoft.com/v1.0/")!, pollInterval: TimeInterval = 30
     ) {
-        self.clientID = clientID; self.authorizationURL = authorizationURL; self.tokenURL = tokenURL; self.graphURL = graphURL
+        self.clientID = clientID; self.loopbackPort = loopbackPort; self.authorizationURL = authorizationURL; self.tokenURL = tokenURL;
+        self.graphURL = graphURL
         self.pollInterval = pollInterval
     }
     public static func selected(
@@ -40,6 +54,17 @@ public struct OneDriveConfiguration: Sendable {
     func isGraph(_ url: URL) -> Bool {
         url.scheme == graphURL.scheme && url.host?.lowercased() == graphURL.host?.lowercased() && url.port == graphURL.port
             && url.user == nil && url.password == nil
+    }
+}
+
+public enum OneDriveCallbackError: Error, Equatable, LocalizedError {
+    case portsBusy([UInt16])
+    public var errorDescription: String? {
+        switch self {
+        case .portsBusy(let ports):
+            return
+                "OneDrive sign-in couldn’t start because local ports \(ports.map(String.init).joined(separator: ", ")) are in use. Close other sign-in windows or apps using these ports, then try again."
+        }
     }
 }
 

@@ -36,7 +36,7 @@ import PorpoiseCore
             let fake = URL(string: raw), fake.scheme == "http", fake.host == "127.0.0.1"
         {
             self.configuration = OneDriveConfiguration(
-                clientID: "porpoise-onedrive-fixture", authorizationURL: fake.appendingPathComponent("auth"),
+                clientID: "porpoise-onedrive-fixture", loopbackPort: 0, authorizationURL: fake.appendingPathComponent("auth"),
                 tokenURL: fake.appendingPathComponent("token"), graphURL: fake.appendingPathComponent("v1.0"), pollInterval: 2)
         } else {
             self.configuration = configuration
@@ -62,7 +62,7 @@ import PorpoiseCore
     public func client(for id: UUID) -> OneDriveClient? { clients[id] }
     public func connect(expected: OneDriveAccount? = nil, openBrowser: @escaping @MainActor (URL) -> Void) async throws -> OneDriveAccount {
         let configuration = config(clientID: expected.flatMap { account in saved.first { $0.account.id == account.id }?.clientID })
-        return try await signIn.run(listener: { try CloudOAuthLoopback() }, email: \.email) { listener in
+        return try await signIn.run(listener: { try configuration.makeLoopbackListener() }, email: \.email) { listener in
             let transaction = try OneDriveOAuthTransaction(configuration: configuration, redirectURL: listener.redirectURL)
             openBrowser(transaction.authorizationURL)
             let callback = try await listener.callback()

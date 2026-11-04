@@ -37,11 +37,11 @@ For the Porpoise maintainer/operator. Register one app for the distributed build
 
 Porpoise resolves the first nonblank value in this order:
 
-1. `PORPOISE_DROPBOX_APP_KEY` in the app process environment.
+1. `PORPOISE_DROPBOX_APP_KEY` in the app process environment (test instances only).
 2. **Porpoise Settings → Accounts & Servers → Sign-in configuration → Dropbox app key**.
 3. `DropboxAppKey` in the app’s Info.plist.
 
-Values are trimmed. Blank environment/Settings values allow the next source. Reopen Connect after changing the Settings field; no app restart is needed. Without a resolved key, the Dropbox tile stays **Coming soon** and cannot start sign-in. Its Settings field remains present so it can be configured.
+Values are trimmed. Blank environment/Settings values allow the next source. Reopen Connect after changing the Settings field; no app restart is needed. Without a resolved key, the Dropbox tile stays **Unavailable in this build** and cannot start sign-in. Its Settings field remains present so it can be configured.
 
 To embed the public key in a local build:
 
