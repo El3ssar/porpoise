@@ -71,7 +71,9 @@ assertion was relaxed. Hosted full validation is recorded separately on the deli
 
 The app supports Apple Silicon and macOS 15+. Native CI previously ran only on macOS 26.
 The existing UI workflow now accepts a manual `runner=macos-15` choice, with macOS 26 still
-the default for ordinary CI. Only these two hosted labels can be selected. Toolchain/OS and
+the default for ordinary CI. The macOS 15 job explicitly selects Xcode 26.3, matching
+the project’s Xcode 26 build requirement while retaining the older runtime. Only these
+two hosted labels can be selected. Toolchain/OS and
 arm64 identity are recorded. The job runs light/dark native acceptance and executes the
 bundled CLI's help plus fd, rg and ffmpeg version commands on that OS.
 

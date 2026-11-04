@@ -30,11 +30,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - name: Select supported Xcode on macOS 15
+        if: inputs.runner == 'macos-15'
+        run: |
+          test -d /Applications/Xcode_26.3.app/Contents/Developer
+          echo 'DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer' >> "$GITHUB_ENV"
       - name: Toolchain identity
         id: toolchain
         run: |
           test "$(uname -m)" = arm64
           sw_vers
+          xcodebuild -version
           swift --version
           echo "id=$( { swift --version; sw_vers -productVersion; } | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Restore build cache
