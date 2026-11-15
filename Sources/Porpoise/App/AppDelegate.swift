@@ -5,6 +5,11 @@ import QuartzCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let shared = AppDelegate()
+    private let desktopModeOverride: DesktopModeController?
+    @MainActor private var desktopMode: DesktopModeController {
+        if let desktopModeOverride { return desktopModeOverride }
+        return .shared
+    }
     private(set) var windows: [MainWindowController] = []
     private var sessionSave: DispatchWorkItem?
     /// The last session wasn't reopened, because reopening it was what went wrong last time.
@@ -17,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let restoringKey = "session.restoring"
     /// How long after its windows appear a reopened session counts as restored: its folders have listed by then.
     static let restoreSettleTime: TimeInterval = 5
+
+    init(desktopMode: DesktopModeController? = nil) {
+        desktopModeOverride = desktopMode
+        super.init()
+    }
 
     // MARK: - Launch and quit
 
@@ -51,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First launch: the browser window at once, with the welcome as a sheet on it (only when launched plainly).
         let welcome = args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
         openInitialWindows(args)
+        // Generic test hosts must not start watching the real Desktop. The isolated prototype is an attended app.
+        if !Settings.isTesting || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" { desktopMode.start() }
         DispatchQueue.main.async { AppAutomation.shared.start() }
         if welcome { OnboardingWindowController.show(on: windows.first?.window) }
         Updates.shared.start()
@@ -150,6 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        let pid = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+        let bundle = pid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+        if desktopMode.protectsDesktop(from: event, senderPID: pid, senderBundleIdentifier: bundle) { return .terminateCancel }
         // Dolphin asks before quitting with several tabs open.
         if Settings.shared.confirmCloseTabs, windows.contains(where: { $0.tabs.count > 1 }) {
             let a = NSAlert()
@@ -208,11 +224,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // AppKit can ask when a drag-image window disappears after hiding. Hidden or ordered-out browser
-        // windows still belong to this session; only closing the last real browser should quit it.
-        !sender.isHidden && windows.isEmpty
+        // windows still belong to this session. An active desktop also keeps the app running without browsers.
+        !sender.isHidden && windows.isEmpty && desktopMode.windowController?.desktopPlacementEnabled != true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        desktopMode.stop()
         Diagnostics.quitting()
         FileOperationsController.shared.interruptAll()
         VideoPreview.shared.cleanUp()
@@ -285,6 +302,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func newWindow(at url: URL, split: URL? = nil) { newWindow(urls: [url], split: [split]) }
 
     func newWindow(urls: [URL], split: [URL?] = []) { show(add(MainWindowController(urls: urls, split: split))) }
+
+    /// Desktop-specific opening policy; ordinary browser opens and the global single-window setting are unchanged.
+    @discardableResult
+    func openDesktopFolders(_ urls: [URL], inTabs: Bool, maximized: Bool, screen: NSScreen? = nil) -> [MainWindowController] {
+        guard !urls.isEmpty else { return [] }
+        defer { NSApp.activate() }
+        if inTabs, let existing = windows.first(where: { $0.window === NSApp.mainWindow }) ?? windows.last {
+            for url in urls { existing.addTab(url: url) }
+            if let window = existing.window {
+                window.deminiaturize(nil)
+                if maximized, !window.styleMask.contains(.fullScreen), let target = window.screen ?? screen ?? NSScreen.main {
+                    window.setFrame(target.visibleFrame, display: true)
+                }
+                window.makeKeyAndOrderFront(nil)
+            }
+            return [existing]
+        }
+        return (inTabs ? [urls] : urls.map { [$0] }).map { folders in
+            let controller = add(MainWindowController(urls: folders))
+            if maximized, let window = controller.window, let target = screen ?? window.screen ?? NSScreen.main {
+                window.setFrame(target.visibleFrame, display: false)
+            }
+            show(controller)
+            return controller
+        }
+    }
 
     /// A window showing `layout` where a new window goes (its saved frame aside); false when it can't be applied.
     func newWindow(layout: WindowLayout) -> Bool {

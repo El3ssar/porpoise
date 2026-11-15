@@ -1,6 +1,14 @@
 import AppKit
 import PorpoiseServices
 
+#if PORPOISE_TEST_HOOKS
+// The dedicated prototype bundle is isolated even when opened from Finder, before any settings or migration.
+if Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" {
+    setenv("PORPOISE_DEFAULTS_SUITE", "app.porpoise.DesktopPrototype", 1)
+    setenv("PORPOISE_BRIDGE", "desktop-prototype", 1)
+}
+#endif
+
 // ssh calls the app back as its password/confirmation prompt (SSH_ASKPASS).
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--askpass" {
     AskPass.runHelper(prompt: CommandLine.arguments.dropFirst(2).joined(separator: " "))

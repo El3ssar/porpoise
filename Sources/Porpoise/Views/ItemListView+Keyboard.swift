@@ -187,6 +187,16 @@ extension ItemListView {
         guard !model.rows.isEmpty else { return }
         if frames.count != model.rows.count { computeLayout() }
         let count = model.rows.count
+        if mode == .icons, iconsLayout != nil, let current = model.currentURL.flatMap({ model.index(of: $0) }) {
+            switch m {
+            case .up, .down, .left, .right:
+                let next = placedIconsNeighbor(of: current, direction: m) ?? current
+                selecting.move(to: next, extend: extend)
+                scrollToItem(next); needsDisplay = true
+                return
+            default: break
+            }
+        }
         var n: Int
         if let c = model.currentURL.flatMap({ model.index(of: $0) }) {
             let pendingHeight = 2 * Self.pad + max(iconSize, lineHeight * CGFloat(1 + model.props.roles(for: .compact).count)) + 2
@@ -219,6 +229,21 @@ extension ItemListView {
         selecting.move(to: n, extend: extend)
         scrollToItem(n)
         needsDisplay = true
+    }
+
+    /// A placed grid need not follow the model's row order. Keep the same selection controller, using visual neighbours.
+    private func placedIconsNeighbor(of current: Int, direction: Move) -> Int? {
+        let vertical = direction == .up || direction == .down
+        let forward = direction == .down || direction == .right
+        let origin = frames[current]
+        func distance(_ i: Int) -> (CGFloat, CGFloat) {
+            let delta = vertical ? frames[i].midY - origin.midY : frames[i].midX - origin.midX
+            return (forward ? delta : -delta, abs(vertical ? frames[i].midX - origin.midX : frames[i].midY - origin.midY))
+        }
+        return frames.indices.filter { distance($0).0 > 0.5 }.min {
+            let a = distance($0), b = distance($1)
+            return a.0 == b.0 ? a.1 < b.1 : a.0 < b.0
+        }
     }
 
     /// Icons ↑/↓: the item of the visual row above/below that is nearest in x. Rows restart under each group

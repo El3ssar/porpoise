@@ -18,8 +18,12 @@ protocol ItemListViewDelegate: AnyObject {
 ///
 /// Split by concern: `+Layout` (geometry, hit testing), `+Drawing`, `+Mouse` (hover, clicks, rubber band, gestures),
 /// `+Keyboard` (navigation, type-ahead), `+Rename`, `+DragDrop`. State the extensions share lives here.
-final class ItemListView: NSView {
+class ItemListView: NSView {
     let model: DirectoryModel
+    /// Desktop grids reuse this renderer and interaction; only their cell placement differs.
+    var iconsLayout: (() -> NSSize)?
+    var drawsBackground = true
+    var tracksWithoutKeyWindow = false
     weak var delegate: ItemListViewDelegate?
     /// Column view: where ← and → go (the column before, or the one the current folder opens).
     weak var columnNavigator: ColumnNavigating?
@@ -270,6 +274,7 @@ final class ItemListView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    func isOpeningClick(_ event: NSEvent) -> Bool { event.clickCount == 2 }
 
     /// Shown in place of this list (the app library): focus given to the list goes there instead.
     weak var focusRedirect: NSView?

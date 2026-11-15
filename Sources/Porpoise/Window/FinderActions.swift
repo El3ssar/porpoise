@@ -50,11 +50,8 @@ extension MainWindowController {
     @objc func makeAlias(_ sender: Any?) {
         var made: [URL] = []
         for it in selection where it.url.isFileURL {
-            let parent = it.url.deletingLastPathComponent()
-            let dst = parent.appendingPathComponent(LocationOperations(for: parent).uniqueName(it.name + " alias", in: parent))
             do {
-                let data = try it.url.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
-                try URL.writeBookmarkData(data, to: dst)
+                let dst = try Self.createAlias(of: it.url, in: it.url.deletingLastPathComponent(), named: it.name + " alias")
                 made.append(dst)
             } catch {
                 reportError("Could not make an alias of “\(it.name)”: \(error.localizedDescription)")
@@ -65,6 +62,14 @@ extension MainWindowController {
             view.pendingSelect = made.last
             view.reload()
         }
+    }
+
+    /// Shared Finder alias creation. The browser keeps its existing name/destination; Desktop supplies its own.
+    static func createAlias(of source: URL, in folder: URL, named name: String) throws -> URL {
+        let destination = folder.appendingPathComponent(LocationOperations(for: folder).uniqueName(name, in: folder))
+        let data = try source.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil)
+        try URL.writeBookmarkData(data, to: destination)
+        return destination
     }
 
     /// Show Original (⌘R): the target of a symlink or Finder alias, selected in its folder.

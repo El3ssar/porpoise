@@ -45,6 +45,13 @@ public final class Settings {
     @Pref("showGitStatus") public var showGitStatus: Bool = true
     @Pref("allowCommandLineControl") public var allowCommandLineControl = false
 
+    /// The desktop is active at app launch unless the user explicitly disables it.
+    @Pref("desktopModeDisabled") public var desktopModeDisabled = false
+    @Pref("desktopShowMenuBarIcon") public var desktopShowMenuBarIcon = true
+    @Pref("desktopMonochromeMenuBarIcon") public var desktopMonochromeMenuBarIcon = false
+    @Pref("desktopFoldersInTabs") public var desktopFoldersInTabs = false
+    @Pref("desktopOpenMaximized") public var desktopOpenMaximized = false
+
     // Interface › Folders & Tabs
     @Pref("startup") public var startup: StartupLocation = .lastSession
     /// Stored as a path.

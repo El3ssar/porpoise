@@ -297,6 +297,7 @@ import PorpoiseServices
     }
 
     static func advanced(_ f: FormBuilder) {
+        desktopMode(f, controller: .shared)
         IndexSettingsPage.build(f)
         CLIAutomationSettings.build(f)
         TerminalSettingsPage.build(f)
@@ -315,6 +316,30 @@ import PorpoiseServices
                 Settings.shared.resetAll()  // every control re-reads its value
             }
         }
+    }
+
+    static func desktopMode(_ f: FormBuilder, controller: DesktopModeController) {
+        f.section("Experiments")
+        f.observe(DesktopModeController.changed)
+        f.check("Disable Desktop Mode", Settings.shared.desktopModeDisabled) { controller.setEnabled(!$0) }
+        let s = Settings.shared
+        f.check("Show icon in menu bar", s.desktopShowMenuBarIcon, enabled: { !s.desktopModeDisabled }) { s.desktopShowMenuBarIcon = $0 }
+        f.popup(
+            "Menu bar icon:", ["Color", "Monochrome"], s.desktopMonochromeMenuBarIcon ? 1 : 0,
+            enabled: { !s.desktopModeDisabled && s.desktopShowMenuBarIcon }
+        ) { s.desktopMonochromeMenuBarIcon = $0 == 1 }
+        f.popup(
+            "Open desktop folders in:", ["New Window", "New Tab"], s.desktopFoldersInTabs ? 1 : 0,
+            enabled: { !s.desktopModeDisabled }
+        ) { s.desktopFoldersInTabs = $0 == 1 }
+        f.popup(
+            "Window size:", ["Standard", "Maximized"], s.desktopOpenMaximized ? 1 : 0,
+            enabled: { !s.desktopModeDisabled }
+        ) { s.desktopOpenMaximized = $0 == 1 }
+        f.note("Standard keeps an existing tab window’s size. Maximized fills its screen without entering full screen.")
+        f.note(
+            "Desktop Mode starts with Porpoise and keeps running when browser windows close. It uses the same file names, hover and display settings as the browser."
+        )
     }
 
     private static func androidPhones(_ f: FormBuilder) {
