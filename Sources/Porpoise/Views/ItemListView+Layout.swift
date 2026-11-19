@@ -182,7 +182,7 @@ extension ItemListView {
         let minute =
             Settings.shared.dateStyle == .relative
                 && roles.contains(where: {
-                    [.modificationTime, .creationTime, .accessTime, .sharedTime].contains($0)
+                    [.modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened].contains($0)
                 }) ? Int(Date().timeIntervalSince1970 / 60) : nil
         if var cached = compactTextMeasurement, cached.roles == roles, cached.relativeMinute == minute {
             // commitZoom synchronously rebuilds identical rows while saving only their icon size.

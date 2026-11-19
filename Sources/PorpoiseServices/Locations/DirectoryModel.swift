@@ -1327,7 +1327,7 @@ public final class DirectoryModel {
             // Google Docs and the like take no storage: Drive has no size for them.
             if item.isWebDocument { return "—" }
             return item.isDirectory ? "--" : FileFormat.size(item.size)
-        case .modificationTime, .creationTime, .accessTime, .sharedTime:
+        case .modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened:
             guard let d = item.date(for: role) else { return "" }
             return s.dateStyle == .relative ? FileFormat.relativeDate(d) : FileFormat.longDate(d)
         case .type: return item.typeDescription

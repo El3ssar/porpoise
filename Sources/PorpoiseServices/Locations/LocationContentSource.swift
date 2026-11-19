@@ -76,14 +76,14 @@ struct LocationTraits {
 }
 
 extension ViewProperties {
-    /// A result list: Details with each item's folder, by name or newest first.
+    /// A result list: Details with each item's folder, by name or most recently opened first.
     static func resultList(byName: Bool) -> ViewProperties {
         var p = ViewProperties()
         p.mode = .details
         p.foldersFirst = false
-        p.sortRole = byName ? .name : .accessTime
+        p.sortRole = byName ? .name : .lastOpened
         p.sortOrder = byName ? .ascending : .descending
-        p.setRoles([.path, .accessTime], for: .details)
+        p.setRoles([.path, byName ? .accessTime : .lastOpened], for: .details)
         return p
     }
 }

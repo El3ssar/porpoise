@@ -42,7 +42,7 @@ import Testing
                 DropboxLocation(accountID: account, itemID: "collection:shared").url, .details, .sharedTime,
                 [.owner, .sharedTime, .size, .modificationTime]
             ),
-            (URL(string: "recent:/files")!, .details, .accessTime, [.path, .accessTime]),
+            (URL(string: "recent:/files")!, .details, .lastOpened, [.path, .lastOpened]),
             (URL(string: "recent:/locations")!, .details, .name, [.path, .accessTime]),
             (URL(string: "tags:/fixture")!, .details, .name, [.path, .accessTime]),
             (URL(string: "smart:/tmp/fixture.savedSearch")!, .details, .name, [.path, .accessTime]),
@@ -58,7 +58,7 @@ import Testing
             model.reloadProps()
             #expect(model.props.mode == mode && model.props.sortRole == role)
             #expect(model.props.roles(for: .details) == columns)
-            let newestFirst = role == .accessTime || role == .sharedTime
+            let newestFirst = role == .lastOpened || role == .sharedTime
             #expect(model.props.sortOrder == (newestFirst ? .descending : .ascending))
             #expect(model.props.foldersFirst == (mode != .details))
             var saved = common; saved.mode = .icons; saved.sortRole = .name

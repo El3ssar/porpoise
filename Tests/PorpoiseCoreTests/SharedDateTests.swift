@@ -21,6 +21,25 @@ import Testing
         #expect(groups.first?.items.first?.name == "new")
     }
 
+    /// Recent Files' Last Opened column: Spotlight's last-used date, not the access date.
+    @Test func sortsAndShowsByLastOpenedDate() {
+        let now = Date()
+        var old = FileItem(url: URL(fileURLWithPath: "/tmp/old"), name: "old", isDirectory: false, accessDate: now)
+        old.lastOpenedDate = now.addingTimeInterval(-86400 * 3)
+        var new = FileItem(url: URL(fileURLWithPath: "/tmp/new"), name: "new", isDirectory: false, accessDate: now.addingTimeInterval(-86400 * 9))
+        new.lastOpenedDate = now
+        let none = FileItem(url: URL(fileURLWithPath: "/tmp/none"), name: "none", isDirectory: false, accessDate: now)
+        var props = ViewProperties()
+        props.sortRole = .lastOpened
+        props.sortOrder = .descending
+        props.foldersFirst = false
+        #expect(ItemSorter.sort([none, old, new], props: props).map(\.name) == ["new", "old", "none"])
+        #expect(new.date(for: .lastOpened) == now && new.named("renamed").lastOpenedDate == now)
+        #expect(ItemGrouper.groupName(none, role: .lastOpened, now: now) == "Unknown")
+        #expect(ItemRole.lastOpened.title == "Last Opened" && ItemRole.otherRoles.contains(.lastOpened))
+        #expect(ItemRole.lastOpened.orderLabels.descending == "Newest First")
+    }
+
     @Test func overridesRestoreTheUsersSorting() {
         var props = ViewProperties()
         var o = ViewOverride()

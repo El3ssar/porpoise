@@ -44,7 +44,7 @@ public enum ViewMode: String, Codable, CaseIterable, Sendable {
 /// Roles = columns / sort keys / group keys / additional information (Dolphin's "roles").
 public enum ItemRole: String, Codable, CaseIterable, Sendable {
     case name, size, modificationTime, creationTime, accessTime, type, path, extension_, permissions, owner, group,
-        linkDestination, tags, sharedTime
+        linkDestination, tags, sharedTime, lastOpened
 
     public var title: String {
         switch self {
@@ -62,6 +62,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         case .linkDestination: return "Link Destination"
         case .tags: return "Tags"
         case .sharedTime: return "Shared"
+        case .lastOpened: return "Last Opened"
         }
     }
 
@@ -71,7 +72,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
     }
 
     public static var otherRoles: [ItemRole] {
-        [.path, .extension_, .linkDestination, .permissions, .owner, .group, .sharedTime]
+        [.path, .extension_, .linkDestination, .permissions, .owner, .group, .sharedTime, .lastOpened]
     }
 
     /// Ascending / descending labels in the Sort By menu, as Dolphin words them.
@@ -79,7 +80,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         switch self {
         case .name, .type, .extension_, .path, .linkDestination, .owner, .group: return ("A-Z", "Z-A")
         case .size: return ("Smallest First", "Largest First")
-        case .modificationTime, .creationTime, .accessTime, .sharedTime: return ("Oldest First", "Newest First")
+        case .modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened: return ("Oldest First", "Newest First")
         default: return ("Ascending", "Descending")
         }
     }
@@ -89,7 +90,7 @@ public enum ItemRole: String, Codable, CaseIterable, Sendable {
         switch self {
         case .name: return 320
         case .size: return 90
-        case .modificationTime, .creationTime, .accessTime, .sharedTime: return 200
+        case .modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened: return 200
         case .type: return 160
         case .path, .linkDestination: return 240
         case .permissions: return 110
