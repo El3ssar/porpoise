@@ -318,11 +318,23 @@ import PorpoiseServices
         }
     }
 
-    static func desktopMode(_ f: FormBuilder, controller: DesktopModeController) {
+    static func desktopMode(_ f: FormBuilder, controller: DesktopModeController, loginItem: DesktopLoginItem? = nil) {
         f.section("Experiments")
         f.observe(DesktopModeController.changed)
         f.check("Disable Desktop Mode", Settings.shared.desktopModeDisabled) { controller.setEnabled(!$0) }
         let s = Settings.shared
+        let loginItem = loginItem ?? DesktopLoginItem.shared
+        f.observe(DesktopLoginItem.changed)
+        f.check(
+            "Start Desktop Mode at Login", loginItem.isRegistered,
+            enabled: { loginItem.isAvailable && !loginItem.isChanging && (!s.desktopModeDisabled || loginItem.isRegistered) }
+        ) { enabled in Task { await loginItem.setEnabled(enabled) } }
+        if loginItem.isAvailable {
+            f.status("Login startup:", { loginItem.statusLine }, button: { "Open Login Items" }) { _ in loginItem.showSystemSettings() }
+        } else {
+            f.note("Install Porpoise in Applications to enable login startup.")
+        }
+        f.note("At login, only Desktop Mode starts. Opening Porpoise normally still opens its browser window.")
         f.check("Show icon in menu bar", s.desktopShowMenuBarIcon, enabled: { !s.desktopModeDisabled }) { s.desktopShowMenuBarIcon = $0 }
         f.popup(
             "Menu bar icon:", ["Color", "Monochrome"], s.desktopMonochromeMenuBarIcon ? 1 : 0,

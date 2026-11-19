@@ -4,7 +4,7 @@ Desktop Mode starts with Porpoise by default, directly on all connected displays
 or control window and no second placement switch. **Settings → Advanced → Disable Desktop Mode** or the desktop/menu-bar
 **Disable Desktop Mode** command turns it off. The choice is stored as `desktopModeDisabled` (default false).
 Unchecking that option enables the surfaces immediately. Ordinary Quit / Cmd+Q tears down this session without changing
-the choice for the next launch. This is app startup only: no login item, launch agent or macOS automatic launch is added.
+the choice for the next launch. Login startup is a separate, optional setting described below.
 
 The optional prototype build stays isolated from the installed application. Generic automated test hosts do not start watching
 the real Desktop; the explicitly identified `app.porpoise.DesktopPrototype` bundle uses normal attended startup.
@@ -38,6 +38,9 @@ its own saved positions; the Desktop listing and selection are shared. Inter-dis
 
 Settings → Advanced, directly below Disable Desktop Mode:
 
+- **Start Desktop Mode at Login**: opt in to macOS Login Items. Only Desktop Mode starts at login; browser windows
+  and tabs are deferred until Porpoise is opened explicitly. Install the normal Porpoise app in `/Applications` or
+  `~/Applications` before enabling this setting. Prototype and test builds cannot register login startup.
 - **Show icon in menu bar** (default on): hiding the icon does not stop the model, watchers or desktop windows.
   The desktop context menu and app settings remain available. Visibility updates immediately, including after reset.
 - **Menu bar icon: Color / Monochrome** (default Color). The monochrome option reuses the existing fin/waves mark as
@@ -54,6 +57,23 @@ Preferences persist in the app's profile and are reset by normal Restore Default
 Desktop Mode while the app is running. Opening applications,
 including application aliases, remains on the native file-opening path and is unaffected by folder/window preferences.
 
+## Login startup
+
+The installed main app registers itself with [`SMAppService.mainApp`](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp).
+No helper process or LaunchAgent is added. Registration happens only when the login checkbox is changed, never just
+by launching Porpoise. The checkbox reads the macOS registration rather than keeping a second preferences flag;
+Restore Defaults does not change Login Items. Pending approval and registration errors appear beside **Open Login Items**.
+Changes made in System Settings are reflected when returning to Porpoise settings.
+
+At login, the opening AppleEvent's `keyAELaunchedAsLogInItem` marker selects desktop-only startup. This skips home/session
+windows, first-run onboarding, Archive Utility reveal inference and browser activation. Update UI, legacy privileged-helper
+migration and file-operation recovery prompts wait until a browser or settings window is explicitly opened. Saved tabs
+and the failed-session restore marker are preserved while no browser is opened. Clicking the app in the Dock restores
+the normal startup session; opening a desktop folder uses the selected New Window / New Tab behavior instead.
+Manual launches retain normal startup behavior. If Desktop Mode has been disabled, a login launch exits without opening
+any windows. An existing login registration can still be removed while Desktop Mode is disabled. Turning login startup
+off does not stop the current desktop session; Disable Desktop Mode and Quit retain their separate meanings.
+
 ## Application shortcuts
 
 Right-click empty desktop space → **Add Application Shortcut…**, then choose a macOS `.app`. This creates a native
@@ -63,7 +83,7 @@ the application's filename without `.app` or an `alias` suffix; collisions recei
 browser's Make Alias keeps its existing naming. Existing alias icon/badge rendering, local file opening, Rename,
 Trash/Delete and Show Original are reused. Launching still goes through macOS and its normal
 application security checks. Removing the alias does not remove its target. Creation participates in the existing Undo.
-No command parser, shell execution, file association or login/startup registration is added.
+No command parser, shell execution or file association is added by shortcut creation.
 
 ## Window ownership and shutdown
 
@@ -137,7 +157,7 @@ open "build/Porpoise Desktop Prototype.app"
 ```
 
 Do not move it into the managed Documents folder or install it over the main app. No Finder preferences, system files,
-LaunchServices/default handlers, login items or foreign app preferences are modified by this feature.
+LaunchServices/default handlers or foreign app preferences are modified. The isolated prototype cannot change login items.
 
 ## Verification
 
@@ -145,7 +165,7 @@ Build Debug and Release, run focused tests, strict format lint and `git diff --c
 
 ```sh
 swift build --product Porpoise
-scripts/test-with-watchdog.sh --filter DesktopModeTests
+scripts/test-with-watchdog.sh --filter 'DesktopModeTests|DesktopLoginItemTests'
 swift build -c release --product Porpoise
 codesign --verify --deep --strict "build/Porpoise Desktop Prototype.app"
 ```
@@ -177,8 +197,23 @@ Manual acceptance:
    Rename/remove only disposable aliases; the original application must remain untouched.
 7. Confirm the installed app/profile and Finder behavior remain unchanged. Exit only the prototype.
 
+Login startup acceptance (use the installed normal app, not the isolated prototype):
+
+1. Enable Desktop Mode, then **Start Desktop Mode at Login** in Settings → Advanced. Resolve any macOS approval
+   through **Open Login Items**. Verify the setting also appears in System Settings → General → Login Items.
+2. At a convenient time, log out and back in or restart. Desktop grids should appear on both monitors without a
+   Porpoise browser, welcome sheet or recovery/update prompt. Previously saved tabs must remain saved.
+3. Open a desktop folder, checking the chosen window/tab behavior. Close the browser: desktop grids stay active.
+   Separately check that clicking Porpoise in the Dock after a fresh login restores the deferred browser session.
+4. Turn login startup off: the current desktop stays active. After the next login Porpoise must not start automatically
+   (also disable macOS's separate “Reopen windows when logging back in” option for this check). A manual launch still
+   opens Porpoise normally. With a login registration retained but Desktop Mode disabled, login must open no windows.
+
+Automated tests inject the Login Items backend and opening-event descriptors; they do not register an installed app
+or log out the user. A real logout/login remains an attended manual check.
+
 ## Next stage
 
 Complete physical Spaces/fullscreen/accessibility acceptance and define a supported coexistence policy with Finder.
-File distribution/drag between monitors and remaining native action adapters are separate work. Login startup, global
-input handling and Finder replacement are outside this implementation.
+File distribution/drag between monitors and remaining native action adapters are separate work. Global input handling
+and Finder replacement are outside this implementation.
