@@ -1,13 +1,26 @@
 # Desktop Mode
 
-Desktop Mode starts with Porpoise by default, directly on all connected displays. There is no separate preview
-or control window and no second placement switch. **Settings → Advanced → Disable Desktop Mode** or the desktop/menu-bar
-**Disable Desktop Mode** command turns it off. The choice is stored as `desktopModeDisabled` (default false).
-Unchecking that option enables the surfaces immediately. Ordinary Quit / Cmd+Q tears down this session without changing
-the choice for the next launch. Login startup is a separate, optional setting described below.
+Desktop Mode is an **experiment and is off by default**. Tick **Settings → Advanced → Enable Desktop Mode** to show the
+Desktop folder directly on all connected displays; there is no separate preview or control window and no second
+placement switch. Unticking it, or the desktop/menu-bar **Disable Desktop Mode** command, turns it off at once. The choice
+is stored as `desktopModeEnabled` (default false). While it is on it starts with Porpoise; ordinary Quit / Cmd+Q tears
+down this session without changing the choice for the next launch. Login startup is a separate,
+optional setting described below.
+
+Known limits of the experiment:
+
+- Finder's own desktop stays underneath, so icons can appear twice or be covered.
+- Clicks on empty desktop pass through to Finder's desktop underneath (its menu, widgets, click to show the desktop), so
+  there is no rubber-band selection from empty space and no background context menu. The background commands (New
+  Folder, Paste, Add Application Shortcut, Sort By, Start Corner) are in the menu-bar icon's menu; with the icon hidden,
+  only the commands of an item's own context menu remain.
+- Dragging files onto or off the desktop is not supported yet.
+- Every display shows the same listing and shares one selection.
+- Behaviour with Spaces, Mission Control, Stage Manager and fullscreen is not fully checked.
 
 The optional prototype build stays isolated from the installed application. Generic automated test hosts do not start watching
-the real Desktop; the explicitly identified `app.porpoise.DesktopPrototype` bundle uses normal attended startup.
+the real Desktop; the explicitly identified `app.porpoise.DesktopPrototype` bundle uses normal attended startup. A test
+instance has a desktop only when `PORPOISE_DESKTOP_DIR` names a folder to stand in for it (the UI acceptance run does).
 
 For manual installation as the main app, `PORPOISE_RELEASE=1 ./scripts/make-app.sh` prepares the ordinary release
 `build/Porpoise.app`, named Porpoise with identifier `app.porpoise.Porpoise`, without test hooks. Do not pass `--install`
@@ -36,7 +49,7 @@ its own saved positions; the Desktop listing and selection are shared. Inter-dis
 
 ## Desktop preferences
 
-Settings → Advanced, directly below Disable Desktop Mode:
+Settings → Advanced, directly below Enable Desktop Mode (available while it is on):
 
 - **Start Desktop Mode at Login**: opt in to macOS Login Items. Only Desktop Mode starts at login; browser windows
   and tabs are deferred until Porpoise is opened explicitly. Install the normal Porpoise app in `/Applications` or
@@ -53,8 +66,8 @@ Settings → Advanced, directly below Disable Desktop Mode:
   the normal window-opening behavior; when reusing a tab window it keeps that window's geometry. Existing fullscreen
   windows are left fullscreen. Ordinary browser actions and the global single-window setting are unchanged.
 
-Preferences persist in the app's profile and are reset by normal Restore Defaults, including re-enabling a disabled
-Desktop Mode while the app is running. Opening applications,
+Preferences persist in the app's profile and are reset by normal Restore Defaults, which also turns Desktop Mode off
+while the app is running. Opening applications,
 including application aliases, remains on the native file-opening path and is unaffected by folder/window preferences.
 
 ## Login startup
@@ -76,7 +89,7 @@ off does not stop the current desktop session; Disable Desktop Mode and Quit ret
 
 ## Application shortcuts
 
-Right-click empty desktop space → **Add Application Shortcut…**, then choose a macOS `.app`. This creates a native
+Menu-bar icon → **Add Application Shortcut…**, then choose a macOS `.app`. This creates a native
 Finder alias in Desktop, not an application copy or Linux `.desktop` command file. The browser's existing Make Alias
 and this action share the same bookmark-file creation code and collision naming. Desktop application shortcuts use
 the application's filename without `.app` or an `alias` suffix; collisions receive the usual numeric suffix. The
@@ -96,12 +109,9 @@ A native menu-bar item, when shown, provides the existing Show in Porpoise, Refr
 shows listing/error status, including denied Desktop access, now that there is no preview window. Refresh retries.
 Closing or minimizing browser windows and hiding the app do not remove active desktop surfaces.
 
-Window managers can send Quit after the last ordinary window closes. Active Desktop Mode protects itself in the normal
-`applicationShouldTerminate` callback: external Quit without a system termination reason is cancelled. Native menu Quit,
-Cmd+Q, the system Dock and loginwindow's shutdown/logout/restart keep their existing path and confirmations. No foreign
-app settings or AppleEvent handlers are changed. AppleEvents do not distinguish a third-party manager's automatic Quit
-from its own UI's Quit, so both are rejected while placement is active. Use Porpoise's own Quit or the system Dock.
-With Desktop Mode off the existing quit policy is unchanged; Force Quit is outside this protection.
+Quit is never refused on the desktop's account: Porpoise's own Quit, the Dock, scripts, Activity Monitor and
+logout/shutdown all end the app as they do without Desktop Mode. A window manager that sends Quit when the last ordinary
+window closes therefore also quits the desktop; the remedy is in that tool's settings, not in Porpoise.
 
 ## Public macOS API research
 
@@ -131,7 +141,8 @@ no test window is substituted. Surfaces request `.canJoinAllSpaces`, `.stationar
 They are non-activating NSPanel instances. They may become key on a user click, cannot become main and have no restoration
 or Window-menu entries. Selection does not activate the browser app or restore minimized browser windows; opening a
 folder does. `hidesOnDeactivate = false` and `canHide = false`
-keep them visible during Dock Hide / Cmd+H. A 1/255 background alpha makes empty grid cells receive local mouse hits.
+keep them visible during Dock Hide / Cmd+H. The window background is clear, so Window Server passes clicks on empty
+desktop to Finder underneath; each item's cell is filled at 1/255 alpha so the whole cell receives local mouse hits.
 No global monitor or synthetic system event interception is installed. URL drops/external file drags remain unregistered.
 
 Public window ordering does not transfer Finder's desktop ownership or guarantee how Spaces, Mission Control,
@@ -174,25 +185,27 @@ Native Xcode runners must isolate every test target with `PORPOISE_DEFAULTS_SUIT
 `.xctestrun` copy, preserving its test-root paths. Per-test `.isolatedSettings` alone does not isolate test-host startup
 and delayed work. Tests use Scratch files and injected display snapshots, never the real Desktop, home Trash or installed
 app. The delete action test declines normal Trash/Delete confirmations first, then deletes only an owned scratch file.
-Coverage includes default-on/persisted opt-out, quit preference preservation, complete teardown, native menu/label/hover
+Coverage includes off-by-default/persisted opt-in, quit preference preservation, complete teardown, native menu/label/hover
 parity, shared FSEvents, geometry/collision repair, per-display positions, native Window Server mouse hits, editing and
 animations. Simulated-screen tests do not certify physical Spaces behavior.
 Before proposing changes, also run the full `scripts/test-with-watchdog.sh` validation required by CONTRIBUTING.md.
 
 Manual acceptance:
 
-1. Launch the isolated prototype bundle. Grids appear on both monitors without a preview/control window. Main Porpoise remains a
+1. Launch the isolated prototype bundle and tick Settings → Advanced → Enable Desktop Mode. Grids appear on both
+   monitors without a preview/control window. Main Porpoise remains a
    separate installed application. Do not change the Default file browser setting during prototype checks.
 2. Compare long names, selected labels and hover with a regular prototype browser window. Change the ordinary label
    line limit/elision/ToolTip settings: the desktop follows. No desktop Name Lines submenu should exist.
-3. Right-click a disposable file and empty space. Check shared commands and shortcuts, including visible Move to Trash
+3. Right-click a disposable file, and open the menu-bar icon's menu. Right-click empty desktop: Finder's own menu
+   appears, not Porpoise's. Check shared commands and shortcuts, including visible Move to Trash
    and Delete entries. Use only disposable scratch files to check confirmations and operations.
 4. Check all four Start Corners, native sort animation and snapping. Check both physical screens, scale/hot-plug,
    Spaces, Mission Control, Stage Manager, Show Desktop and fullscreen return. No Finder configuration is required.
 5. Close ordinary windows via red close / Cmd+W, minimize and hide the app: grids remain active. Disable Desktop Mode
-   from its context/menu-bar item: every surface disappears. Relaunch: disabled choice persists. Uncheck Disable in
+   from its context/menu-bar item: every surface disappears. Relaunch: it stays off. Tick Enable Desktop Mode in
    Settings → Advanced: grids return immediately, with no extra window. Quit while enabled and relaunch: grids return.
-6. Add an application shortcut from the empty-space menu. Check its application icon, double-click launch and Show
+6. Add an application shortcut from the menu-bar icon's menu. Check its application icon, double-click launch and Show
    Original. Create the same shortcut twice: names must be distinct. Cancel the chooser: nothing should be created.
    Rename/remove only disposable aliases; the original application must remain untouched.
 7. Confirm the installed app/profile and Finder behavior remain unchanged. Exit only the prototype.

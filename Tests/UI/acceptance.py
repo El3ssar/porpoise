@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated UI acceptance run: drives a test build of Porpoise through its debug bridge, in light and in dark, over
-first run, browsing, split and resize, a copy and its Activity, the Connect sheet and Settings, and keeps what it saw.
+first run, browsing, split and resize, a copy and its Activity, the Connect sheet, Settings and the opt-in Desktop Mode,
+and keeps what it saw.
 
 Isolation and bounds:
 - Each run uses its own defaults suite and bridge channel (a fresh UUID), and its own scratch folder. It never reads or
@@ -144,8 +145,14 @@ class Run:
         subprocess.run(["defaults", "write", self.suite, "appearance", "-string", look], check=True)
         # A plain launch (no folder argument, as from the Dock: the welcome shows only then) opens the start folder.
         subprocess.run(["defaults", "write", self.suite, "homeURL", "-string", self.demo], check=True)
+        # Desktop Mode gets a folder of its own to show: a test instance never reads the real Desktop.
+        self.desktop = os.path.join(self.scratch, f"Desktop-{look}")
+        os.makedirs(self.desktop)
+        with open(os.path.join(self.desktop, "On the desktop.txt"), "w") as f:
+            f.write("desktop\n")
         env = dict(
-            os.environ, PORPOISE_DEFAULTS_SUITE=self.suite, PORPOISE_BRIDGE=self.bridge.channel, PORPOISE_FORCE_ONBOARDING="1"
+            os.environ, PORPOISE_DEFAULTS_SUITE=self.suite, PORPOISE_BRIDGE=self.bridge.channel, PORPOISE_FORCE_ONBOARDING="1",
+            PORPOISE_DESKTOP_DIR=self.desktop,
         )
         exe = os.path.join(os.path.abspath(self.args.app), "Contents", "MacOS", "Porpoise")
         # No "reopen windows?" alert after an earlier instance was stopped: it would block the app until answered.
@@ -344,6 +351,28 @@ class Run:
             slug = "-".join(title.lower().replace("&", " ").split())
             self.capture(f"{50 + index:02d}-settings-{slug}", window="settings")
 
+    def desktop_mode(self):
+        """The experiment is off until its checkbox is ticked in Settings, shows its folder while on, and goes again."""
+        b = self.bridge
+
+        def report():
+            return b.ask("desktop", parse=json.loads)
+
+        first = report()
+        self.check("desktop: off until enabled", not first["enabled"] and not first["setting"] and first["surfaces"] == 0, first)
+        b.send("settings", "Advanced")
+        wait_until(lambda: any(w.startswith("Advanced|") and "SettingsWindowController" in w for w in b.windows()),
+                   self.args.step_timeout, "the Advanced settings page")
+        b.send("click", "Settings|Enable Desktop Mode")
+        on = wait_until(lambda: (lambda r: r if r["enabled"] and r["rows"] == ["On the desktop.txt"] else None)(report()),
+                        self.args.step_timeout, "Desktop Mode to list its folder")
+        self.check("desktop: Enable Desktop Mode shows the given folder",
+                   on["setting"] and os.path.realpath(on["location"]) == os.path.realpath(self.desktop), on)
+        b.send("click", "Settings|Enable Desktop Mode")
+        off = wait_until(lambda: (lambda r: r if not r["enabled"] and r["surfaces"] == 0 else None)(report()),
+                         self.args.step_timeout, "Desktop Mode to close")
+        self.check("desktop: unticking it removes every surface", not off["setting"] and not off["menuBarIcon"], off)
+
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
         looks = [x for x in self.args.looks.split(",") if x]
@@ -359,7 +388,8 @@ class Run:
                     self.stop()
                     continue
                 for name, body in [("first-run", self.first_run), ("browse", self.browse), ("split", self.split_and_resize),
-                                   ("copy", self.copy_and_activity), ("connect", self.connect), ("settings", self.settings)]:
+                                   ("copy", self.copy_and_activity), ("connect", self.connect), ("settings", self.settings),
+                                   ("desktop", self.desktop_mode)]:
                     self.step(name, body)
                 self.stop()
         finally:

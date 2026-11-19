@@ -321,13 +321,13 @@ import PorpoiseServices
     static func desktopMode(_ f: FormBuilder, controller: DesktopModeController, loginItem: DesktopLoginItem? = nil) {
         f.section("Experiments")
         f.observe(DesktopModeController.changed)
-        f.check("Disable Desktop Mode", Settings.shared.desktopModeDisabled) { controller.setEnabled(!$0) }
+        f.check("Enable Desktop Mode", Settings.shared.desktopModeEnabled) { controller.setEnabled($0) }
         let s = Settings.shared
         let loginItem = loginItem ?? DesktopLoginItem.shared
         f.observe(DesktopLoginItem.changed)
         f.check(
             "Start Desktop Mode at Login", loginItem.isRegistered,
-            enabled: { loginItem.isAvailable && !loginItem.isChanging && (!s.desktopModeDisabled || loginItem.isRegistered) }
+            enabled: { loginItem.isAvailable && !loginItem.isChanging && (s.desktopModeEnabled || loginItem.isRegistered) }
         ) { enabled in Task { await loginItem.setEnabled(enabled) } }
         if loginItem.isAvailable {
             f.status("Login startup:", { loginItem.statusLine }, button: { "Open Login Items" }) { _ in loginItem.showSystemSettings() }
@@ -335,22 +335,22 @@ import PorpoiseServices
             f.note("Install Porpoise in Applications to enable login startup.")
         }
         f.note("At login, only Desktop Mode starts. Opening Porpoise normally still opens its browser window.")
-        f.check("Show icon in menu bar", s.desktopShowMenuBarIcon, enabled: { !s.desktopModeDisabled }) { s.desktopShowMenuBarIcon = $0 }
+        f.check("Show icon in menu bar", s.desktopShowMenuBarIcon, enabled: { s.desktopModeEnabled }) { s.desktopShowMenuBarIcon = $0 }
         f.popup(
             "Menu bar icon:", ["Color", "Monochrome"], s.desktopMonochromeMenuBarIcon ? 1 : 0,
-            enabled: { !s.desktopModeDisabled && s.desktopShowMenuBarIcon }
+            enabled: { s.desktopModeEnabled && s.desktopShowMenuBarIcon }
         ) { s.desktopMonochromeMenuBarIcon = $0 == 1 }
         f.popup(
             "Open desktop folders in:", ["New Window", "New Tab"], s.desktopFoldersInTabs ? 1 : 0,
-            enabled: { !s.desktopModeDisabled }
+            enabled: { s.desktopModeEnabled }
         ) { s.desktopFoldersInTabs = $0 == 1 }
         f.popup(
             "Window size:", ["Standard", "Maximized"], s.desktopOpenMaximized ? 1 : 0,
-            enabled: { !s.desktopModeDisabled }
+            enabled: { s.desktopModeEnabled }
         ) { s.desktopOpenMaximized = $0 == 1 }
         f.note("Standard keeps an existing tab window’s size. Maximized fills its screen without entering full screen.")
         f.note(
-            "Desktop Mode starts with Porpoise and keeps running when browser windows close. It uses the same file names, hover and display settings as the browser."
+            "Experimental. Desktop Mode shows the Desktop folder on every display, starts with Porpoise and keeps running when browser windows close. Finder’s own desktop icons stay underneath, and dragging files onto the desktop isn’t supported yet."
         )
     }
 
