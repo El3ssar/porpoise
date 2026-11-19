@@ -45,8 +45,8 @@ public final class Settings {
     @Pref("showGitStatus") public var showGitStatus: Bool = true
     @Pref("allowCommandLineControl") public var allowCommandLineControl = false
 
-    /// The desktop is active at app launch unless the user explicitly disables it.
-    @Pref("desktopModeDisabled") public var desktopModeDisabled = false
+    /// Experimental and opt-in: the desktop surfaces exist only after the user enables them.
+    @Pref("desktopModeEnabled") public var desktopModeEnabled = false
     @Pref("desktopShowMenuBarIcon") public var desktopShowMenuBarIcon = true
     @Pref("desktopMonochromeMenuBarIcon") public var desktopMonochromeMenuBarIcon = false
     @Pref("desktopFoldersInTabs") public var desktopFoldersInTabs = false

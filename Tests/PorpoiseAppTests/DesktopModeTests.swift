@@ -35,47 +35,47 @@ import Testing
         return controller
     }
 
-    @Test func defaultOnOptOutAndQuitPreferenceSurviveNewSessions() throws {
+    @Test func optInDefaultAndQuitPreferenceSurviveNewSessions() throws {
         let scratch = try Scratch()
         var creations = 0
         let mode = DesktopModeController {
             creations += 1; return makeDesktop(location: scratch.url)
         }
         defer { mode.stop() }
-        #expect(!mode.isEnabled && creations == 0 && !Settings.shared.desktopModeDisabled)
+        #expect(!mode.isEnabled && creations == 0 && !Settings.shared.desktopModeEnabled)
         #expect(Settings.shared.desktopShowMenuBarIcon && !Settings.shared.desktopMonochromeMenuBarIcon)
         #expect(!Settings.shared.desktopFoldersInTabs && !Settings.shared.desktopOpenMaximized)
+        // Launching alone creates nothing: the desktop exists only after the user opts in.
         mode.start()
+        #expect(!mode.isEnabled && creations == 0 && mode.windowController == nil)
+        mode.setEnabled(true)
         let controller = try #require(mode.windowController)
-        #expect(mode.isEnabled && controller.desktopWindows.count == 1)
+        #expect(mode.isEnabled && Settings.shared.desktopModeEnabled && controller.desktopWindows.count == 1)
         #expect(controller.desktopWindows.values.allSatisfy { $0.window?.styleMask == [.borderless, .nonactivatingPanel] })
         mode.start(); mode.setEnabled(true)
         #expect(creations == 1 && mode.windowController === controller)
         mode.stop()
-        #expect(!Settings.shared.desktopModeDisabled && controller.model == nil && controller.desktopWindows.isEmpty)
+        #expect(Settings.shared.desktopModeEnabled && controller.model == nil && controller.desktopWindows.isEmpty)
         mode.start()
         #expect(mode.isEnabled && creations == 2)
         mode.setEnabled(false)
-        #expect(Settings.shared.desktopModeDisabled && !mode.isEnabled)
+        #expect(!Settings.shared.desktopModeEnabled && !mode.isEnabled)
         mode.stop()
         let next = DesktopModeController { makeDesktop(location: scratch.url) }
         defer { next.stop() }
         next.start()
         #expect(!next.isEnabled)
         next.setEnabled(true)
-        #expect(next.isEnabled && !Settings.shared.desktopModeDisabled)
-        next.setEnabled(false)
+        #expect(next.isEnabled && Settings.shared.desktopModeEnabled)
+        // Restore All Defaults turns the experiment off again, at once.
         Settings.shared.resetAll()
-        #expect(next.isEnabled && !Settings.shared.desktopModeDisabled)
-        next.stop()
-        Settings.shared.resetAll()
-        #expect(!next.isEnabled)
+        #expect(!next.isEnabled && !Settings.shared.desktopModeEnabled)
     }
 
     @Test func disablingFromTheMenuClosesSurfacesAndReleasesTheListing() async throws {
         let scratch = try Scratch()
         let mode = DesktopModeController { makeDesktop(location: scratch.url) }
-        mode.start()
+        mode.start(); mode.setEnabled(true)
         defer { mode.stop() }
         let controller = try #require(mode.windowController)
         try #require(await eventually { controller.model?.isLoading == false })
@@ -88,7 +88,7 @@ import Testing
         #expect(!menu.items.contains { $0.title.contains("Controls") })
         let disable = try #require(menu.items.firstIndex { $0.title == "Disable Desktop Mode" })
         menu.performActionForItem(at: disable)
-        #expect(!mode.isEnabled && Settings.shared.desktopModeDisabled)
+        #expect(!mode.isEnabled && !Settings.shared.desktopModeEnabled)
         #expect(controller.model == nil && controller.desktopWindows.isEmpty && controller.statusItem == nil)
         #expect(windows.allSatisfy { !$0.isVisible })
         #expect(await eventually { model == nil })
@@ -125,9 +125,17 @@ import Testing
         #expect(missing.statusText.hasPrefix("Couldn’t read Desktop:"))
         #expect(missing.grids.first?.frames.isEmpty == true)
         #expect(missing.statusItem?.menu?.items.contains { $0.title == "Refresh" } == true)
+        // Empty desktop belongs to Finder underneath, so the background commands are in the menu-bar menu.
+        let titles = empty.statusItem?.menu?.items.map(\.title) ?? []
+        for title in ["New Folder…", "Add Application Shortcut…", "Sort By", "Start Corner", "Disable Desktop Mode", "Quit Porpoise"] {
+            #expect(titles.contains(title), "\(title) is missing from \(titles)")
+        }
+        let menu = try #require(empty.statusItem?.menu)
+        empty.menuNeedsUpdate(menu)
+        #expect(menu.items.first?.title == empty.statusText && menu.items.map(\.title) == titles)
     }
 
-    @Test func disableSettingIsInvertedAndDoesNotChangeBrowserSettings() throws {
+    @Test func enableSettingStartsOffAndDoesNotChangeBrowserSettings() throws {
         let scratch = try Scratch()
         let mode = DesktopModeController { makeDesktop(location: scratch.url) }
         mode.start()
@@ -135,15 +143,15 @@ import Testing
         let form = FormBuilder()
         SettingsPages.desktopMode(form, controller: mode)
         func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
-        let checkbox = try #require(views(form.view).compactMap { $0 as? NSButton }.first { $0.title == "Disable Desktop Mode" })
-        #expect(checkbox.state == .off && mode.isEnabled)
+        let checkbox = try #require(views(form.view).compactMap { $0 as? NSButton }.first { $0.title == "Enable Desktop Mode" })
+        #expect(checkbox.state == .off && !mode.isEnabled)
         let browser = MainWindowController(urls: [scratch.url])
         defer { browser.close() }
         let props = browser.view.model.props
         checkbox.performClick(nil)
-        #expect(checkbox.state == .on && !mode.isEnabled && Settings.shared.desktopModeDisabled)
+        #expect(checkbox.state == .on && mode.isEnabled && Settings.shared.desktopModeEnabled)
         checkbox.performClick(nil)
-        #expect(checkbox.state == .off && mode.isEnabled && !Settings.shared.desktopModeDisabled)
+        #expect(checkbox.state == .off && !mode.isEnabled && !Settings.shared.desktopModeEnabled)
         #expect(browser.view.model.props == props && browser.view.url == scratch.url)
     }
 
@@ -175,7 +183,7 @@ import Testing
 
     @Test func hidingTheAppAndClosingBrowserWindowsKeepTheDesktopRunning() async throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start()
+        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start(); mode.setEnabled(true)
         let wasHidden = NSApp.isHidden
         defer { mode.stop(); if !wasHidden { NSApp.unhideWithoutActivation() } }
         let controller = try #require(mode.windowController)
@@ -189,8 +197,9 @@ import Testing
         browser.close()
         let delegate = AppDelegate(desktopMode: mode)
         #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        // Quit is never refused on the desktop's account, whoever asks; the choice stays for the next launch.
         #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
-        #expect(!Settings.shared.desktopModeDisabled)
+        #expect(Settings.shared.desktopModeEnabled)
     }
 
     @Test func displayChangesReconcileWindowsAndStopBeingObservedAfterDisable() async throws {
@@ -230,40 +239,6 @@ import Testing
         notifications.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         await Task.yield()
         #expect(reads == readsBefore && controller.desktopWindows.isEmpty)
-    }
-
-    @Test func activeDesktopRejectsAutomationQuitAndPreservesUserAndSystemQuit() throws {
-        let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url, displays: { [] }) }
-        defer { mode.setEnabled(false) }
-        func quit(reason: OSType? = nil) -> NSAppleEventDescriptor {
-            let event = NSAppleEventDescriptor(
-                eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEQuitApplication), targetDescriptor: nil,
-                returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))
-            if let reason { event.setParam(NSAppleEventDescriptor(enumCode: reason), forKeyword: AEKeyword(kAEQuitReason)) }
-            return event
-        }
-        // Sender PID is a read-only attribute supplied by macOS; test the policy with explicit sender facts.
-        func protects(_ event: NSAppleEventDescriptor?, pid: pid_t? = Int32.max, bundle: String? = "example.window-manager") -> Bool {
-            mode.protectsDesktop(from: event, senderPID: pid, senderBundleIdentifier: bundle)
-        }
-        let external = quit()
-        #expect(!protects(external))
-        mode.setEnabled(true)
-        let controller = try #require(mode.windowController)
-        #expect(protects(external))
-        controller.setDesktopPlacementEnabled(true)
-        #expect(protects(external))
-        #expect(protects(external, pid: nil, bundle: nil))
-        #expect(!protects(nil))  // Native menu / Cmd+Q invokes terminate directly.
-        #expect(!protects(external, pid: ProcessInfo.processInfo.processIdentifier))
-        #expect(!protects(external, bundle: "com.apple.dock"))
-        #expect(!protects(external, bundle: "com.apple.loginwindow"))
-        for reason in [kAEQuitAll, kAEShutDown, kAERestart, kAEReallyLogOut] {
-            #expect(!protects(quit(reason: reason)))
-        }
-        controller.setDesktopPlacementEnabled(false)
-        #expect(!protects(external))
     }
 
     @Test func allFourCornersSnapToDistinctCellsAndResizeRepairsCollisions() {
@@ -309,7 +284,7 @@ import Testing
         #expect(DesktopGridPreferences.load(from: Settings.store).corner == .topLeft)
     }
 
-    @Test func desktopSurfaceReceivesWindowServerHitsAndMouseSelection() async throws {
+    @Test func desktopItemsReceiveWindowServerHitsAndEmptyDesktopPassesThemOn() async throws {
         let scratch = try Scratch()
         _ = try scratch.file("desktop-hit.txt", "unchanged")
         let displays = NSScreen.screens.enumerated().map { DesktopDisplay(id: CGDirectDisplayID($0.offset + 11), frame: $0.element.visibleFrame) }
@@ -343,10 +318,15 @@ import Testing
             #expect(
                 await eventually(3) { desktopHit(at: icon) == window.windowNumber },
                 "The desktop icon must receive the real Window Server hit")
+            // The label's line is short: the cell's corner has no drawn pixel of the item, only the cell's hit fill.
+            let cell = grid.geometry.frame(for: 0)
+            #expect(
+                await eventually(3) { desktopHit(at: NSPoint(x: cell.minX + 3, y: cell.minY + 3)) == window.windowNumber },
+                "The whole cell of an item must take clicks")
             let empty = grid.geometry.frame(for: 1)
             #expect(
-                await eventually(3) { desktopHit(at: NSPoint(x: empty.midX, y: empty.midY)) == window.windowNumber },
-                "Empty desktop cells must receive right-clicks too")
+                await eventually(3) { desktopHit(at: NSPoint(x: empty.midX, y: empty.midY)) != window.windowNumber },
+                "Empty desktop must pass clicks on to what is underneath (Finder's desktop)")
             let event = try #require(
                 NSEvent.mouseEvent(
                     with: .leftMouseDown, location: grid.convert(icon, to: nil), modifierFlags: [], timestamp: 0,
@@ -796,8 +776,8 @@ import Testing
         let scratch = try Scratch()
         Settings.shared.desktopShowMenuBarIcon = false
         let mode = DesktopModeController { makeDesktop(location: scratch.url) }
-        mode.start(); defer { mode.stop() }
-        #expect(mode.windowController?.statusItem == nil)
+        mode.start(); mode.setEnabled(true); defer { mode.stop() }
+        #expect(mode.isEnabled && mode.windowController?.statusItem == nil)
         #expect(!AppDelegate(desktopMode: mode).applicationShouldTerminateAfterLastWindowClosed(NSApp))
     }
 
@@ -822,13 +802,13 @@ import Testing
 
     @Test func desktopOptionControlsPersistAndFollowTheirEnabledState() throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start()
+        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start(); mode.setEnabled(true)
         defer { mode.stop() }
         let form = FormBuilder(); SettingsPages.desktopMode(form, controller: mode)
         func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
         let controls = views(form.view)
         let show = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Show icon in menu bar" })
-        let disabled = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Disable Desktop Mode" })
+        let enabled = try #require(controls.compactMap { $0 as? NSButton }.first { $0.title == "Enable Desktop Mode" })
         let style = try #require(controls.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles == ["Color", "Monochrome"] })
         let folders = try #require(controls.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles == ["New Window", "New Tab"] })
         let size = try #require(controls.compactMap { $0 as? NSPopUpButton }.first { $0.itemTitles == ["Standard", "Maximized"] })
@@ -841,9 +821,9 @@ import Testing
         show.performClick(nil)
         #expect(!style.isEnabled && mode.windowController?.statusItem == nil)
         #expect(!Settings.store.bool(forKey: "desktopShowMenuBarIcon"))
-        disabled.performClick(nil)
+        enabled.performClick(nil)
         #expect(!show.isEnabled && !folders.isEnabled && !size.isEnabled)
-        disabled.performClick(nil)
+        enabled.performClick(nil)
         #expect(show.isEnabled && folders.isEnabled && size.isEnabled && !style.isEnabled)
         show.performClick(nil)
         #expect(style.isEnabled && mode.windowController?.statusItem?.button?.image?.isTemplate == true)

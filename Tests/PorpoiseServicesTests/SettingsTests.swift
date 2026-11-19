@@ -11,7 +11,7 @@ import Testing
 
     @Test func defaultsWhenNothingIsStored() {
         #expect(!s.allowCommandLineControl)
-        #expect(!s.desktopModeDisabled && s.desktopShowMenuBarIcon && !s.desktopMonochromeMenuBarIcon)
+        #expect(!s.desktopModeEnabled && s.desktopShowMenuBarIcon && !s.desktopMonochromeMenuBarIcon)
         #expect(!s.desktopFoldersInTabs && !s.desktopOpenMaximized)
         #expect(s.startup == .lastSession)
         #expect(s.showGitStatus)
@@ -337,7 +337,7 @@ import Testing
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
         #expect(
             keys == [
-                "showGitStatus", "allowCommandLineControl", "desktopModeDisabled", "desktopShowMenuBarIcon", "desktopMonochromeMenuBarIcon",
+                "showGitStatus", "allowCommandLineControl", "desktopModeEnabled", "desktopShowMenuBarIcon", "desktopMonochromeMenuBarIcon",
                 "desktopFoldersInTabs", "desktopOpenMaximized", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize",
                 "filterBar", "alwaysTabBar",
                 "tabClose", "tabStyle",

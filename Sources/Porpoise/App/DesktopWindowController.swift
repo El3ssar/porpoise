@@ -12,7 +12,13 @@ import PorpoiseServices
     private(set) var windowController: DesktopWindowController?
     var isEnabled: Bool { windowController != nil }
 
-    init(makeWindow: @escaping @MainActor () -> DesktopWindowController = { DesktopWindowController() }) {
+    init(
+        makeWindow: @escaping @MainActor () -> DesktopWindowController = {
+            // A test instance shows the folder it was given, never the real Desktop.
+            TestEnvironment.desktopDirectory.value().map { DesktopWindowController(location: URL(fileURLWithPath: $0, isDirectory: true)) }
+                ?? DesktopWindowController()
+        }
+    ) {
         self.makeWindow = makeWindow
     }
 
@@ -23,11 +29,11 @@ import PorpoiseServices
     func start() {
         if settingsObservation == nil {
             settingsObservation = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
-                guard n.object == nil || n.object as? String == "desktopModeDisabled" else { return }
-                MainActor.assumeIsolated { self?.applyEnabled(!Settings.shared.desktopModeDisabled) }
+                guard n.object == nil || n.object as? String == "desktopModeEnabled" else { return }
+                MainActor.assumeIsolated { self?.applyEnabled(Settings.shared.desktopModeEnabled) }
             }
         }
-        applyEnabled(!Settings.shared.desktopModeDisabled)
+        applyEnabled(Settings.shared.desktopModeEnabled)
     }
 
     /// Quitting tears down this session without changing the user's choice for the next launch.
@@ -38,7 +44,7 @@ import PorpoiseServices
     }
 
     func setEnabled(_ enabled: Bool) {
-        if Settings.shared.desktopModeDisabled == enabled { Settings.shared.desktopModeDisabled = !enabled }
+        if Settings.shared.desktopModeEnabled != enabled { Settings.shared.desktopModeEnabled = enabled }
         applyEnabled(enabled)
     }
 
@@ -57,32 +63,10 @@ import PorpoiseServices
         }
         NotificationCenter.default.post(name: Self.changed, object: self)
     }
-
-    /// Window managers may send Quit when the last ordinary window closes, overlooking desktop surfaces.
-    /// Decide in our normal termination callback; do not install an AppleEvent handler or change another app.
-    func protectsDesktop(
-        from event: NSAppleEventDescriptor?,
-        senderPID: pid_t?, senderBundleIdentifier: String?
-    ) -> Bool {
-        guard windowController?.desktopPlacementEnabled == true,
-            let event, event.eventClass == AEEventClass(kCoreEventClass), event.eventID == AEEventID(kAEQuitApplication)
-        else { return false }
-        if let reason = event.paramDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue,
-            [kAEQuitAll, kAEShutDown, kAERestart, kAEReallyLogOut].contains(reason)
-        {
-            return false
-        }
-        if let pid = senderPID {
-            if pid == ProcessInfo.processInfo.processIdentifier { return false }
-            // Preserve the system Dock's explicit Quit and loginwindow's session termination.
-            if let bundle = senderBundleIdentifier, ["com.apple.dock", "com.apple.loginwindow"].contains(bundle) { return false }
-        }
-        return true
-    }
 }
 
 /// All desktop surfaces share this listing; there is no separate preview or control window.
-final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuItemValidation {
+final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuItemValidation, NSMenuDelegate {
     private(set) var model: DirectoryModel?
     private(set) var statusText = "Loading…"
     private let statusEntry = NSMenuItem(title: "Loading…", action: nil, keyEquivalent: "")
@@ -229,21 +213,34 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
         item.button?.toolTip = "Porpoise Desktop Mode"
         item.button?.setAccessibilityLabel("Porpoise Desktop Mode")
         let menu = NSMenu()
+        menu.delegate = self
+        fillStatusMenu(menu)
+        item.menu = menu
+        statusItem = item
+    }
+
+    /// Clicks on empty desktop go to Finder underneath, so the commands of the desktop's own background menu
+    /// (New Folder, Paste, Sort By, Start Corner…) live here.
+    private func fillStatusMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
         menu.addItem(statusEntry)
         menu.addItem(.separator())
-        for entry in [
-            NSMenuItem.make("Show in Porpoise", #selector(showPorpoise), icon: "document-open-folder"),
-            .make("Refresh", #selector(reload), icon: "view-refresh"),
-            .make("Disable Desktop Mode", #selector(disableMode), icon: "tab-close"),
-        ] {
-            entry.target = self; menu.addItem(entry)
+        let show = NSMenuItem.make("Show in Porpoise", #selector(showPorpoise), icon: "document-open-folder")
+        show.target = self; menu.addItem(show)
+        menu.addItem(.separator())
+        let background = desktopMenu(for: nil)
+        for entry in background.items {
+            background.removeItem(entry); menu.addItem(entry)
         }
         menu.addItem(.separator())
         let quit = NSMenuItem.make("Quit Porpoise", #selector(NSApplication.terminate(_:)), key: "q")
         quit.target = NSApp; menu.addItem(quit)
         MenuCommandRegistry.shared.apply(to: menu)
-        item.menu = menu
-        statusItem = item
+    }
+
+    /// As when the background menu opened: the Paste title, the sort marks and the start corner are current.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === statusItem?.menu { fillStatusMenu(menu) }
     }
 
     /// The existing app mark, as a black/clear template so the menu bar supplies its native contrast.
@@ -296,7 +293,7 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     }
 
     @objc func disableMode() {
-        if let onDisable { onDisable() } else { Settings.shared.desktopModeDisabled = true; close() }
+        if let onDisable { onDisable() } else { Settings.shared.desktopModeEnabled = false; close() }
     }
 
     private func updateListing() {
@@ -411,8 +408,9 @@ final class DesktopSurfaceWindowController: NSWindowController {
         // Hiding the browser app must leave its desktop surfaces in place.
         window.canHide = false
         window.isOpaque = false
-        // Zero-alpha pixels are click-through in Window Server, including empty grid cells.
-        window.backgroundColor = NSColor.black.withAlphaComponent(1.0 / 255)
+        // Zero-alpha pixels are click-through in Window Server: empty desktop stays Finder's (its menu, widgets,
+        // click to show the desktop). Each item's cell takes clicks through `DesktopGridView.hitFill`.
+        window.backgroundColor = .clear
         window.hasShadow = false
         window.isRestorable = false
         window.isReleasedWhenClosed = false

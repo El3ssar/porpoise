@@ -18,7 +18,22 @@ extension DebugBridge {
         "settingsscroll": DebugBridge.settingsscrollCommand,
         "settings": DebugBridge.settingsCommand,
         "contrast": DebugBridge.contrastCommand,
+        "desktop": DebugBridge.desktopCommand,
     ]
+
+    /// desktop <file>: Desktop Mode as JSON: whether it is on, its folder, the names it lists, its surfaces and status.
+    func desktopCommand(_ arg: String) {
+        let controller = DesktopModeController.shared.windowController
+        let report: [String: Any] = [
+            "enabled": DesktopModeController.shared.isEnabled, "setting": Settings.shared.desktopModeEnabled,
+            "location": controller?.model?.location.path ?? "", "loading": controller?.model?.isLoading ?? false,
+            "rows": controller?.model?.rows.map(\.item.name) ?? [], "surfaces": controller?.desktopWindows.count ?? 0,
+            "status": controller?.statusText ?? "", "menuBarIcon": controller?.statusItem != nil,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: URL(fileURLWithPath: arg))
+        }
+    }
 
     /// contrast on|off|system: Increase Contrast as the theme sees it, without changing the Mac's setting.
     func contrastCommand(_ arg: String) {

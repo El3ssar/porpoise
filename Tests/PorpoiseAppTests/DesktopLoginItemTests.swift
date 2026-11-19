@@ -19,7 +19,7 @@ import Testing
 
     @Test func registrationUsesSystemStateAndCanBeRemovedWithoutStoppingTheDesktop() async throws {
         let scratch = try Scratch(), desktop = mode(scratch.url)
-        desktop.start(); defer { desktop.stop() }
+        desktop.start(); desktop.setEnabled(true); defer { desktop.stop() }
         var status = SMAppService.Status.notRegistered, registrations = 0, removals = 0, settings = 0
         let login = DesktopLoginItem(
             available: { true }, status: { status },
@@ -39,7 +39,7 @@ import Testing
         await login.setEnabled(true)
         #expect(registrations == 1)
         await login.setEnabled(false)
-        #expect(!login.isRegistered && removals == 1 && desktop.isEnabled && !Settings.shared.desktopModeDisabled)
+        #expect(!login.isRegistered && removals == 1 && desktop.isEnabled && Settings.shared.desktopModeEnabled)
     }
 
     @Test func errorsDoNotPretendLoginStartupIsEnabledAndCanBeRetried() async {
@@ -104,7 +104,7 @@ import Testing
 
     @Test func loginLaunchKeepsOnlyTheDesktopAndPreservesTheSavedSession() async throws {
         let scratch = try Scratch(), desktop = mode(scratch.url)
-        desktop.start(); defer { desktop.stop() }
+        desktop.start(); desktop.setEnabled(true); defer { desktop.stop() }
         let app = AppDelegate(desktopMode: desktop)
         Settings.shared.homeURL = scratch.url
         let session = SessionState(windows: [WindowLayout(tabs: [TabLayout(primary: PaneLayout(url: scratch.url))])])
@@ -124,7 +124,7 @@ import Testing
 
     @Test func explicitlyReopeningTheAppRestoresTheDeferredBrowserSession() throws {
         let scratch = try Scratch(), desktop = mode(scratch.url)
-        desktop.start(); defer { desktop.stop() }
+        desktop.start(); desktop.setEnabled(true); defer { desktop.stop() }
         let one = try scratch.folder("One"), two = try scratch.folder("Two")
         Settings.shared.homeURL = scratch.url
         let session = SessionState(windows: [
@@ -141,7 +141,7 @@ import Testing
 
     @Test func loginControlTracksApprovalAndCanBeUncheckedWhileDesktopModeIsDisabled() async throws {
         let scratch = try Scratch(), desktop = mode(scratch.url)
-        desktop.start(); defer { desktop.stop() }
+        desktop.start(); desktop.setEnabled(true); defer { desktop.stop() }
         var status = SMAppService.Status.notRegistered
         let login = DesktopLoginItem(
             available: { true }, status: { status }, register: { status = .requiresApproval }, unregister: { status = .notRegistered })

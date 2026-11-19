@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let loginLaunch = DesktopLoginItem.wasLaunchedAtLogin(NSAppleEventManager.shared().currentAppleEvent)
         var args = Self.folderArguments()
         desktopOnlyLaunch = loginLaunch && args.isEmpty && windows.isEmpty
-        if desktopOnlyLaunch && Settings.shared.desktopModeDisabled { NSApp.terminate(nil); return }
+        if desktopOnlyLaunch && !Settings.shared.desktopModeEnabled { NSApp.terminate(nil); return }
         Diagnostics.launched()
         followLook()
         NSApp.mainMenu = buildMainMenu()
@@ -66,8 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // First launch: the browser window at once, with the welcome as a sheet on it (only when launched plainly).
         let welcome = !desktopOnlyLaunch && args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
         openInitialWindows(args, desktopOnly: desktopOnlyLaunch)
-        // Generic test hosts must not start watching the real Desktop. The isolated prototype is an attended app.
-        if !Settings.isTesting || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" { desktopMode.start() }
+        // Generic test hosts must not start watching the real Desktop: a test instance has a desktop only when it is
+        // given a folder to stand in for it (PORPOISE_DESKTOP_DIR). The isolated prototype is an attended app.
+        if !Settings.isTesting || TestEnvironment.desktopDirectory.isSet || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" {
+            desktopMode.start()
+        }
         DispatchQueue.main.async { AppAutomation.shared.start() }
         if welcome { OnboardingWindowController.show(on: windows.first?.window) }
         if !desktopOnlyLaunch { startInteractiveServices() }
@@ -180,10 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let event = NSAppleEventManager.shared().currentAppleEvent
-        let pid = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
-        let bundle = pid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
-        if desktopMode.protectsDesktop(from: event, senderPID: pid, senderBundleIdentifier: bundle) { return .terminateCancel }
         // Dolphin asks before quitting with several tabs open.
         if Settings.shared.confirmCloseTabs, windows.contains(where: { $0.tabs.count > 1 }) {
             let a = NSAlert()
