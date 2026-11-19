@@ -9,7 +9,7 @@ extension ItemListView {
         super.updateTrackingAreas()
         if let t = trackingArea { removeTrackingArea(t) }
         let t = NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, tracksWithoutKeyWindow ? .activeAlways : .activeInKeyWindow, .inVisibleRect],
             owner: self, userInfo: nil)
         addTrackingArea(t)
         trackingArea = t
@@ -44,9 +44,9 @@ extension ItemListView {
     /// The rows changed (reload, sort, filter…) under a still pointer: hover what is under it now, so the status bar
     /// and the Information panel don't keep describing an item that moved away or no longer exists.
     func refreshHover() {
-        guard let w = window, w.isKeyWindow || hoverIndex != nil else { return }
+        guard let w = window, w.isKeyWindow || tracksWithoutKeyWindow || hoverIndex != nil else { return }
         let p = convert(w.mouseLocationOutsideOfEventStream, from: nil)
-        let i = w.isKeyWindow && visibleRect.contains(p) ? index(at: p) : nil
+        let i = (w.isKeyWindow || tracksWithoutKeyWindow) && visibleRect.contains(p) ? index(at: p) : nil
         let url = i.map { model.rows[$0].item.url }
         if i != hoverIndex { hoverIndex = i } else if url != hoveredURL { hoverChanged(hoverIndex) }
     }
@@ -107,7 +107,7 @@ extension ItemListView {
         // Column view: a click in another column gives it the focus, even on the item already selected there.
         defer { if mode == .columns, event.clickCount == 1 { columnNavigator?.columnClicked(self) } }
 
-        if event.clickCount == 2 {
+        if isOpeningClick(event) {
             if let i = idx {
                 if expanderRect(i)?.contains(p) == true { return }
                 openingByDoubleClick = true

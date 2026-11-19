@@ -21,31 +21,8 @@ extension MainWindowController {
 
     func sub(_ title: String, _ icon: String?, _ menu: NSMenu) -> NSMenuItem { .submenu(title, icon: icon, menu) }
 
-    func sortMenu() -> NSMenu {
-        let m = NSMenu(title: "Sort By")
-        for role in ItemRole.menuRoles where role != .tags {
-            m.addItem(item(role.title, nil, #selector(sortBy(_:)), obj: role.rawValue))
-        }
-        let other = NSMenu()
-        for role in ItemRole.otherRoles { other.addItem(item(role.title, nil, #selector(sortBy(_:)), obj: role.rawValue)) }
-        m.addItem(sub("Other", nil, other))
-        m.addItem(.separator())
-        m.addItem(item("A-Z", "view-sort-ascending", #selector(setSortAscending(_:))))
-        m.addItem(item("Z-A", "view-sort-descending", #selector(setSortDescending(_:))))
-        m.addItem(.separator())
-        m.addItem(item("Folders First", nil, #selector(toggleFoldersFirst(_:))))
-        m.addItem(item("Hidden Files Last", nil, #selector(toggleHiddenLast(_:))))
-        return m
-    }
-
-    func groupMenu() -> NSMenu {
-        let m = NSMenu(title: "Group By")
-        m.addItem(item("None", nil, #selector(groupBy(_:))))
-        m.addItem(item("Same as Sort", nil, #selector(groupBy(_:)), obj: "same"))
-        m.addItem(.separator())
-        for role in ItemRole.menuRoles where role != .tags { m.addItem(item(role.title, nil, #selector(groupBy(_:)), obj: role.rawValue)) }
-        return m
-    }
+    func sortMenu() -> NSMenu { FileContextMenu.sortMenu() }
+    func groupMenu() -> NSMenu { FileContextMenu.groupMenu() }
 
     func additionalInfoMenu() -> NSMenu {
         let m = NSMenu(title: "Show Additional Information")

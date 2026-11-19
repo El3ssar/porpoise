@@ -5,6 +5,11 @@ import QuartzCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let shared = AppDelegate()
+    private let desktopModeOverride: DesktopModeController?
+    @MainActor private var desktopMode: DesktopModeController {
+        if let desktopModeOverride { return desktopModeOverride }
+        return .shared
+    }
     private(set) var windows: [MainWindowController] = []
     private var sessionSave: DispatchWorkItem?
     /// The last session wasn't reopened, because reopening it was what went wrong last time.
@@ -12,11 +17,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindowController?
     private var lookObservation: NSKeyValueObservation?
     private var drewInitialWindow = false
+    private(set) var desktopOnlyLaunch = false
+    private(set) var interactiveServicesStarted = false
     /// Set while a session is being reopened: still set at the next launch, reopening it crashed or hung, and that launch
     /// opens the home folder instead of trying again.
     static let restoringKey = "session.restoring"
     /// How long after its windows appear a reopened session counts as restored: its folders have listed by then.
     static let restoreSettleTime: TimeInterval = 5
+
+    init(desktopMode: DesktopModeController? = nil) {
+        desktopModeOverride = desktopMode
+        super.init()
+    }
 
     // MARK: - Launch and quit
 
@@ -30,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let loginLaunch = DesktopLoginItem.wasLaunchedAtLogin(NSAppleEventManager.shared().currentAppleEvent)
+        var args = Self.folderArguments()
+        desktopOnlyLaunch = loginLaunch && args.isEmpty && windows.isEmpty
+        if desktopOnlyLaunch && !Settings.shared.desktopModeEnabled { NSApp.terminate(nil); return }
         Diagnostics.launched()
         followLook()
         NSApp.mainMenu = buildMainMenu()
@@ -40,19 +56,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         #if PORPOISE_TEST_HOOKS
         if Settings.isTesting { DebugBridge.shared.start() }
         #endif
-        var args = Self.folderArguments()
         // Launched by Archive Utility to reveal what it unpacked: macOS doesn't say what (see RevealInference).
-        if args.isEmpty, windows.isEmpty, SystemIntegration.isDefaultBrowser,
+        if !desktopOnlyLaunch, args.isEmpty, windows.isEmpty, SystemIntegration.isDefaultBrowser,
             NSAppleEventManager.shared().currentAppleEvent?.eventID == AEEventID(kAEOpenApplication),
             let item = RevealInference.launchItem(folders: RevealInference.folders(shown: savedSessionFolders))
         {
             args = [(item.deletingLastPathComponent(), item)]
         }
         // First launch: the browser window at once, with the welcome as a sheet on it (only when launched plainly).
-        let welcome = args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
-        openInitialWindows(args)
+        let welcome = !desktopOnlyLaunch && args.isEmpty && windows.isEmpty && OnboardingWindowController.shouldShow
+        openInitialWindows(args, desktopOnly: desktopOnlyLaunch)
+        // Generic test hosts must not start watching the real Desktop: a test instance has a desktop only when it is
+        // given a folder to stand in for it (PORPOISE_DESKTOP_DIR). The isolated prototype is an attended app.
+        if !Settings.isTesting || TestEnvironment.desktopDirectory.isSet || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" {
+            desktopMode.start()
+        }
         DispatchQueue.main.async { AppAutomation.shared.start() }
         if welcome { OnboardingWindowController.show(on: windows.first?.window) }
+        if !desktopOnlyLaunch { startInteractiveServices() }
+    }
+
+    private func startInteractiveServices() {
+        guard !interactiveServicesStarted else { return }
+        interactiveServicesStarted = true
         Updates.shared.start()
         PrivilegedHelper.migrateFromLoginItems()
         // After the windows are up, so the question has something behind it.
@@ -79,7 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func openInitialWindows(_ args: [(folder: URL, select: URL?)]) {
+    func openInitialWindows(_ args: [(folder: URL, select: URL?)], desktopOnly: Bool = false) {
+        desktopOnlyLaunch = desktopOnly
+        guard !desktopOnly else { return }
         if !args.isEmpty {
             // A file argument opens its folder with the file selected (Dolphin's --select).
             newWindow(urls: args.map(\.folder))
@@ -144,8 +172,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Archive Utility revealing what it unpacked arrives as a bare reopen (see RevealInference).
         if revealUnpacked(after: NSAppleEventManager.shared().currentAppleEvent) { return false }
+        if desktopOnlyLaunch && !drewInitialWindow {
+            openInitialWindows([])
+            startInteractiveServices()
+            return false
+        }
         // Minimized windows are brought back by AppKit; a new one only when there is none.
-        if !flag && windows.isEmpty { newWindow(at: Settings.shared.homeURL) }
+        if windows.isEmpty && (!flag || desktopMode.isEnabled) { newWindow(at: Settings.shared.homeURL) }
         return true
     }
 
@@ -208,11 +241,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // AppKit can ask when a drag-image window disappears after hiding. Hidden or ordered-out browser
-        // windows still belong to this session; only closing the last real browser should quit it.
-        !sender.isHidden && windows.isEmpty
+        // windows still belong to this session. An active desktop also keeps the app running without browsers.
+        !sender.isHidden && windows.isEmpty && desktopMode.windowController?.desktopPlacementEnabled != true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        desktopMode.stop()
         Diagnostics.quitting()
         FileOperationsController.shared.interruptAll()
         VideoPreview.shared.cleanUp()
@@ -220,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AndroidTools.stopServerIfOurs()
         saveSession()
         // Quitting while a session reopens isn't a failed restore.
-        Settings.store.removeObject(forKey: Self.restoringKey)
+        if !desktopOnlyLaunch || drewInitialWindow { Settings.store.removeObject(forKey: Self.restoringKey) }
         CloudStateWriter.shared.flushAll()
     }
 
@@ -286,6 +320,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func newWindow(urls: [URL], split: [URL?] = []) { show(add(MainWindowController(urls: urls, split: split))) }
 
+    /// Desktop-specific opening policy; ordinary browser opens and the global single-window setting are unchanged.
+    @discardableResult
+    func openDesktopFolders(_ urls: [URL], inTabs: Bool, maximized: Bool, screen: NSScreen? = nil) -> [MainWindowController] {
+        guard !urls.isEmpty else { return [] }
+        defer { NSApp.activate() }
+        if inTabs, let existing = windows.first(where: { $0.window === NSApp.mainWindow }) ?? windows.last {
+            for url in urls { existing.addTab(url: url) }
+            if let window = existing.window {
+                window.deminiaturize(nil)
+                if maximized, !window.styleMask.contains(.fullScreen), let target = window.screen ?? screen ?? NSScreen.main {
+                    window.setFrame(target.visibleFrame, display: true)
+                }
+                window.makeKeyAndOrderFront(nil)
+            }
+            return [existing]
+        }
+        return (inTabs ? [urls] : urls.map { [$0] }).map { folders in
+            let controller = add(MainWindowController(urls: folders))
+            if maximized, let window = controller.window, let target = screen ?? window.screen ?? NSScreen.main {
+                window.setFrame(target.visibleFrame, display: false)
+            }
+            show(controller)
+            return controller
+        }
+    }
+
     /// A window showing `layout` where a new window goes (its saved frame aside); false when it can't be applied.
     func newWindow(layout: WindowLayout) -> Bool {
         var layout = layout
@@ -318,6 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wc.window?.contentView?.layoutSubtreeIfNeeded()
         wc.window?.contentView?.displayIfNeeded()
         CATransaction.flush()
+        if desktopOnlyLaunch { startInteractiveServices() }
         let store = Settings.store
         DispatchQueue.main.async {
             if Settings.store === store { Settings.shared.prepareCustomToolsAfterFirstWindow() }
@@ -417,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate()
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
+        if desktopOnlyLaunch { startInteractiveServices() }
     }
 
     /// Settings, on the page with this title (or an old page's), scrolled to `section` when given.

@@ -5,7 +5,8 @@ Three ways to drive the real app:
 - **`acceptance.py`: isolated acceptance run, light and dark.**
   - Builds nothing itself; run it against a test build, `CONFIG=debug scripts/make-app.sh`.
   - It drives the app through its debug bridge: first run (the welcome sheet, Full Disk Access, Not Now), browsing (into
-    a folder, Back, view modes), split and resize, a copy and the Activity window, the Connect sheet, and Settings.
+    a folder, Back, view modes), split and resize, a copy and the Activity window, the Connect sheet, Settings, and
+    Desktop Mode switched on and off (on a scratch folder, never the real Desktop).
   - Each run has its own defaults suite, bridge channel and scratch folder, so it never touches your settings or
     another Porpoise. It stops only the process it started, by PID, also on failure or Ctrl-C.
   - It waits for conditions with deadlines instead of sleeping. Each step has a time limit, and the run stops after

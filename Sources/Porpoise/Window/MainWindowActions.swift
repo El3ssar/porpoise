@@ -143,19 +143,8 @@ extension MainWindowController {
     }
 
     private func renameDialog(_ item: FileItem) {
-        let alert = NSAlert()
-        alert.messageText = "Rename Item"
-        alert.informativeText = "Rename the item “\(item.name)” to:"
-        let field = NSTextField(string: item.name)
-        field.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
         let container = view
-        alert.runSheet(for: window) { [weak self] result in
-            guard result == .alertFirstButtonReturn, !field.stringValue.isEmpty else { return }
-            self?.rename(item, to: field.stringValue, in: container)
-        }
+        ItemRenaming.prompt(item, window: window) { [weak self] name in self?.rename(item, to: name, in: container) }
     }
 
     @objc func duplicateItem(_ sender: Any?) {

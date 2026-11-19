@@ -21,8 +21,7 @@ extension ItemListView {
         defer { scheduleRelativeDateRefresh() }
         // Inactive split pane: View color at alpha 150/255 over the window color (measured #1a1e2a).
         let bg = isActiveView ? Theme.viewBackground : Theme.inactiveViewBackgroundOpaque
-        bg.setFill()
-        dirty.fill()
+        if drawsBackground { bg.setFill(); dirty.fill() }
         if frames.count != model.rows.count { computeLayout() }
         if isPreparingCompact {
             let text = (visibleRect.width < 200 ? "Loading…" : "Loading Compact view…") as NSString

@@ -5,11 +5,17 @@ import PorpoiseServices
 enum AdjustViewDialog {
     /// Shown as a sheet on `window`; `done` runs after the new properties were applied.
     static func run(for c: ViewContainer, window: NSWindow?, done: (() -> Void)? = nil) {
+        run(model: c.model, window: window) {
+            c.model.saveProps(); done?()
+        }
+    }
+
+    static func run(model: DirectoryModel, window: NSWindow?, fixedMode: ViewMode? = nil, done: (() -> Void)? = nil) {
         let a = NSAlert()
         a.messageText = "View Display Style"
-        a.informativeText = "Properties for “\(c.url.lastPathComponent)”"
+        a.informativeText = "Properties for “\(model.location.lastPathComponent)”"
         let v = NSView(frame: CGRect(x: 0, y: 0, width: 340, height: 190))
-        let p = c.model.props
+        let p = model.props
         func popup(_ items: [String], _ sel: Int, y: CGFloat, label: String) -> NSPopUpButton {
             let l = NSTextField(labelWithString: label); l.frame = CGRect(x: 0, y: y + 3, width: 110, height: 18); l.alignment = .right
             let b = NSPopUpButton(frame: CGRect(x: 118, y: y, width: 220, height: 26), pullsDown: false)
@@ -18,6 +24,7 @@ enum AdjustViewDialog {
             return b
         }
         let mode = popup(ViewMode.allCases.map(\.title), ViewMode.allCases.firstIndex(of: p.mode) ?? 0, y: 160, label: "View mode:")
+        mode.isEnabled = fixedMode == nil
         let roles = ItemRole.menuRoles.filter { $0 != .tags }
         let sort = popup(roles.map(\.title), roles.firstIndex(of: p.sortRole) ?? 0, y: 128, label: "Sorting:")
         let order = popup(["Ascending", "Descending"], p.sortOrder == .ascending ? 0 : 1, y: 96, label: "")
@@ -34,15 +41,14 @@ enum AdjustViewDialog {
         a.runSheet(for: window) { r in
             guard r == .alertFirstButtonReturn else { return }
             // Start from the current properties: they may have changed while the sheet was open.
-            var np = c.model.props
-            np.mode = ViewMode.allCases[safe: mode.indexOfSelectedItem] ?? np.mode
+            var np = model.props
+            np.mode = fixedMode ?? ViewMode.allCases[safe: mode.indexOfSelectedItem] ?? np.mode
             np.sortRole = roles[safe: sort.indexOfSelectedItem] ?? np.sortRole
             np.sortOrder = order.indexOfSelectedItem == 0 ? .ascending : .descending
             np.previews = previews.state == .on
             np.showHidden = hidden.state == .on
             np.foldersFirst = folders.state == .on
-            c.model.props = np
-            c.model.saveProps()
+            model.props = np
             done?()
         }
     }

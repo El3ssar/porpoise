@@ -5,6 +5,21 @@ import PorpoiseServices
 
 /// Shared rename confirmation, undo and administrator retry for inline editing and Properties.
 @MainActor struct ItemRenaming {
+    static func prompt(_ item: FileItem, window: NSWindow?, completed: @escaping (String) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Item"
+        alert.informativeText = "Rename the item “\(item.name)” to:"
+        let field = NSTextField(string: item.name)
+        field.frame = CGRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.runSheet(for: window) { result in
+            guard result == .alertFirstButtonReturn, !field.stringValue.isEmpty else { return }
+            completed(field.stringValue)
+        }
+    }
+
     var confirm: (NSAlert, NSWindow?, @escaping (Bool) -> Void) -> Void = { alert, window, completed in
         alert.runSheet(for: window) { completed($0 == .alertFirstButtonReturn) }
     }

@@ -11,6 +11,8 @@ import Testing
 
     @Test func defaultsWhenNothingIsStored() {
         #expect(!s.allowCommandLineControl)
+        #expect(!s.desktopModeEnabled && s.desktopShowMenuBarIcon && !s.desktopMonochromeMenuBarIcon)
+        #expect(!s.desktopFoldersInTabs && !s.desktopOpenMaximized)
         #expect(s.startup == .lastSession)
         #expect(s.showGitStatus)
         #expect(s.homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path)
@@ -335,7 +337,8 @@ import Testing
         let keys = Mirror(reflecting: Settings.shared).children.compactMap { ($0.value as? PrefKey)?.key }
         #expect(
             keys == [
-                "showGitStatus", "allowCommandLineControl", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize",
+                "showGitStatus", "allowCommandLineControl", "desktopModeEnabled", "desktopShowMenuBarIcon", "desktopMonochromeMenuBarIcon",
+                "desktopFoldersInTabs", "desktopOpenMaximized", "startup", "homeURL", "fullPathTitle", "appLibraryView", "appLibraryIconSize",
                 "filterBar", "alwaysTabBar",
                 "tabClose", "tabStyle",
                 "tabsAtEnd", "closeSplit", "splitStartup", "singleWindow", "pvImages", "pvVideos", "pvDocs", "pvText", "pvFonts",

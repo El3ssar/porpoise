@@ -69,7 +69,7 @@ extension ItemListView {
         let width = max(layoutWidthOverride ?? visibleWidth, 100)
         let contentSize: NSSize
         switch mode {
-        case .icons: contentSize = layoutIcons(width: width)
+        case .icons: contentSize = iconsLayout?() ?? layoutIcons(width: width)
         case .compact: contentSize = layoutCompact(width: width)
         case .details: contentSize = layoutDetails(width: width)
         case .columns: contentSize = layoutColumns(width: width)
@@ -95,12 +95,17 @@ extension ItemListView {
 
     private var groupHeaderHeight: CGFloat { model.groups.isEmpty ? 0 : lineHeight + 14 }
 
-    private func iconsItemWidth() -> CGFloat {
+    func iconsItemWidth() -> CGFloat {
         let level = CGFloat(ZoomLevels.continuousLevel(for: iconSize))
         let idx = CGFloat(Settings.shared.iconsLabelWidthIndex)
         let fontFactor = max(0.8, textWidth("x") / 7)
         let w = 48 + idx * 64 * fontFactor * exp(level / 13)
         return max(iconSize + 4 * Self.pad + 12, w)
+    }
+
+    var iconsCellSize: NSSize {
+        NSSize(
+            width: iconsItemWidth(), height: 3 * Self.pad + iconSize + CGFloat(maxLabelLines + model.props.roles(for: .icons).count) * lineHeight + 4)
     }
 
     /// Icons: rows of equal cells; each group starts a new row under its header.
@@ -109,8 +114,7 @@ extension ItemListView {
         let avail = width - 2 * margin
         columns = max(1, Int(avail / iconsItemWidth()))
         let w = floor(avail / CGFloat(columns))
-        let textLines = maxLabelLines + model.props.roles(for: .icons).count
-        let h = 3 * Self.pad + iconSize + CGFloat(textLines) * lineHeight + 4
+        let h = iconsCellSize.height
         var y = margin
         var bands: [ItemCellFrames.Band] = []
         var start = 0
@@ -608,6 +612,7 @@ extension ItemListView {
     /// then a scan while cells can still intersect.
     func candidateIndexes(in rect: CGRect) -> [Int] {
         guard !frames.isEmpty else { return [] }
+        if iconsLayout != nil { return frames.indices.filter { frames[$0].intersects(rect) } }
         let horizontal = mode == .compact
         let rowSlack = mode == .details ? -Self.sidePadding : 0
         var lo = 0, hi = frames.count - 1

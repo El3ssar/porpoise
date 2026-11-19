@@ -4,6 +4,14 @@ import PorpoiseServices
 
 /// Every local-file entry point uses the executable policy before choosing an associated application.
 @MainActor struct LocalFileOpening {
+    static func confirmMultiple(count: Int) -> Bool {
+        guard count > 10 && Settings.shared.confirmOpenMany else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Are you sure you want to open \(count) items?"
+        alert.addButton(withTitle: "Open"); alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     var run: (URL) -> Void = { ExternalTerminal.run($0) }
     var open: (URL) -> Void = { NSWorkspace.shared.open($0) }
     var applications: (URL) -> [URL] = { NSWorkspace.shared.urlsForApplications(toOpen: $0) }

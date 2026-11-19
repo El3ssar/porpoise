@@ -76,13 +76,7 @@ extension MainWindowController {
         }
         let folders = items.filter(\.isBrowsableFolder)
         let files = items.filter { !$0.isBrowsableFolder }
-        if folders.count + files.count > 10 && Settings.shared.confirmOpenMany {
-            let a = NSAlert()
-            a.messageText = "Are you sure you want to open \(items.count) items?"
-            a.addButton(withTitle: "Open")
-            a.addButton(withTitle: "Cancel")
-            guard a.runModal() == .alertFirstButtonReturn else { return }
-        }
+        guard LocalFileOpening.confirmMultiple(count: items.count) else { return }
         if folders.count == 1 && files.isEmpty && !inNewTab {
             c.setURL(folders[0].url)
         } else {

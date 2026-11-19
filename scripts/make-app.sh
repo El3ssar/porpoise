@@ -6,6 +6,21 @@ cd "$(dirname "$0")/.."
 # Use the Command Line Tools if Xcode is installed but its license isn't accepted yet.
 if ! xcodebuild -version >/dev/null 2>&1; then export DEVELOPER_DIR=/Library/Developer/CommandLineTools; fi
 CONFIG=${CONFIG:-release}
+APP=build/Porpoise.app
+BUNDLE_ID=app.porpoise.Porpoise
+APP_NAME=Porpoise
+DESKTOP_PROTOTYPE=0
+for option in "$@"; do
+  [ "$option" = "--desktop-prototype" ] || continue
+  if [ "$#" != 1 ] || [ "${PORPOISE_RELEASE:-}" = 1 ]; then
+    echo "--desktop-prototype is local-only and cannot be combined with installation or release packaging." >&2
+    exit 1
+  fi
+  DESKTOP_PROTOTYPE=1
+  APP_NAME="Porpoise Desktop Prototype"
+  APP="build/$APP_NAME.app"
+  BUNDLE_ID=app.porpoise.DesktopPrototype
+done
 BIN=$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)
 MODULE_CACHE="$BIN/ModuleCache"
 # Keep only Clang's module-cache references absolute so automatic dsymutil invocations can find the PCMs.
@@ -33,7 +48,6 @@ fi
 # Only what ships: the test support targets don't build in release.
 swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product Porpoise
 swift build -c "$CONFIG" --arch arm64 -j "${SWIFT_JOBS:-2}" "${FLAGS[@]}" --product PorpoiseCLI
-APP=build/Porpoise.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/Porpoise" "$APP/Contents/MacOS/Porpoise"
@@ -155,9 +169,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>Porpoise</string>
-  <key>CFBundleIdentifier</key><string>app.porpoise.Porpoise</string>
-  <key>CFBundleName</key><string>Porpoise</string>
-  <key>CFBundleDisplayName</key><string>Porpoise</string>
+  <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+  <key>CFBundleName</key><string>${APP_NAME}</string>
+  <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD}</string>
@@ -185,10 +199,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   </dict></array>
 </dict></plist>
 PLIST
+# This experiment must not advertise itself as a folder/volume handler to LaunchServices.
+if [ "$DESKTOP_PROTOTYPE" = 1 ]; then
+  /usr/libexec/PlistBuddy -c 'Delete :CFBundleDocumentTypes' "$APP/Contents/Info.plist"
+fi
 # Sign with the private identity from scripts/setup-signing.sh when present (keeps privacy grants across builds).
 # Releases must always be signed with the same identity, or users lose their privacy grants on update.
 KC=$PWD/.signing/porpoise.keychain-db
-if [ -f "$KC" ]; then
+if [ "$DESKTOP_PROTOTYPE" = 0 ] && [ -f "$KC" ]; then
   security unlock-keychain -p porpoise-local "$KC"
   ID=$(security find-identity -p codesigning "$KC" | awk '/Porpoise Signing/ {print $2; exit}')
   SIGN=(codesign --force --options runtime --keychain "$KC" -s "$ID")
@@ -209,7 +227,7 @@ SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 # with each release).
 codesign -dvvv "$HELPER_APP" 2>&1 | sed -n 's/^CDHash=//p' > build/helper-cdhash.txt
 # The hardened runtime blocks code injection (the privileged helper trusts Porpoise's signature).
-"${SIGN[@]}" --identifier app.porpoise.Porpoise --entitlements Resources/Porpoise.entitlements "$APP"
+"${SIGN[@]}" --identifier "$BUNDLE_ID" --entitlements Resources/Porpoise.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
 if [ "$CONFIG" = release ]; then
   python3 scripts/check-symbols.py verify "$APP/Contents/MacOS/Porpoise" build/symbols/Porpoise.dSYM
