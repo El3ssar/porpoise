@@ -36,6 +36,9 @@ extension PlacesPanel {
                 add("Edit…", "edit-entry", #selector(editEntry(_:)), e)
                 add(e.hidden ? "Show" : "Hide", e.hidden ? "view-visible" : "view-hidden", #selector(toggleHidden(_:)), e)
                 add("Remove from Places", "bookmark-remove", #selector(removeEntry(_:)), e)
+            } else if let p = ConnectionProfiles.shared.profile(shownAs: e) {
+                add("Edit Connection…", "edit-entry", #selector(editConnection(_:)), p.id)
+                add("Remove Connection…", "bookmark-remove", #selector(removeConnection(_:)), p.id)
             }
             if !PlacesModel.shared.hiddenSections.contains(e.section) {
                 add("Hide Section “\(PlacesModel.shared.title(of: e.section))”", "view-hidden", #selector(hideSection(_:)), e.section.rawValue)
@@ -199,6 +202,27 @@ extension PlacesPanel {
         guard let e = s.representedObject as? PlaceEntry else { return }
         PlaceEditDialog.run(title: "Edit Places Entry", label: e.title, url: e.url, window: window) { label, url in
             PlacesModel.shared.update(e, title: label, url: url)
+        }
+    }
+
+    @objc private func editConnection(_ s: NSMenuItem) {
+        guard let id = s.representedObject as? UUID else { return }
+        AccountsServersWindow.showFromFront(selecting: .server(id))
+    }
+
+    /// Asks first, as the Accounts & Servers window does: an S3 connection's secret key goes with it.
+    @objc private func removeConnection(_ s: NSMenuItem) {
+        guard let id = s.representedObject as? UUID, let p = ConnectionProfiles.shared.profile(id), let window else { return }
+        let a = NSAlert()
+        a.messageText = "Remove “\(p.name)”?"
+        a.informativeText = p.kind == .s3 ? "Its secret key is removed from the Keychain too." : "It's removed from the sidebar."
+        a.addButton(withTitle: "Remove")
+        a.addButton(withTitle: "Cancel")
+        a.beginSheetModal(for: window) { r in
+            guard r == .alertFirstButtonReturn, case .failure(let error) = ConnectionProfiles.shared.remove(id) else { return }
+            let alert = NSAlert(error: error)
+            alert.messageText = "The connection couldn’t be removed completely."
+            alert.beginSheetModal(for: window)
         }
     }
 
