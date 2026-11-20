@@ -858,6 +858,16 @@ import Testing
         #expect(app.windows.count == 2 && app.windows.last?.tabs.count == 2)
     }
 
+    /// Whether `window` fills `screen`'s visible area. With Stage Manager's strip shown, macOS keeps a window that
+    /// appears clear of the strip on the left, so it fills the rest.
+    private func fills(_ window: NSWindow, _ screen: NSScreen) -> Bool {
+        let f = window.frame, v = screen.visibleFrame
+        if f == v { return true }
+        let stageManager = UserDefaults(suiteName: "com.apple.WindowManager")
+        guard stageManager?.bool(forKey: "GloballyEnabled") == true, stageManager?.bool(forKey: "AutoHide") != true else { return false }
+        return f.minX > v.minX && f.maxX == v.maxX && f.minY == v.minY && f.maxY == v.maxY
+    }
+
     @Test func desktopMaximizedWindowsFillTheChosenScreenAndStandardTabsKeepTheirSize() async throws {
         let scratch = try Scratch()
         let one = try scratch.folder("one"), two = try scratch.folder("two")
@@ -867,14 +877,14 @@ import Testing
         let screen = try #require(NSScreen.screens.last)
         let opened = app.openDesktopFolders([one], inTabs: true, maximized: true, screen: screen)
         let browser = try #require(opened.first), window = try #require(browser.window)
-        #expect(window.frame == screen.visibleFrame && !window.styleMask.contains(.fullScreen))
+        #expect(fills(window, screen) && !window.styleMask.contains(.fullScreen))
         let standard = NSRect(x: screen.visibleFrame.minX + 30, y: screen.visibleFrame.minY + 30, width: 900, height: 650)
         window.setFrame(standard, display: false)
         let actual = window.frame
         let same = app.openDesktopFolders([two], inTabs: true, maximized: false, screen: screen)
         #expect(same.first === browser && window.frame == actual && browser.tabs.count == 2)
         _ = app.openDesktopFolders([one], inTabs: true, maximized: true, screen: screen)
-        #expect(window.frame == screen.visibleFrame && !window.styleMask.contains(.fullScreen))
+        #expect(fills(window, screen) && !window.styleMask.contains(.fullScreen))
     }
 
     @Test func desktopSingleClickKeepsTheBrowserMinimizedUntilTheDoubleClickOpensATab() async throws {
