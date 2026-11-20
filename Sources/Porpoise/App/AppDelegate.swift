@@ -17,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindowController?
     private var lookObservation: NSKeyValueObservation?
     private var drewInitialWindow = false
+    private let ordinaryWindows = NSHashTable<NSWindow>.weakObjects()
+    private var desktopWindowObservations: [NSObjectProtocol] = []
+    private let activationPolicy: () -> NSApplication.ActivationPolicy
+    private let setActivationPolicy: (NSApplication.ActivationPolicy) -> Bool
     private(set) var desktopOnlyLaunch = false
     private(set) var interactiveServicesStarted = false
     /// Set while a session is being reopened: still set at the next launch, reopening it crashed or hung, and that launch
@@ -25,10 +29,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// How long after its windows appear a reopened session counts as restored: its folders have listed by then.
     static let restoreSettleTime: TimeInterval = 5
 
-    init(desktopMode: DesktopModeController? = nil) {
+    init(
+        desktopMode: DesktopModeController? = nil,
+        activationPolicy: @escaping () -> NSApplication.ActivationPolicy = { NSApp.activationPolicy() },
+        setActivationPolicy: @escaping (NSApplication.ActivationPolicy) -> Bool = { NSApp.setActivationPolicy($0) }
+    ) {
         desktopModeOverride = desktopMode
+        self.activationPolicy = activationPolicy
+        self.setActivationPolicy = setActivationPolicy
         super.init()
     }
+
+    deinit { desktopWindowObservations.forEach(NotificationCenter.default.removeObserver) }
 
     // MARK: - Launch and quit
 
@@ -71,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !Settings.isTesting || TestEnvironment.desktopDirectory.isSet || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" {
             desktopMode.start()
         }
+        startDesktopWindowLifecycle(windows: NSApp.windows)
         DispatchQueue.main.async { AppAutomation.shared.start() }
         if welcome { OnboardingWindowController.show(on: windows.first?.window) }
         if !desktopOnlyLaunch { startInteractiveServices() }
@@ -246,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopDesktopWindowLifecycle()
         desktopMode.stop()
         Diagnostics.quitting()
         FileOperationsController.shared.interruptAll()
@@ -316,6 +330,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Windows
 
+    /// With only a desktop, behave like a menu-bar app. Some window managers auto-quit ordinary Dock apps with no
+    /// windows; changing our own role avoids advertising that state without refusing anyone's Quit request.
+    func startDesktopWindowLifecycle(windows: [NSWindow]) {
+        guard desktopWindowObservations.isEmpty else { return }
+        for window in windows where isOrdinaryWindow(window) && (window.isVisible || window.isMiniaturized) { ordinaryWindows.add(window) }
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeMainNotification, NSWindow.didBecomeKeyNotification] {
+            desktopWindowObservations.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
+                    MainActor.assumeIsolated { self?.prepareToShowOrdinaryWindow(n.object as? NSWindow) }
+                })
+        }
+        desktopWindowObservations.append(
+            center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] n in
+                MainActor.assumeIsolated {
+                    guard let self, let window = n.object as? NSWindow else { return }
+                    self.ordinaryWindows.remove(window)
+                    self.updateDesktopActivationPolicy()
+                }
+            })
+        desktopWindowObservations.append(
+            center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
+                guard n.object == nil || n.object as? String == "desktopModeEnabled" else { return }
+                MainActor.assumeIsolated { self?.updateDesktopActivationPolicy() }
+            })
+        updateDesktopActivationPolicy()
+    }
+
+    func stopDesktopWindowLifecycle() {
+        desktopWindowObservations.forEach(NotificationCenter.default.removeObserver)
+        desktopWindowObservations = []
+        ordinaryWindows.removeAllObjects()
+    }
+
+    /// Restore the Dock role before presentation/activation, including reopening a cached Settings window.
+    @discardableResult
+    func prepareToShowOrdinaryWindow(_ window: NSWindow?) -> Bool {
+        guard !desktopWindowObservations.isEmpty, let window, isOrdinaryWindow(window) else { return false }
+        let wasAccessory = activationPolicy() == .accessory
+        ordinaryWindows.add(window)
+        updateDesktopActivationPolicy()
+        return wasAccessory && activationPolicy() == .regular
+    }
+
+    private func isOrdinaryWindow(_ window: NSWindow) -> Bool {
+        // AppKit's canBecomeMain is false before a normal window is shown, and while it is minimized.
+        window.canBecomeMain || (!(window is NSPanel) && !window.styleMask.intersection([.titled, .resizable]).isEmpty)
+    }
+
+    private func updateDesktopActivationPolicy() {
+        MainActor.assumeIsolated {
+            let current = activationPolicy()
+            guard current != .prohibited else { return }
+            // Keep hidden, minimized and ordered-out windows until they actually close. Desktop panels cannot become main.
+            let desired: NSApplication.ActivationPolicy = desktopMode.keepsAppRunning && ordinaryWindows.allObjects.isEmpty ? .accessory : .regular
+            if current != desired { _ = setActivationPolicy(desired) }
+        }
+    }
+
     func newWindow(at url: URL, split: URL? = nil) { newWindow(urls: [url], split: [split]) }
 
     func newWindow(urls: [URL], split: [URL?] = []) { show(add(MainWindowController(urls: urls, split: split))) }
@@ -370,8 +443,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // What each window showed when it first appeared (the bridge's `session` reports it).
         firstShown.append(wc.captureLayout())
         #endif
+        let restoredDockRole = prepareToShowOrdinaryWindow(wc.window)
         wc.showWindow(nil)
         wc.window?.makeKeyAndOrderFront(nil)
+        // The accessory-to-regular transition also needs explicit activation after a window exists for keyboard focus.
+        if restoredDockRole { NSApp.activate(ignoringOtherApps: true) }
         guard !drewInitialWindow else { return }
         drewInitialWindow = true
         // Present the browser before next-turn Git discovery or background decoding of optional custom tools.
@@ -475,8 +551,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil { settingsWindow = SettingsWindowController() }
-        NSApp.activate()
         settingsWindow?.showWindow(nil)
+        NSApp.activate()
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
         if desktopOnlyLaunch { startInteractiveServices() }
     }
