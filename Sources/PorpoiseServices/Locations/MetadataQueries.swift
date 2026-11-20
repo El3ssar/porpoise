@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import PorpoiseCore
 import PorpoiseFileSystem
@@ -21,7 +22,7 @@ final class RecentFilesQuery {
         ) { event in
             switch event {
             case .gathered(let paths):
-                files.start(paths.filter { !$0.contains("/Library/") }.map { URL(fileURLWithPath: $0) }, done: done)
+                files.start(paths.filter { !$0.contains("/Library/") }.map { URL(fileURLWithPath: $0) }, load: Self.load, done: done)
             case .unavailable:
                 done(LocationListing(error: .provider("Spotlight did not answer. Try again or check Spotlight indexing in System Settings.")))
             case .progress, .updated: break
@@ -31,6 +32,16 @@ final class RecentFilesQuery {
     }
 
     deinit { spotlight.stop(); files.cancel() }
+
+    /// The item with Spotlight's last-used date, which sorts it. The file's access date is not that: any read
+    /// (a thumbnail, a backup, indexing) changes it.
+    private static func load(_ url: URL) -> FileItem? {
+        var item = FileItem.load(url)
+        item?.lastOpenedDate = MDItemCreateWithURL(nil, url as CFURL).flatMap {
+            MDItemCopyAttribute($0, kMDItemLastUsedDate) as? Date
+        }
+        return item
+    }
 }
 
 /// Files carrying a tag (the sidebar's Tags section), or matching a Finder Smart Folder, found with Spotlight.

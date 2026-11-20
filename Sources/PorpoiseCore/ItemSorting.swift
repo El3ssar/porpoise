@@ -200,6 +200,7 @@ public enum ItemSorter {
         case .creationTime: return cmp(a.creationDate ?? .distantPast, b.creationDate ?? .distantPast)
         case .accessTime: return cmp(a.accessDate ?? .distantPast, b.accessDate ?? .distantPast)
         case .sharedTime: return cmp(a.sharedDate ?? .distantPast, b.sharedDate ?? .distantPast)
+        case .lastOpened: return cmp(a.lastOpenedDate ?? .distantPast, b.lastOpenedDate ?? .distantPast)
         case .type: return a.typeDescription.localizedStandardCompare(b.typeDescription)
         case .path: return a.url.path.localizedStandardCompare(b.url.path)
         case .extension_: return a.fileExtension.localizedStandardCompare(b.fileExtension)
@@ -238,7 +239,7 @@ public enum ItemGrouper {
             if s < smallSizeLimit { return "Small" }
             if s < mediumSizeLimit { return "Medium" }
             return "Big"
-        case .modificationTime, .creationTime, .accessTime, .sharedTime:
+        case .modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened:
             let date = item.date(for: role)
             guard let d = date else { return "Unknown" }
             return dateGroup(d, now: now, calendar: calendar)
@@ -274,7 +275,7 @@ public enum ItemGrouper {
             buckets[k, default: []].append(it)
         }
         if role != props.sortRole {
-            let newestFirst = [.modificationTime, .creationTime, .accessTime, .sharedTime].contains(role)
+            let newestFirst = [.modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened].contains(role)
             // Stable: sections keep their order, and groups the role can't tell apart keep theirs.
             order = order.enumerated().sorted { x, y in
                 if x.element.section != y.element.section { return x.element.section < y.element.section }

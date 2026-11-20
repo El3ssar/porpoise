@@ -33,7 +33,7 @@ extension ItemListView {
     }
 
     private func visibleDateRoles() -> [ItemRole] {
-        let dates: Set<ItemRole> = [.modificationTime, .creationTime, .accessTime, .sharedTime]
+        let dates: Set<ItemRole> = [.modificationTime, .creationTime, .accessTime, .sharedTime, .lastOpened]
         guard mode == .details else { return model.props.roles(for: mode).filter(dates.contains) }
         var x = Self.sidePadding
         return detailsRoles.filter { role in

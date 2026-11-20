@@ -25,6 +25,8 @@ public struct FileItem: Hashable, Sendable {
     public let sharedDate: Date?
     /// Finder custom-icon flag, read with local filesystem metadata (never from a draw callback).
     public let hasCustomIcon: Bool
+    /// When it was last opened, as Spotlight records it (Finder's "Date Last Opened"); set only by Recent Files.
+    public var lastOpenedDate: Date?
 
     public init(
         url: URL, name: String, isDirectory: Bool, isSymlink: Bool = false, isHidden: Bool = false,
@@ -60,11 +62,13 @@ public struct FileItem: Hashable, Sendable {
     /// The same item under another name (a cloud rename keeps the URL, an id). A new extension implies a new type.
     public func named(_ newName: String) -> FileItem {
         let sameExtension = (newName as NSString).pathExtension.lowercased() == (name as NSString).pathExtension.lowercased()
-        return FileItem(
+        var renamed = FileItem(
             url: url, name: newName, isDirectory: isDirectory, isSymlink: isSymlink, isHidden: newName.hasPrefix("."), isPackage: isPackage,
             isApplication: isApplication, size: size, modificationDate: modificationDate, creationDate: creationDate, accessDate: accessDate,
             contentType: isDirectory || sameExtension ? contentType : nil, posixPermissions: posixPermissions, owner: owner, group: group,
             linkDestination: linkDestination, isReadable: isReadable, isWritable: isWritable, sharedDate: sharedDate, hasCustomIcon: hasCustomIcon)
+        renamed.lastOpenedDate = lastOpenedDate
+        return renamed
     }
 
     /// The type a name implies, for an item whose listing has none: a folder, else its extension's type (dynamic for
@@ -82,6 +86,7 @@ public struct FileItem: Hashable, Sendable {
         case .creationTime: return creationDate
         case .accessTime: return accessDate
         case .sharedTime: return sharedDate
+        case .lastOpened: return lastOpenedDate
         default: return nil
         }
     }

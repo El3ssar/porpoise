@@ -41,7 +41,8 @@ import Testing
         let folder = LocationContentSources.defaultStyle(for: URL(string: "dropbox://\(UUID().uuidString)/id:abc")!)
         #expect(folder.mode == plain.mode && folder.roles(for: .details) == [.owner] + plain.roles(for: .details))
         let recent = LocationContentSources.defaultStyle(for: URL(string: "recent:/files")!)
-        #expect(recent.mode == .details && recent.sortRole == .accessTime && recent.sortOrder == .descending)
+        #expect(recent.mode == .details && recent.sortRole == .lastOpened && recent.sortOrder == .descending)
+        #expect(recent.roles(for: .details) == [.path, .lastOpened])
         for byName in ["recent:/locations", "tags:/fixture", "smart:/tmp/fixture.savedSearch"] {
             let style = LocationContentSources.defaultStyle(for: URL(string: byName)!)
             #expect(style.sortRole == .name && style.roles(for: .details) == [.path, .accessTime] && !style.foldersFirst)

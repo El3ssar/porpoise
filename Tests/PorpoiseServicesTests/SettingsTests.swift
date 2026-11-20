@@ -320,7 +320,7 @@ import Testing
         #expect(
             ItemRole.allCases.map(\.rawValue) == [
                 "name", "size", "modificationTime", "creationTime", "accessTime", "type", "path", "extension_", "permissions",
-                "owner", "group", "linkDestination", "tags", "sharedTime",
+                "owner", "group", "linkDestination", "tags", "sharedTime", "lastOpened",
             ])
         #expect(SortOrder.ascending.rawValue == "ascending" && SortOrder.descending.rawValue == "descending")
         #expect(SortingChoice.allCases.map(\.rawValue) == ["natural", "caseInsensitive", "caseSensitive"])
