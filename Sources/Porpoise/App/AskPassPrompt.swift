@@ -14,6 +14,11 @@ extension AskPass {
             print(answer)
             exit(0)
         }
+        // A password saved with "Remember" answers the first prompt; a second prompt means it was wrong.
+        if let saved = AskPass.savedPassword(prompt: prompt, sshProcess: getppid()) {
+            print(saved)
+            exit(0)
+        }
         let a = NSAlert()
         let isConfirm = AskPass.isHostKeyConfirmation(prompt)
         a.messageText = isConfirm ? "Connect to this server?" : "Authentication Required"
@@ -26,10 +31,16 @@ extension AskPass {
             a.accessoryView = f
             a.window.initialFirstResponder = f
             field = f
+            if AskPass.passwordLogin(prompt) != nil {
+                a.showsSuppressionButton = true
+                a.suppressionButton?.title = "Remember this password in my keychain"
+                a.suppressionButton?.state = .on  // as Finder's server login
+            }
         }
         NSApp.activate(ignoringOtherApps: true)
         let r = a.runModal()
         guard r == .alertFirstButtonReturn else { exit(1) }
+        if let password = field?.stringValue, a.suppressionButton?.state == .on { AskPass.remember(password, prompt: prompt) }
         print(isConfirm ? "yes" : (field?.stringValue ?? ""))
         exit(0)
     }

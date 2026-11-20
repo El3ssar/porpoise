@@ -26,7 +26,7 @@ public struct ConnectionProfile: Codable, Equatable, Identifiable, Sendable {
         }
 
         /// Whether a password (or S3 secret key) for the profile is kept in the Keychain. SFTP logs in with keys and
-        /// the ssh agent; a password ssh asks for is typed in its prompt.
+        /// the ssh agent; a password ssh asks for is typed in its prompt, which can keep it (see AskPass).
         public var storesSecret: Bool { self != .sftp }
     }
 

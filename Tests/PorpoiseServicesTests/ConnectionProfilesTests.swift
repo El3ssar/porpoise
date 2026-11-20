@@ -166,5 +166,6 @@ final class MemoryS3Secrets: S3SecretStore, @unchecked Sendable {
         #expect(Keychain.proto("ftp") == kSecAttrProtocolFTP)
         #expect(Keychain.proto("ftps") == kSecAttrProtocolFTPS)
         #expect(Keychain.proto("smb") == kSecAttrProtocolSMB)
+        #expect(Keychain.proto("sftp") == kSecAttrProtocolSSH)
     }
 }

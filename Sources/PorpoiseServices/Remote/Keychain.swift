@@ -11,6 +11,7 @@ struct Keychain: PasswordCredentialStore {
         switch scheme {
         case "ftps": return kSecAttrProtocolFTPS
         case "smb": return kSecAttrProtocolSMB
+        case "sftp": return kSecAttrProtocolSSH
         default: return kSecAttrProtocolFTP
         }
     }
