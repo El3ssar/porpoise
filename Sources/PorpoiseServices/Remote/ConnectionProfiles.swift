@@ -136,6 +136,12 @@ public final class ConnectionProfiles: @unchecked Sendable {
         }
     }
 
+    /// The saved connection a sidebar row shows, if it is one.
+    public func profile(shownAs entry: PlaceEntry) -> ConnectionProfile? {
+        guard entry.section == .remote else { return nil }
+        return profiles.first { $0.name == entry.title && $0.url == entry.url }
+    }
+
     // MARK: ssh
 
     /// The ssh options a profile adds for `url`'s server: its jump hosts and key. A profile made from a

@@ -125,6 +125,12 @@ final class MemoryS3Secrets: S3SecretStore, @unchecked Sendable {
         // A profile also bookmarked shows once, as the bookmark.
         places.add(Self.smb.url!, title: "My NAS")
         #expect(places.allEntries.filter { $0.url == Self.smb.url! }.map(\.title) == ["My NAS"])
+        // Issue #27: a saved connection's row leads back to it (to edit or remove it there); a bookmark doesn't.
+        let web = try #require(remote.first { $0.title == "Web" })
+        #expect(store.profile(shownAs: web)?.id == Self.sftp.id)
+        #expect(store.profile(shownAs: places.allEntries.first { $0.title == "My NAS" }!) == nil)
+        store.remove(Self.sftp.id)
+        #expect(store.profile(shownAs: web) == nil && !places.sections().contains { $0.1.contains(web) })
 
         let changed = ConnectionMonitorTests.Counter()
         let o = NotificationCenter.default.addObserver(forName: PlacesModel.changed, object: nil, queue: nil) { _ in changed.add() }
