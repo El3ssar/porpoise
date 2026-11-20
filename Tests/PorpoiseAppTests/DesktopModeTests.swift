@@ -35,12 +35,125 @@ import Testing
         return controller
     }
 
+    @Test func conflictsPreventListingAndSurfacesUntilSetupPasses() throws {
+        let scratch = try Scratch()
+        var snapshot = DesktopEnvironment(conflicts: [.finderItems, .stageManager]), creations = 0, settingsOpened = 0
+        let mode = DesktopModeController(
+            environment: { snapshot }, openSettings: { settingsOpened += 1 },
+            makeWindow: {
+                creations += 1
+                return makeDesktop(location: scratch.url)
+            })
+        defer { mode.stop() }
+        mode.start()
+        #expect(creations == 0 && mode.pausedStatusItem == nil)
+        mode.setEnabled(true)
+        #expect(Settings.shared.desktopModeEnabled && !mode.isEnabled && mode.windowController == nil && creations == 0)
+        #expect(mode.pausedStatusItem != nil && mode.statusLine.0 == false)
+        #expect(mode.statusLine.1.contains("On Desktop") && mode.statusLine.1.contains("Turn off Stage Manager"))
+        let form = FormBuilder(); SettingsPages.desktopMode(form, controller: mode)
+        func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
+        let open = try #require(views(form.view).compactMap { $0 as? NSButton }.first { $0.title == "Open macOS Desktop Settings…" })
+        open.performClick(nil)
+        #expect(settingsOpened == 1 && creations == 0)
+        snapshot = .ready
+        let check = try #require(views(form.view).compactMap { $0 as? NSButton }.first { $0.title == "Check Again" })
+        check.performClick(nil)
+        #expect(mode.isEnabled && creations == 1 && mode.pausedStatusItem == nil && mode.statusLine.0 == true)
+        #expect(mode.windowController?.desktopWindows.count == 1)
+        mode.setEnabled(false)
+        #expect(!mode.isEnabled && mode.pausedStatusItem == nil && mode.statusLine.1.contains("macOS desktop selected"))
+    }
+
+    @Test func aSystemConflictClosesEverySurfaceAndPreservesTheRequestedMode() throws {
+        let scratch = try Scratch()
+        var snapshot = DesktopEnvironment.ready, creations = 0
+        let mode = DesktopModeController(
+            environment: { snapshot },
+            makeWindow: {
+                creations += 1
+                return makeDesktop(location: scratch.url)
+            })
+        mode.start(); mode.setEnabled(true)
+        defer { mode.stop() }
+        let controller = try #require(mode.windowController)
+        let windows = controller.desktopWindows.values.compactMap(\.window)
+        snapshot = DesktopEnvironment(conflicts: [.finderStageItems])
+        mode.checkEnvironment()
+        #expect(!mode.isEnabled && Settings.shared.desktopModeEnabled && mode.pausedStatusItem != nil)
+        #expect(controller.model == nil && windows.allSatisfy { !$0.isVisible })
+        mode.checkEnvironment()
+        #expect(creations == 1)
+        mode.stop()
+        snapshot = .ready
+        mode.checkEnvironment()
+        #expect(!mode.isEnabled && mode.pausedStatusItem == nil && creations == 1)
+        mode.start()
+        #expect(mode.isEnabled && creations == 2)
+    }
+
+    @Test func aBlockedLoginSessionCanDisableTheModeWithoutAnySurfaces() throws {
+        let scratch = try Scratch()
+        var creations = 0
+        let mode = DesktopModeController(
+            environment: { DesktopEnvironment(conflicts: [.stageManager]) },
+            makeWindow: {
+                creations += 1
+                return makeDesktop(location: scratch.url)
+            })
+        mode.start(); mode.setEnabled(true)
+        defer { mode.stop() }
+        #expect(creations == 0)
+        let delegate = AppDelegate(desktopMode: mode)
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
+        Settings.shared.desktopMonochromeMenuBarIcon = true
+        #expect(mode.pausedStatusItem?.button?.image?.isTemplate == true)
+        Settings.shared.desktopShowMenuBarIcon = false
+        #expect(mode.pausedStatusItem == nil && Settings.shared.desktopModeEnabled)
+        Settings.shared.desktopShowMenuBarIcon = true
+        let menu = try #require(mode.pausedStatusItem?.menu)
+        let index = try #require(menu.items.firstIndex { $0.title == "Use macOS Desktop" })
+        menu.performActionForItem(at: index)
+        #expect(!Settings.shared.desktopModeEnabled && mode.pausedStatusItem == nil && creations == 0)
+    }
+
+    @Test func preferenceFileEventsPauseTheDesktopWithoutPolling() async throws {
+        let scratch = try Scratch()
+        let preferences = try scratch.folder("Preferences")
+        try FileManager.default.createDirectory(at: preferences.appendingPathComponent("ByHost"), withIntermediateDirectories: true)
+        var snapshot = DesktopEnvironment.ready, reads = 0
+        let mode = DesktopModeController(
+            environment: {
+                reads += 1; return snapshot
+            }, observesSystemChanges: true, preferencesDirectory: preferences,
+            makeWindow: {
+                makeDesktop(location: scratch.url)
+            })
+        mode.start(); mode.setEnabled(true)
+        defer { mode.stop() }
+        #expect(mode.isEnabled)
+        snapshot = DesktopEnvironment(conflicts: [.finderItems])
+        let changed = preferences.appendingPathComponent("com.apple.WindowManager.plist")
+        try Data("test preference event".utf8).write(to: changed, options: .atomic)
+        #expect(await eventually(5) { !mode.isEnabled && mode.pausedStatusItem != nil })
+        #expect(Settings.shared.desktopModeEnabled)
+        mode.stop()
+        let stoppedReads = reads
+        snapshot = .ready
+        try Data("another test preference event".utf8).write(to: changed, options: .atomic)
+        mode.checkEnvironment()
+        #expect(!mode.isEnabled && reads == stoppedReads)
+    }
+
     @Test func optInDefaultAndQuitPreferenceSurviveNewSessions() throws {
         let scratch = try Scratch()
         var creations = 0
-        let mode = DesktopModeController {
-            creations += 1; return makeDesktop(location: scratch.url)
-        }
+        let mode = DesktopModeController(
+            environment: { .ready },
+            makeWindow: {
+                creations += 1; return makeDesktop(location: scratch.url)
+            })
         defer { mode.stop() }
         #expect(!mode.isEnabled && creations == 0 && !Settings.shared.desktopModeEnabled)
         #expect(Settings.shared.desktopShowMenuBarIcon && !Settings.shared.desktopMonochromeMenuBarIcon)
@@ -61,7 +174,7 @@ import Testing
         mode.setEnabled(false)
         #expect(!Settings.shared.desktopModeEnabled && !mode.isEnabled)
         mode.stop()
-        let next = DesktopModeController { makeDesktop(location: scratch.url) }
+        let next = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) })
         defer { next.stop() }
         next.start()
         #expect(!next.isEnabled)
@@ -74,7 +187,7 @@ import Testing
 
     @Test func disablingFromTheMenuClosesSurfacesAndReleasesTheListing() async throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) })
         mode.start(); mode.setEnabled(true)
         defer { mode.stop() }
         let controller = try #require(mode.windowController)
@@ -137,7 +250,7 @@ import Testing
 
     @Test func enableSettingStartsOffAndDoesNotChangeBrowserSettings() throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) })
         mode.start()
         defer { mode.stop() }
         let form = FormBuilder()
@@ -183,7 +296,8 @@ import Testing
 
     @Test func hidingTheAppAndClosingBrowserWindowsKeepTheDesktopRunning() async throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start(); mode.setEnabled(true)
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) }); mode.start();
+        mode.setEnabled(true)
         let wasHidden = NSApp.isHidden
         defer { mode.stop(); if !wasHidden { NSApp.unhideWithoutActivation() } }
         let controller = try #require(mode.windowController)
@@ -284,7 +398,7 @@ import Testing
         #expect(DesktopGridPreferences.load(from: Settings.store).corner == .topLeft)
     }
 
-    @Test func desktopItemsReceiveWindowServerHitsAndEmptyDesktopPassesThemOn() async throws {
+    @Test func desktopItemsAndEmptySpaceReceiveWindowServerHitsAndNativeMenus() async throws {
         let scratch = try Scratch()
         _ = try scratch.file("desktop-hit.txt", "unchanged")
         let displays = NSScreen.screens.enumerated().map { DesktopDisplay(id: CGDirectDisplayID($0.offset + 11), frame: $0.element.visibleFrame) }
@@ -325,8 +439,8 @@ import Testing
                 "The whole cell of an item must take clicks")
             let empty = grid.geometry.frame(for: 1)
             #expect(
-                await eventually(3) { desktopHit(at: NSPoint(x: empty.midX, y: empty.midY)) != window.windowNumber },
-                "Empty desktop must pass clicks on to what is underneath (Finder's desktop)")
+                await eventually(3) { desktopHit(at: NSPoint(x: empty.midX, y: empty.midY)) == window.windowNumber },
+                "Empty desktop must receive Porpoise's background menu and selection clicks")
             let event = try #require(
                 NSEvent.mouseEvent(
                     with: .leftMouseDown, location: grid.convert(icon, to: nil), modifierFlags: [], timestamp: 0,
@@ -342,9 +456,42 @@ import Testing
                     windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 1))
             window.sendEvent(rightClick)
             #expect(probe.targets == [grid.model.rows[0].item.url])
+            let emptyClick = try #require(
+                NSEvent.mouseEvent(
+                    with: .rightMouseDown, location: grid.convert(NSPoint(x: empty.midX, y: empty.midY), to: nil), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 3, clickCount: 1, pressure: 1))
+            window.sendEvent(emptyClick)
+            #expect(probe.targets.count == 2 && probe.targets.last! == nil)
             grid.delegate = controller
         }
         #expect(scratch.read("desktop-hit.txt") == "unchanged")
+    }
+
+    @Test func emptySpaceStartsNativeRubberBandSelection() async throws {
+        let scratch = try Scratch()
+        _ = try scratch.file("one.txt"); _ = try scratch.file("two.txt")
+        let controller = makeDesktop(location: scratch.url)
+        defer { controller.close() }
+        try #require(await eventually { controller.model?.rows.count == 2 })
+        let grid = try #require(controller.grids.first)
+        let window = try #require(grid.window)
+        window.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
+        let frame = grid.highlightRect(0)
+        let start = NSPoint(x: 1, y: 1)
+        let end = NSPoint(x: frame.maxX + 1, y: frame.maxY + 1)
+        #expect(grid.index(at: start) == nil)
+        func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+            try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: grid.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        }
+        grid.mouseDown(with: try event(.leftMouseDown, start))
+        #expect(grid.rubberStart == start)
+        grid.mouseDragged(with: try event(.leftMouseDragged, end))
+        #expect(grid.rubberBand != nil && grid.model.selection == [grid.model.rows[0].item.url])
+        grid.mouseUp(with: try event(.leftMouseUp, end))
+        #expect(grid.rubberStart == nil && grid.rubberBand == nil)
     }
 
     @Test func mouseDragSwapsGridCellsPersistsAndKeepsFilesAndSelectionOnRefresh() async throws {
@@ -775,7 +922,7 @@ import Testing
     @Test func desktopStillPreventsLastWindowQuitWithNoMenuIcon() throws {
         let scratch = try Scratch()
         Settings.shared.desktopShowMenuBarIcon = false
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) })
         mode.start(); mode.setEnabled(true); defer { mode.stop() }
         #expect(mode.isEnabled && mode.windowController?.statusItem == nil)
         #expect(!AppDelegate(desktopMode: mode).applicationShouldTerminateAfterLastWindowClosed(NSApp))
@@ -802,7 +949,8 @@ import Testing
 
     @Test func desktopOptionControlsPersistAndFollowTheirEnabledState() throws {
         let scratch = try Scratch()
-        let mode = DesktopModeController { makeDesktop(location: scratch.url) }; mode.start(); mode.setEnabled(true)
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) }); mode.start();
+        mode.setEnabled(true)
         defer { mode.stop() }
         let form = FormBuilder(); SettingsPages.desktopMode(form, controller: mode)
         func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }

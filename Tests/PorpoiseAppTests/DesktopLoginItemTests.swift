@@ -12,9 +12,11 @@ import Testing
     init() { _ = NSApplication.shared }
 
     private func mode(_ folder: URL) -> DesktopModeController {
-        DesktopModeController {
-            DesktopWindowController(location: folder, displays: { [DesktopDisplay(id: 11, frame: NSRect(x: 0, y: 0, width: 640, height: 480))] })
-        }
+        DesktopModeController(
+            environment: { .ready },
+            makeWindow: {
+                DesktopWindowController(location: folder, displays: { [DesktopDisplay(id: 11, frame: NSRect(x: 0, y: 0, width: 640, height: 480))] })
+            })
     }
 
     @Test func registrationUsesSystemStateAndCanBeRemovedWithoutStoppingTheDesktop() async throws {

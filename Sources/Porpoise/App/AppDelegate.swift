@@ -241,8 +241,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // AppKit can ask when a drag-image window disappears after hiding. Hidden or ordered-out browser
-        // windows still belong to this session. An active desktop also keeps the app running without browsers.
-        !sender.isHidden && windows.isEmpty && desktopMode.windowController?.desktopPlacementEnabled != true
+        // windows still belong to this session. A selected desktop also keeps setup/retry available while paused.
+        !sender.isHidden && windows.isEmpty && !desktopMode.keepsAppRunning
     }
 
     func applicationWillTerminate(_ notification: Notification) {

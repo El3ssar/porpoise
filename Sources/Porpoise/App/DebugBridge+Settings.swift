@@ -28,7 +28,9 @@ extension DebugBridge {
             "enabled": DesktopModeController.shared.isEnabled, "setting": Settings.shared.desktopModeEnabled,
             "location": controller?.model?.location.path ?? "", "loading": controller?.model?.isLoading ?? false,
             "rows": controller?.model?.rows.map(\.item.name) ?? [], "surfaces": controller?.desktopWindows.count ?? 0,
-            "status": controller?.statusText ?? "", "menuBarIcon": controller?.statusItem != nil,
+            "status": controller?.statusText ?? DesktopModeController.shared.statusLine.1,
+            "menuBarIcon": controller?.statusItem != nil || DesktopModeController.shared.pausedStatusItem != nil,
+            "conflicts": DesktopModeController.shared.environment.conflicts.map(\.rawValue),
         ]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: arg))

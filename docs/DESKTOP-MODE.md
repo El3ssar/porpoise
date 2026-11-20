@@ -3,28 +3,64 @@
 Desktop Mode is an **experiment and is off by default**. Tick **Settings → Advanced → Enable Desktop Mode** to show the
 Desktop folder directly on all connected displays; there is no separate preview or control window and no second
 placement switch. Unticking it, or the desktop/menu-bar **Disable Desktop Mode** command, turns it off at once. The choice
-is stored as `desktopModeEnabled` (default false). While it is on it starts with Porpoise; ordinary Quit / Cmd+Q tears
-down this session without changing the choice for the next launch. Login startup is a separate,
+is stored as `desktopModeEnabled` (default false). While selected, it starts with Porpoise only after the system
+configuration passes its checks; ordinary Quit / Cmd+Q tears down this session without changing the choice for the next launch. Login startup is a separate,
 optional setting described below.
 
 Known limits of the experiment:
 
-- Finder's own desktop stays underneath, so icons can appear twice or be covered.
-- Clicks on empty desktop pass through to Finder's desktop underneath (its menu, widgets, click to show the desktop), so
-  there is no rubber-band selection from empty space and no background context menu. The background commands (New
-  Folder, Paste, Add Application Shortcut, Sort By, Start Corner) are in the menu-bar icon's menu; with the icon hidden,
-  only the commands of an item's own context menu remain.
+- The exclusive Porpoise desktop requires Finder items and widgets to be hidden in both desktop modes, Stage Manager
+  off, and wallpaper clicks set to Only in Stage Manager. Porpoise checks these conditions; it does not change them.
+- macOS preference keys used for detection are undocumented and can change. Detection is a read-only best-effort
+  check, not ownership of the system desktop or a guarantee against transient composition during system changes.
+- Right-clicking empty space opens Porpoise's existing background menu; selection can start there too. Background
+  commands also remain in the optional menu-bar icon's menu.
 - Dragging files onto or off the desktop is not supported yet.
 - Every display shows the same listing and shares one selection.
 - Behaviour with Spaces, Mission Control, Stage Manager and fullscreen is not fully checked.
 
 The optional prototype build stays isolated from the installed application. Generic automated test hosts do not start watching
 the real Desktop; the explicitly identified `app.porpoise.DesktopPrototype` bundle uses normal attended startup. A test
-instance has a desktop only when `PORPOISE_DESKTOP_DIR` names a folder to stand in for it (the UI acceptance run does).
+instance has a desktop only when `PORPOISE_DESKTOP_DIR` names a folder to stand in for it. UI acceptance also supplies
+`PORPOISE_DESKTOP_ENVIRONMENT`, a path to a JSON file of synthetic preference domains, so it never depends on or changes the
+user's desktop configuration. Generic tests inject a preflight snapshot; an attended prototype checks the real system.
 
 For manual installation as the main app, `PORPOISE_RELEASE=1 ./scripts/make-app.sh` prepares the ordinary release
 `build/Porpoise.app`, named Porpoise with identifier `app.porpoise.Porpoise`, without test hooks. Do not pass `--install`
 when only preparing the bundle. This build uses the main app's existing profile; prototype settings are not migrated.
+
+## Choosing the desktop
+
+The existing **Enable Desktop Mode** preference remains opt-in. Off selects the macOS desktop; on requests the
+exclusive Porpoise desktop. The **Desktop** status in Settings → Advanced reports active or paused and lists the
+conditions that need attention. **Open macOS Desktop Settings…** opens Desktop & Dock; **Check Again** retries.
+No experimental surfaces or Desktop listing are created until preflight passes.
+
+In macOS Desktop & Dock:
+
+1. Turn off **Show items → On Desktop** and **In Stage Manager**. Both are checked independently, even with Stage Manager off.
+2. Turn off **Show widgets → On Desktop** and **In Stage Manager**.
+3. Turn off **Stage Manager** and set **Click wallpaper to show desktop → Only in Stage Manager**.
+4. Return to Porpoise or choose **Check Again**. Its own icons, empty-space menu and rubber-band selection then start.
+
+The reader checks `com.apple.finder/CreateDesktop` and the Window Manager keys `StandardHideDesktopIcons`,
+`HideDesktop`, `GloballyEnabled`, `StandardHideWidgets`, `StageManagerHideWidgets`, and
+`EnableStandardClickToShowDesktop`. An explicitly disabled Finder desktop satisfies the icon checks; it does not
+waive the widget or Stage Manager checks. Missing overrides use the system defaults, with items/widgets visible,
+wallpaper click enabled and Stage Manager disabled. Unrecognized values or a failed read block activation.
+
+While Porpoise is selected, the existing FSEvents `FolderWatcher` watches the relevant preferences (including ByHost);
+unrelated app preference changes are ignored. App activation, wake, and Space changes also trigger a recheck. There
+is no polling timer. A detected conflict closes every surface and releases the listing/watcher while keeping the
+requested preference. The optional menu-bar icon provides setup, retry, disable and Quit controls even during a
+desktop-only login launch. Resolving the conflict resumes the selected desktop after a recheck. Disabling or quitting
+removes these observers and controls.
+
+To return to macOS, disable Desktop Mode and restore the desired macOS item/widget/Stage Manager settings manually.
+Porpoise never writes system preferences, changes Finder, installs a helper for this switch, or disables Mission
+Control/Spaces. There is consequently no automatic rollback or crash-recovery transaction in this version: only the
+user changes macOS settings. Normal Quit (including Sidebar's Quit requests) still ends the app. An automatic
+snapshot/apply/restore mechanism, including recovery after a crash, is a separate future stage.
 
 ## Shared Porpoise interface
 
@@ -75,7 +111,8 @@ including application aliases, remains on the native file-opening path and is un
 The installed main app registers itself with [`SMAppService.mainApp`](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp).
 No helper process or LaunchAgent is added. Registration happens only when the login checkbox is changed, never just
 by launching Porpoise. The checkbox reads the macOS registration rather than keeping a second preferences flag;
-Restore Defaults does not change Login Items. Pending approval and registration errors appear beside **Open Login Items**.
+Restore Defaults does not change Login Items or macOS desktop settings. Pending approval and registration errors
+appear beside **Open Login Items**.
 Changes made in System Settings are reflected when returning to Porpoise settings.
 
 At login, the opening AppleEvent's `keyAELaunchedAsLogInItem` marker selects desktop-only startup. This skips home/session
@@ -141,8 +178,8 @@ no test window is substituted. Surfaces request `.canJoinAllSpaces`, `.stationar
 They are non-activating NSPanel instances. They may become key on a user click, cannot become main and have no restoration
 or Window-menu entries. Selection does not activate the browser app or restore minimized browser windows; opening a
 folder does. `hidesOnDeactivate = false` and `canHide = false`
-keep them visible during Dock Hide / Cmd+H. The window background is clear, so Window Server passes clicks on empty
-desktop to Finder underneath; each item's cell is filled at 1/255 alpha so the whole cell receives local mouse hits.
+keep them visible during Dock Hide / Cmd+H. The window background uses 1/255 alpha so Window Server delivers item and
+empty-space clicks to Porpoise without covering the wallpaper opaquely. Preflight runs before these windows are created.
 No global monitor or synthetic system event interception is installed. URL drops/external file drags remain unregistered.
 
 Public window ordering does not transfer Finder's desktop ownership or guarantee how Spaces, Mission Control,
@@ -176,7 +213,8 @@ Build Debug and Release, run focused tests, strict format lint and `git diff --c
 
 ```sh
 swift build --product Porpoise
-scripts/test-with-watchdog.sh --filter 'DesktopModeTests|DesktopLoginItemTests'
+PORPOISE_DEFAULTS_SUITE=app.porpoise.DesktopChecks PORPOISE_BRIDGE=desktop-checks \
+  scripts/test-with-watchdog.sh --filter 'DesktopEnvironmentTests|DesktopModeTests|DesktopLoginItemTests'
 swift build -c release --product Porpoise
 codesign --verify --deep --strict "build/Porpoise Desktop Prototype.app"
 ```
@@ -188,20 +226,29 @@ app. The delete action test declines normal Trash/Delete confirmations first, th
 Coverage includes off-by-default/persisted opt-in, quit preference preservation, complete teardown, native menu/label/hover
 parity, shared FSEvents, geometry/collision repair, per-display positions, native Window Server mouse hits, editing and
 animations. Simulated-screen tests do not certify physical Spaces behavior.
-Before proposing changes, also run the full `scripts/test-with-watchdog.sh` validation required by CONTRIBUTING.md.
+On macOS 27.2.1, run the full `scripts/test-with-watchdog.sh` validation required by CONTRIBUTING.md on a disposable
+macOS runner. During a full run on that version, System Settings panes stopped loading and Launch Services
+contained a disk-image record from `AppCleanupTrashTests` incorrectly associated with `/`. The exact causal mechanism
+is not established. Do not repeat disk-image tests on the affected host while investigating it; isolated preferences do not
+isolate macOS's volume and application registries. The focused suites above do not create or mount disk images.
 
 Manual acceptance:
 
-1. Launch the isolated prototype bundle and tick Settings → Advanced → Enable Desktop Mode. Grids appear on both
-   monitors without a preview/control window. Main Porpoise remains a
-   separate installed application. Do not change the Default file browser setting during prototype checks.
+1. Disable Desktop Mode in any other running Porpoise instance to avoid overlaying two test instances. Launch the
+   isolated prototype and tick Settings → Advanced → Enable Desktop Mode. With macOS desktop items/widgets visible
+   or Stage Manager on, verify setup is required and there are no grids. Complete the steps in Desktop & Dock, then
+   Check Again. Grids appear on both monitors without a preview/control window. Main Porpoise remains a separate
+   installed application. Do not change the Default file browser setting during prototype checks.
 2. Compare long names, selected labels and hover with a regular prototype browser window. Change the ordinary label
    line limit/elision/ToolTip settings: the desktop follows. No desktop Name Lines submenu should exist.
-3. Right-click a disposable file, and open the menu-bar icon's menu. Right-click empty desktop: Finder's own menu
-   appears, not Porpoise's. Check shared commands and shortcuts, including visible Move to Trash
+3. Right-click a disposable file, and open the menu-bar icon's menu. Right-click empty desktop: Porpoise's background
+   menu appears, and dragging a selection rectangle selects its items. Check shared commands and shortcuts, including
+   visible Move to Trash
    and Delete entries. Use only disposable scratch files to check confirmations and operations.
 4. Check all four Start Corners, native sort animation and snapping. Check both physical screens, scale/hot-plug,
-   Spaces, Mission Control, Stage Manager, Show Desktop and fullscreen return. No Finder configuration is required.
+   Spaces, Mission Control, Show Desktop and fullscreen return. While active, enable a conflicting macOS desktop
+   option or Stage Manager: verify the surfaces close, the setting remains selected and setup/retry controls remain
+   accessible. Restore the compatible settings and recheck.
 5. Close ordinary windows via red close / Cmd+W, minimize and hide the app: grids remain active. Disable Desktop Mode
    from its context/menu-bar item: every surface disappears. Relaunch: it stays off. Tick Enable Desktop Mode in
    Settings → Advanced: grids return immediately, with no extra window. Quit while enabled and relaunch: grids return.
@@ -227,6 +274,6 @@ or log out the user. A real logout/login remains an attended manual check.
 
 ## Next stage
 
-Complete physical Spaces/fullscreen/accessibility acceptance and define a supported coexistence policy with Finder.
+Complete physical Spaces/fullscreen/accessibility acceptance and validate preference detection across supported macOS versions.
 File distribution/drag between monitors and remaining native action adapters are separate work. Global input handling
 and Finder replacement are outside this implementation.

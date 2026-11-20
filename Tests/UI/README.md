@@ -46,3 +46,5 @@ Three ways to drive the real app:
 
 - **`smoke.py`: real input events** (scripts/ui.swift) on fixed screen positions, for a person watching. It is older and
   interactive: it uses fixed waits and one shared defaults suite, so it's not part of CI.
+
+Desktop Mode acceptance supplies `PORPOISE_DESKTOP_ENVIRONMENT` with the path to a synthetic macOS preference snapshot. It checks blocked activation, successful retry with a nonzero surface count, and pausing after a new conflict, without reading or changing Finder/Stage Manager preferences. Physical system-configuration checks remain attended.

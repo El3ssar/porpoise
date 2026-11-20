@@ -1,51 +1,165 @@
 import AppKit
 import CoreGraphics
 import PorpoiseCore
+import PorpoiseFileSystem
 import PorpoiseServices
 
 /// Owns the desktop surfaces; construction alone never reads Desktop or creates windows.
-@MainActor final class DesktopModeController {
+@MainActor final class DesktopModeController: NSObject {
     static let shared = DesktopModeController()
     static let changed = Notification.Name("PorpoiseDesktopModeChanged")
     private let makeWindow: @MainActor () -> DesktopWindowController
+    private let readEnvironment: @MainActor () -> DesktopEnvironment
+    private let openSettings: @MainActor () -> Void
+    private let observesSystemChanges: Bool
+    private let preferencesDirectory: URL
     private var settingsObservation: NSObjectProtocol?
+    private var environmentObservations: [(NotificationCenter, NSObjectProtocol)] = []
+    private var preferenceWatcher: FolderWatcher?
+    private(set) var environment = DesktopEnvironment(conflicts: [.unreadable])
+    private(set) var pausedStatusItem: NSStatusItem?
     private(set) var windowController: DesktopWindowController?
     var isEnabled: Bool { windowController != nil }
+    var keepsAppRunning: Bool { settingsObservation != nil && Settings.shared.desktopModeEnabled }
 
     init(
+        environment: @escaping @MainActor () -> DesktopEnvironment = { DesktopEnvironment.current() },
+        observesSystemChanges: Bool = (!Settings.isTesting || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype")
+            && !TestEnvironment.desktopEnvironment.isSet,
+        openSettings: @escaping @MainActor () -> Void = {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension") { NSWorkspace.shared.open(url) }
+        },
+        preferencesDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences", isDirectory: true),
         makeWindow: @escaping @MainActor () -> DesktopWindowController = {
             // A test instance shows the folder it was given, never the real Desktop.
             TestEnvironment.desktopDirectory.value().map { DesktopWindowController(location: URL(fileURLWithPath: $0, isDirectory: true)) }
                 ?? DesktopWindowController()
         }
     ) {
+        readEnvironment = environment
+        self.observesSystemChanges = observesSystemChanges
+        self.openSettings = openSettings
+        self.preferencesDirectory = preferencesDirectory
         self.makeWindow = makeWindow
+        super.init()
     }
 
     deinit {
         if let settingsObservation { NotificationCenter.default.removeObserver(settingsObservation) }
+        environmentObservations.forEach { $0.0.removeObserver($0.1) }
+        if let pausedStatusItem { NSStatusBar.system.removeStatusItem(pausedStatusItem) }
     }
 
     func start() {
         if settingsObservation == nil {
             settingsObservation = NotificationCenter.default.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
-                guard n.object == nil || n.object as? String == "desktopModeEnabled" else { return }
-                MainActor.assumeIsolated { self?.applyEnabled(Settings.shared.desktopModeEnabled) }
+                let keys = ["desktopModeEnabled", "desktopShowMenuBarIcon", "desktopMonochromeMenuBarIcon"]
+                guard n.object == nil || (n.object as? String).map(keys.contains) == true else { return }
+                MainActor.assumeIsolated { self?.checkEnvironment() }
             }
         }
-        applyEnabled(Settings.shared.desktopModeEnabled)
+        checkEnvironment()
     }
 
     /// Quitting tears down this session without changing the user's choice for the next launch.
     func stop() {
         if let settingsObservation { NotificationCenter.default.removeObserver(settingsObservation) }
         settingsObservation = nil
+        stopEnvironmentObservation()
         applyEnabled(false)
+        removePausedStatusItem()
     }
 
     func setEnabled(_ enabled: Bool) {
         if Settings.shared.desktopModeEnabled != enabled { Settings.shared.desktopModeEnabled = enabled }
-        applyEnabled(enabled)
+        start()
+    }
+
+    var statusLine: (Bool?, String) {
+        if !Settings.shared.desktopModeEnabled { return (nil, "macOS desktop selected. Porpoise is off.") }
+        if isEnabled { return (true, "Porpoise desktop active. macOS desktop items are hidden.") }
+        return (false, "Porpoise desktop paused.\n" + environment.conflicts.map(\.instruction).joined(separator: "\n"))
+    }
+
+    /// Recheck before creating any listing/surface, after returning from System Settings, and on preference events.
+    @objc func checkEnvironment() {
+        guard settingsObservation != nil else { return }
+        if !Settings.shared.desktopModeEnabled {
+            stopEnvironmentObservation()
+            applyEnabled(false)
+            removePausedStatusItem()
+            return
+        }
+        observeEnvironment()
+        let previous = environment
+        environment = readEnvironment()
+        // Close the old surfaces before exposing a setup menu. An external change never enables a hybrid mode.
+        applyEnabled(environment.isReady)
+        updatePausedStatusItem()
+        if previous != environment { NotificationCenter.default.post(name: Self.changed, object: self) }
+    }
+
+    @objc func openDesktopSettings() { openSettings() }
+
+    @objc private func showSetup() { AppDelegate.shared.showSettings(page: "Advanced", section: "Experiments") }
+    @objc private func useMacOSDesktop() { setEnabled(false) }
+
+    private func observeEnvironment() {
+        guard observesSystemChanges, preferenceWatcher == nil else { return }
+        let watcher = FolderWatcher(reportEventPaths: true) { [weak self] paths in
+            guard paths.contains(where: DesktopEnvironment.isPreferenceChange) else { return }
+            DispatchQueue.main.async { self?.checkEnvironment() }
+        }
+        watcher.watch([preferencesDirectory, preferencesDirectory.appendingPathComponent("ByHost", isDirectory: true)])
+        preferenceWatcher = watcher
+        for (center, names) in [
+            (NotificationCenter.default, [NSApplication.didBecomeActiveNotification]),
+            (NSWorkspace.shared.notificationCenter, [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification]),
+        ] {
+            for name in names {
+                let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.checkEnvironment() }
+                }
+                environmentObservations.append((center, token))
+            }
+        }
+    }
+
+    private func stopEnvironmentObservation() {
+        preferenceWatcher?.stop()
+        preferenceWatcher = nil
+        environmentObservations.forEach { $0.0.removeObserver($0.1) }
+        environmentObservations = []
+    }
+
+    private func removePausedStatusItem() {
+        if let pausedStatusItem { NSStatusBar.system.removeStatusItem(pausedStatusItem) }
+        pausedStatusItem = nil
+    }
+
+    /// A login launch can need setup without having any browser windows. Keep its recovery controls accessible.
+    private func updatePausedStatusItem() {
+        guard !environment.isReady, Settings.shared.desktopShowMenuBarIcon else { removePausedStatusItem(); return }
+        let item = pausedStatusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = DesktopWindowController.menuBarIcon(monochrome: Settings.shared.desktopMonochromeMenuBarIcon)
+        item.button?.toolTip = statusLine.1
+        item.button?.setAccessibilityLabel("Porpoise Desktop Mode — Setup Required")
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Desktop Mode paused — setup required", action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
+        for entry in [
+            NSMenuItem.make("Desktop Mode Settings…", #selector(showSetup), icon: "configure"),
+            .make("Open macOS Desktop Settings…", #selector(openDesktopSettings), icon: "configure"),
+            .make("Check Again", #selector(checkEnvironment), icon: "view-refresh"),
+            .make("Use macOS Desktop", #selector(useMacOSDesktop), icon: "tab-close"),
+        ] {
+            entry.target = self; menu.addItem(entry)
+        }
+        menu.addItem(.separator())
+        let quit = NSMenuItem.make("Quit Porpoise", #selector(NSApplication.terminate(_:)), key: "q")
+        quit.target = NSApp; menu.addItem(quit)
+        item.menu = menu
+        pausedStatusItem = item
     }
 
     private func applyEnabled(_ enabled: Bool) {
@@ -219,8 +333,7 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
         statusItem = item
     }
 
-    /// Clicks on empty desktop go to Finder underneath, so the commands of the desktop's own background menu
-    /// (New Folder, Paste, Sort By, Start Corner…) live here.
+    /// Keep the native background commands available in the optional menu-bar menu as well.
     private func fillStatusMenu(_ menu: NSMenu) {
         menu.removeAllItems()
         menu.addItem(statusEntry)
@@ -408,9 +521,9 @@ final class DesktopSurfaceWindowController: NSWindowController {
         // Hiding the browser app must leave its desktop surfaces in place.
         window.canHide = false
         window.isOpaque = false
-        // Zero-alpha pixels are click-through in Window Server: empty desktop stays Finder's (its menu, widgets,
-        // click to show the desktop). Each item's cell takes clicks through `DesktopGridView.hitFill`.
-        window.backgroundColor = .clear
+        // The preflight requires macOS's desktop items to be hidden. Porpoise owns empty-space clicks too:
+        // retain the native background menu and rubber-band selection without an opaque wallpaper overlay.
+        window.backgroundColor = NSColor.black.withAlphaComponent(1.0 / 255)
         window.hasShadow = false
         window.isRestorable = false
         window.isReleasedWhenClosed = false

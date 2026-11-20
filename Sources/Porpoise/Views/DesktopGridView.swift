@@ -183,16 +183,8 @@ final class DesktopGridView: ItemListView {
         onRearrange?(positions)
     }
 
-    /// Barely there, yet not zero: Window Server gives a click to this window only where a pixel has some alpha.
-    static let hitFill = NSColor.black.withAlphaComponent(1.0 / 255)
-
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        if onDesktop, frames.count == model.rows.count {
-            // The whole cell of an item takes clicks, as in the browser; the empty desktop around it passes them on.
-            Self.hitFill.setFill()
-            for index in candidateIndexes(in: dirtyRect) { frames[index].intersection(dirtyRect).fill(using: .sourceOver) }
-        }
         if let targetSlot {
             Theme.focus.setStroke()
             let path = NSBezierPath(
