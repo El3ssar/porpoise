@@ -8,11 +8,15 @@ public struct LocationKey: Equatable {
     public let stored: String
     /// The location's own built-in style (Downloads by date, a result list as Details…); the common one if it has none.
     public let builtIn: ViewProperties?
+    /// Recent Files keeps its own style even under the common style: it sorts by Last Opened, a date folders don't
+    /// have, and sorting it another way doesn't sort the folders that way.
+    public let ownsStyle: Bool
 
     public init(_ url: URL) {
         stored = url.isFileURL ? url.path : RemoteFS.withoutPassword(url).absoluteString
         let style = LocationContentSources.defaultStyle(for: url)
         builtIn = style == ViewProperties() ? nil : style
+        ownsStyle = LocationKind.of(url) == .recentFiles
     }
 }
 
@@ -37,10 +41,10 @@ public struct ViewStyleStore {
 
     /// The display style for a location. "Use common display style for all folders": one style everywhere, and a
     /// change made in any folder changes it. "Remember display style for each folder": the folder's own saved style,
-    /// else its built-in style, else the common style.
+    /// else its built-in style, else the common style. Recent Files always keeps its own.
     public func style(for key: LocationKey, restoringDefaults: Bool = false) -> ViewProperties {
         let common = restoringDefaults ? ViewProperties() : common
-        guard Settings.shared.rememberPerFolder else { return common }
+        guard Settings.shared.rememberPerFolder || key.ownsStyle else { return common }
         if !restoringDefaults, let data = d.dictionary(forKey: "folderProps")?[key.stored] as? Data,
             let p = try? JSONDecoder().decode(ViewProperties.self, from: data)
         {
@@ -54,7 +58,7 @@ public struct ViewStyleStore {
     }
 
     public func save(_ style: ViewProperties, for key: LocationKey) {
-        if Settings.shared.rememberPerFolder {
+        if Settings.shared.rememberPerFolder || key.ownsStyle {
             var dict = d.dictionary(forKey: "folderProps") ?? [:]
             dict[key.stored] = try? JSONEncoder().encode(style)
             d.set(dict, forKey: "folderProps")
