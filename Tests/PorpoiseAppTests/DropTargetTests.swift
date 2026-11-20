@@ -11,10 +11,12 @@ final class FakeDrag: NSObject, NSDraggingInfo {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("porpoise-drop-test-\(UUID().uuidString)"))
     var mask: NSDragOperation
     var location: NSPoint
+    let source: Any?
     let sequence = Int.random(in: 1_000_000...9_000_000)
-    init(_ urls: [URL], mask: NSDragOperation, at location: NSPoint = .zero) {
+    init(_ urls: [URL], mask: NSDragOperation, at location: NSPoint = .zero, source: Any? = nil) {
         self.mask = mask
         self.location = location
+        self.source = source
         super.init()
         pasteboard.clearContents()
         pasteboard.writeObjects(urls as [NSURL])
@@ -26,7 +28,7 @@ final class FakeDrag: NSObject, NSDraggingInfo {
     var draggedImageLocation: NSPoint { location }
     var draggedImage: NSImage? { nil }
     var draggingPasteboard: NSPasteboard { pasteboard }
-    var draggingSource: Any? { nil }
+    var draggingSource: Any? { source }
     var draggingSequenceNumber: Int { sequence }
     func slideDraggedImage(to screenPoint: NSPoint) {}
     var draggingFormation: NSDraggingFormation = .default

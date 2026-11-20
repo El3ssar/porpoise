@@ -15,7 +15,6 @@ Known limits of the experiment:
   check, not ownership of the system desktop or a guarantee against transient composition during system changes.
 - Right-clicking empty space opens Porpoise's existing background menu; selection can start there too. Background
   commands also remain in the optional menu-bar icon's menu.
-- Dragging files onto or off the desktop is not supported yet.
 - Every display shows the same listing and shares one selection.
 - Behaviour with Spaces, Mission Control, Stage Manager and fullscreen is not fully checked.
 
@@ -79,10 +78,17 @@ services and confirmation preferences as the browser.** Both disposal commands a
 The browser retains its existing Delete-alongside/Shift-alternate preference. App Cleanup and Empty Trash remain excluded from
 the desktop. Tab/split/group/view-mode items and commands without a desktop adapter remain omitted.
 
+Dragging uses the browser's `ItemListView` and `FileDragSource`: the same drag images, selection, cancellation,
+folder highlight, spring-loading, modifier keys and Move Here / Copy Here / Link Here menu. Drops run through the
+shared `FileOperationsController`, including conflicts and Undo. Desktop panels are not sheet owners, so operation
+dialogs open independently. Files can be dragged between desktop and browser windows or into desktop folders.
+
 Start Corner is in the desktop context menu. Top corners fill down, bottom corners fill up; left corners advance
-right and right corners advance left. Icons move between grid cells only; rearrangement changes presentation, not files.
+right and right corners advance left. Dropping desktop items onto space or a non-folder item snaps them to grid cells;
+this changes presentation, not files. A selected group occupies consecutive cells, displacing occupied cells into its
+vacated slots. A drop onto a folder instead uses the normal file operation.
 Sorting clears manual positions and reflows with the native animation. Rename preserves a saved slot. Each display has
-its own saved positions; the Desktop listing and selection are shared. Inter-display file distribution/drag is not added.
+its own saved positions; the Desktop listing and selection are shared. Per-display file distribution is not added.
 
 ## Desktop preferences
 
@@ -182,7 +188,8 @@ or Window-menu entries. Selection does not activate the browser app or restore m
 folder does. `hidesOnDeactivate = false` and `canHide = false`
 keep them visible during Dock Hide / Cmd+H. The window background uses 1/255 alpha so Window Server delivers item and
 empty-space clicks to Porpoise without covering the wallpaper opaquely. Preflight runs before these windows are created.
-No global monitor or synthetic system event interception is installed. URL drops/external file drags remain unregistered.
+No global monitor or synthetic system event interception is installed. File drags and URL drops use the browser's
+standard AppKit registration and drop policy.
 
 Public window ordering does not transfer Finder's desktop ownership or guarantee how Spaces, Mission Control,
 Stage Manager and other apps' fullscreen Spaces compose the surfaces. Finder is neither disabled nor changed;
@@ -247,7 +254,10 @@ Manual acceptance:
    menu appears, and dragging a selection rectangle selects its items. Check shared commands and shortcuts, including
    visible Move to Trash
    and Delete entries. Use only disposable scratch files to check confirmations and operations.
-4. Check all four Start Corners, native sort animation and snapping. Check both physical screens, scale/hot-plug,
+4. Check all four Start Corners, native sort animation and snapping. With disposable files, drag one and several
+   icons between cells, into a folder, and between desktop and browser. Check Move / Copy / Link and modifiers,
+   folder highlighting, cancellation and Undo. Rearranging cells must leave files unchanged.
+   Check both physical screens, scale/hot-plug,
    Spaces, Mission Control, Show Desktop and fullscreen return. While active, enable a conflicting macOS desktop
    option or Stage Manager: verify the surfaces close, the setting remains selected and setup/retry controls remain
    accessible. Restore the compatible settings and recheck.
@@ -277,5 +287,5 @@ or log out the user. A real logout/login remains an attended manual check.
 ## Next stage
 
 Complete physical Spaces/fullscreen/accessibility acceptance and validate preference detection across supported macOS versions.
-File distribution/drag between monitors and remaining native action adapters are separate work. Global input handling
+Per-display file distribution and remaining native action adapters are separate work. Global input handling
 and Finder replacement are outside this implementation.

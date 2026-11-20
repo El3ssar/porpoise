@@ -272,7 +272,11 @@ extension DesktopWindowController {
         activeGrid = view as? DesktopGridView
         return desktopMenu(for: item.flatMap { model?.index(of: $0.url) })
     }
-    func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {}
+    func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {
+        activeGrid = view as? DesktopGridView
+        // Desktop panels aren't sheet owners; the shared operation dialogs present on their own instead.
+        FileOperationsController.shared.handleDrop(urls, onto: folder, operation: operation, in: view, window: actionWindow)
+    }
     func itemList(_ view: ItemListView, rename item: FileItem, to name: String) {
         itemRenaming.rename(item, to: name, showingHidden: model?.props.showHidden ?? false, window: actionWindow) { [weak self] url in
             if let url { self?.renamedPosition(from: item.url, to: url); self?.model?.selection = [url] }; self?.model?.reload()
