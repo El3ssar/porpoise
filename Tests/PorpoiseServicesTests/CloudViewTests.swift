@@ -53,7 +53,9 @@ import Testing
         for (url, mode, role, columns) in locations {
             Settings.shared.rememberPerFolder = false
             let model = DirectoryModel(location: url)
-            #expect(model.props == common)
+            // Recent Files keeps its own style under the common one too.
+            let own = LocationKey(url).ownsStyle
+            #expect(model.props == (own ? LocationContentSources.defaultStyle(for: url) : common))
             Settings.shared.rememberPerFolder = true
             model.reloadProps()
             #expect(model.props.mode == mode && model.props.sortRole == role)
@@ -66,7 +68,7 @@ import Testing
             #expect(model.props == saved)  // no built-in column or mode overwrites an explicit choice
             #expect(ViewStyleStore().style(for: url, restoringDefaults: true) == LocationContentSources.defaultStyle(for: url))
             Settings.shared.rememberPerFolder = false; model.reloadProps()
-            #expect(model.props == common)
+            #expect(model.props == (own ? saved : common))
         }
     }
 

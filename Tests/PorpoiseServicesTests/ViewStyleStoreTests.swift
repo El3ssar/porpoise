@@ -9,6 +9,24 @@ import Testing
 /// Display styles are kept where every earlier version kept them, and each location's built-in style comes from its
 /// content source rather than from scheme names in Core.
 @Suite(.isolatedSettings) struct ViewStyleStoreTests {
+    /// Issue #24: under the common style (the default), Recent Files still sorts by Last Opened, and sorting it
+    /// another way doesn't change the folders' style.
+    @Test func recentFilesKeepsItsOwnStyleUnderTheCommonStyle() {
+        let store = ViewStyleStore()
+        let recent = PlacesModel.recentFilesURL, folder = URL(fileURLWithPath: "/tmp/fixture")
+        let tag = URL(string: "tags:/fixture")!
+        #expect(!Settings.shared.rememberPerFolder)
+        #expect(store.style(for: recent).sortRole == .lastOpened)
+        var accessed = store.style(for: recent); accessed.sortRole = .accessTime
+        store.save(accessed, for: recent)
+        #expect(store.style(for: recent) == accessed)
+        #expect(store.style(for: folder) == ViewProperties() && store.style(for: tag) == ViewProperties())
+        var bySize = ViewProperties(); bySize.sortRole = .size
+        store.save(bySize, for: folder)
+        #expect(store.style(for: URL(fileURLWithPath: "/tmp/other")) == bySize && store.style(for: recent) == accessed)
+        #expect(store.style(for: recent, restoringDefaults: true).sortRole == .lastOpened)
+    }
+
     @Test func stylesSavedByEarlierVersionsStillLoad() throws {
         // As the settings were written before the store: JSON data under "viewProps", a dictionary of path or
         // password-free URL to JSON data under "folderProps", and widths as doubles under "columnWidths".
