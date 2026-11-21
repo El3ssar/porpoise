@@ -24,7 +24,8 @@ enum DesktopReveal {
 enum VolumeEject {
     /// A disk that is gone already (the Dock may eject what it was given itself) counts as ejected.
     @MainActor static func eject(_ volumes: [URL], failed: @escaping @MainActor (_ volume: URL, _ error: Error) -> Void) {
-        for volume in volumes where DesktopVolumes.isVolume(volume) {
+        let mounts = DesktopVolumes.mountPoints()
+        for volume in volumes where DesktopVolumes.isEjectable(volume, mounts: mounts) {
             let left = MainWindowController.leaveVolume(volume)
             DispatchQueue.global(qos: .userInitiated).async {
                 do { try NSWorkspace.shared.unmountAndEjectDevice(at: volume) } catch {

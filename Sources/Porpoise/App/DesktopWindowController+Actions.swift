@@ -7,6 +7,8 @@ extension DesktopWindowController {
     private var selectedURLs: [URL] { selectedItems.map(\.url) }
     /// The selected disks: ejected rather than trashed, and never cut, moved, renamed or duplicated.
     private var selectedVolumes: [URL] { selectedURLs.filter(isVolume) }
+    /// The startup disk can't be ejected: Eject, Move to Trash and ⌘E do nothing for it, as in Finder.
+    private var selectedEjectable: [URL] { selectedVolumes.filter(isEjectable) }
     func isVolume(_ url: URL) -> Bool { model?.leadingItems.contains { $0.url == url } == true }
     private var actionWindow: NSWindow? { nil }
 
@@ -49,7 +51,7 @@ extension DesktopWindowController {
             let show = NSMenuItem.make("Show in Porpoise", #selector(showInPorpoise(_:)), icon: "document-open-folder", obj: item.url)
             show.target = self; menu.addItem(show)
         }
-        if volumes {
+        if volumes, item.map({ isEjectable($0.url) }) == true {
             let eject = NSMenuItem.make("Eject", #selector(ejectVolume(_:)), icon: "media-eject")
             eject.target = self
             menu.insertItem(eject, at: menu.items.firstIndex(where: \.isSeparatorItem).map { $0 + 1 } ?? menu.items.count)
@@ -83,7 +85,10 @@ extension DesktopWindowController {
         guard let model, let action = item.action else { return false }
         if Self.volumeForbidden.contains(action), !selectedVolumes.isEmpty { return false }
         switch action {
-        case #selector(ejectVolume(_:)): return !selectedVolumes.isEmpty
+        case #selector(ejectVolume(_:)): return !selectedEjectable.isEmpty
+        // Disks alone are ejected (all of them must be ejectable); with files, only the files go.
+        case #selector(moveToTrash(_:)) where !selectedVolumes.isEmpty && selectedVolumes.count == selectedURLs.count:
+            return selectedEjectable.count == selectedVolumes.count
         case #selector(emptyTrash(_:)), #selector(removeAppAndLeftovers(_:)): return false
         case #selector(paste(_:)): return !FileOperationsController.shared.clipboardURLs.isEmpty
         case #selector(sortBy(_:)): item.state = (item.representedObject as? String) == model.props.sortRole.rawValue ? .on : .off
@@ -137,7 +142,7 @@ extension DesktopWindowController {
     }
     /// Eject (⌘E): the selected disks.
     @objc func ejectVolume(_ sender: Any?) {
-        let volumes = selectedVolumes
+        let volumes = selectedEjectable
         guard !volumes.isEmpty else { NSSound.beep(); return }
         ejectVolumes(volumes)
     }
@@ -278,12 +283,18 @@ extension DesktopWindowController {
     }
 
     // Explicit local blockers prevent the main menu from finding an unrelated browser as its action target.
-    /// Disks in the selection are ejected, as when they are dragged to the Trash; the files go to the Trash.
+    /// Selected disks on their own are ejected, as when they are dragged to the Trash. With files (⌘A, ⌘⌫), only the
+    /// files go to the Trash: trashing a selection never ejects a drive.
     @objc func moveToTrash(_ sender: Any?) {
         guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true else { return }
-        let volumes = selectedVolumes, files = selectedURLs.filter { !isVolume($0) }
-        if !volumes.isEmpty { ejectVolumes(volumes) }
-        if !files.isEmpty { FileOperationsController.shared.trash(files, window: actionWindow) }
+        let files = selectedURLs.filter { !isVolume($0) }
+        if !files.isEmpty {
+            FileOperationsController.shared.trash(files, window: actionWindow)
+        } else if selectedEjectable.count == selectedVolumes.count {
+            ejectVolumes(selectedVolumes)
+        } else {
+            NSSound.beep()
+        }
     }
     @objc func deleteItem(_ sender: Any?) {
         guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true, selectedVolumes.isEmpty else { return }

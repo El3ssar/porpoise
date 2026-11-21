@@ -41,8 +41,13 @@ Desktop / In Stage Manager) and `StandardHideWidgets` and `StageManagerHideWidge
 at once; nothing is restarted. Before a key is first written, its previous value (or its absence) is recorded in
 Porpoise's defaults (`desktopModeReplacedSettings`); a later session never overwrites that record. Turning Desktop Mode
 off, Quit, and any launch with Desktop Mode off restore each recorded key, unless the user changed it again since (then
-their value stays), and remove the record. So a crash restores at the next launch, or keeps the settings hidden if the
-desktop starts again. `GloballyEnabled` (Stage Manager) and `EnableStandardClickToShowDesktop` are only read.
+their value stays), and remove the record. `DesktopSettingsGuard` covers the other ways Porpoise can end: a SIGTERM
+restores before the process ends as it would have, and a small watcher process (the app's own executable started with
+`--desktop-sentinel <pid> <defaults suite>`) restores as soon as Porpoise ends by a crash or Force Quit. If even that
+was killed, the next launch restores, or keeps the settings hidden if the desktop starts again. Should Porpoise be
+deleted while Finder's icons are hidden, `defaults delete com.apple.WindowManager StandardHideDesktopIcons` (and
+`HideDesktop`, `StandardHideWidgets`, `StageManagerHideWidgets`) brings them back. An unrecognized value changes
+nothing, and a paused desktop restores at once: Finder's icons are never hidden without Porpoise's showing. `GloballyEnabled` (Stage Manager) and `EnableStandardClickToShowDesktop` are only read.
 
 `DesktopEnvironment` then checks that the four keys took effect. If macOS kept any of them (or a value is unrecognized),
 the desktop pauses and lists them; **Open macOS Desktop Settings…** and **Check Again** remain for that case. Missing
@@ -78,10 +83,13 @@ Mount, unmount and rename notifications refresh them.
 
 A disk is ejected, never moved, trashed, renamed, duplicated, cut or deleted. Its menu has **Eject** in place of
 **Move to Trash**; Move to Trash, ⌘E and dragging it to the Dock's Trash eject it (`VolumeEject`, which first sends
-every browser pane on it elsewhere, as the sidebar's eject does). A drag with a disk offers only copy and link
-(rearranging it on the desktop still works), and carries Finder's `com.apple.finder.node` type so the Dock's Trash
-shows Eject. `FileOperationsController` also refuses to move, trash or delete any disk's top level from anywhere in
-the app, and runs the rest of the selection.
+every browser pane on it elsewhere, as the sidebar's eject does). Trashing a selection of files and disks (⌘A, ⌘⌫, or
+dragging it all to the Trash) moves only the files: it never ejects a drive. The startup disk has no Eject, isn't
+taken by the Trash, and drags only as an alias. Other disks drag as copy or link (rearranging them on the desktop still
+works), carrying Finder's `com.apple.finder.node` type so the Dock's Trash shows Eject. What counts as a disk is
+always the kernel's mount table (`DesktopVolumes.mountPoints`), wherever the disk is mounted; `FileOperationsController`
+refuses to move, trash or delete any mount point from anywhere in the app, before anything else and for remote
+destinations too, and runs the rest of the selection. Disks are listed off the main thread.
 
 ## Shared Porpoise interface
 

@@ -16,6 +16,17 @@ import Testing
     private let root = URL(fileURLWithPath: "/", isDirectory: true)
     private var rootItem: FileItem { FileItem(url: root, name: "Startup Disk", isDirectory: true) }
 
+    /// The disks a test's desktop lists, changed while it runs (they are listed off the main thread).
+    private final class Disks: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [FileItem]
+        init(_ items: [FileItem]) { stored = items }
+        var items: [FileItem] {
+            get { lock.withLock { stored } }
+            set { lock.withLock { stored = newValue } }
+        }
+    }
+
     /// Both preference domains in memory, as Stage Manager users have them: Finder's items and widgets shown.
     private final class FakeSystem {
         var domains: [String: [String: Any]] = [
@@ -32,7 +43,7 @@ import Testing
     }
 
     private func makeDesktop(
-        location: URL, volumes: @escaping @MainActor () -> [FileItem] = { [] }, reveal: @escaping @MainActor () -> Void = {}
+        location: URL, volumes: @escaping @Sendable () -> [FileItem] = { [] }, reveal: @escaping @MainActor () -> Void = {}
     ) -> DesktopWindowController {
         let controller = DesktopWindowController(
             location: location, displays: { [DesktopDisplay(id: 11, frame: NSRect(x: 0, y: 0, width: 640, height: 480))] },
@@ -73,6 +84,35 @@ import Testing
         defer { mode.stop() }
         mode.start()
         #expect(system.untouched && Settings.store.object(forKey: DesktopSystemSettings.savedKey) == nil)
+    }
+
+    @Test func anUnrecognizedSettingChangesNothingAndPausing() throws {
+        let scratch = try Scratch(), system = FakeSystem()
+        system.domains["com.apple.finder"]?["CreateDesktop"] = "true"  // a string, as `defaults write` without -bool leaves it
+        let mode = DesktopModeController(
+            environment: { DesktopEnvironment.inspect(system.preferences) },
+            systemSettings: { DesktopSystemSettings(preferences: system.preferences, store: Settings.store) },
+            makeWindow: { makeDesktop(location: scratch.url) })
+        defer { mode.stop() }
+        mode.setEnabled(true)
+        #expect(!mode.isEnabled && mode.environment.conflicts.contains(.unreadable))
+        #expect(system.untouched && Settings.store.object(forKey: DesktopSystemSettings.savedKey) == nil)
+    }
+
+    @Test func aPausedDesktopLeavesFindersIconsAsTheUserHadThem() throws {
+        let scratch = try Scratch(), system = FakeSystem()
+        // macOS takes the item settings but keeps the widgets (a managed Mac, say).
+        let partly = DesktopPreferences(
+            read: { system.preferences.read($0, $1) },
+            write: { domain, key, value in if !key.contains("Widgets") { system.preferences.write(domain, key, value) } })
+        let mode = DesktopModeController(
+            environment: { DesktopEnvironment.inspect(partly) },
+            systemSettings: { DesktopSystemSettings(preferences: partly, store: Settings.store) },
+            makeWindow: { makeDesktop(location: scratch.url) })
+        defer { mode.stop() }
+        mode.setEnabled(true)
+        #expect(!mode.isEnabled && mode.pausedStatusItem != nil && mode.environment.conflicts == [.widgets, .stageWidgets])
+        #expect(system.untouched)
     }
 
     @Test func settingsMacOSRefusesToChangePauseTheDesktopAndSaySo() throws {
@@ -140,8 +180,8 @@ import Testing
     @Test func disksComeFirstInTheTopRightCornerAndFollowMountChanges() async throws {
         let scratch = try Scratch()
         _ = try scratch.file("a.txt")
-        var disks = [rootItem]
-        let controller = makeDesktop(location: scratch.url, volumes: { disks })
+        let disks = Disks([rootItem]), item = rootItem
+        let controller = makeDesktop(location: scratch.url, volumes: { disks.items })
         defer { controller.close() }
         try #require(await eventually { controller.model?.rows.count == 2 })
         let grid = try #require(controller.grids.first), model = try #require(controller.model)
@@ -151,40 +191,46 @@ import Testing
         let disk = grid.geometry.frame(for: grid.slots[0]), file = grid.geometry.frame(for: grid.slots[1])
         #expect(disk.maxX > grid.bounds.width - 140 && disk.minY < 140)
         #expect(file.minX == disk.minX && file.minY > disk.minY)
-        disks = []
+        disks.items = []
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didUnmountNotification, object: NSWorkspace.shared)
-        #expect(model.rows.map(\.item.name) == ["a.txt"])
-        disks = [rootItem]
+        #expect(await eventually { model.rows.map(\.item.name) == ["a.txt"] })
+        disks.items = [item]
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didMountNotification, object: NSWorkspace.shared)
-        #expect(model.rows.first?.item.url == root)
+        #expect(await eventually { model.rows.first?.item.url == root })
     }
 
     @Test func aDiskIsEjectedInsteadOfTrashedAndIsNeverRenamedCutDuplicatedOrDeleted() async throws {
-        let scratch = try Scratch()
+        let scratch = try Scratch(), elsewhere = try Scratch()
         let file = try scratch.file("file.txt", "unchanged")
-        let controller = makeDesktop(location: scratch.url, volumes: { [rootItem] })
+        // A stand-in disk: a scratch folder, so even a broken guard could never reach a real one.
+        let disk = try elsewhere.folder("USB"), diskItem = FileItem(url: disk, name: "USB", isDirectory: true)
+        let controller = makeDesktop(location: scratch.url, volumes: { [diskItem] })
         defer { controller.close() }
         var ejected: [[URL]] = []
         controller.ejectVolumes = { ejected.append($0) }
+        controller.isEjectable = { _ in true }  // as an external disk would be
         try #require(await eventually { controller.model?.rows.count == 2 })
         let model = try #require(controller.model)
-        model.selection = [root]
+        model.selection = [disk]
         let menu = controller.desktopMenu(for: 0)
         let titles = menu.items.map(\.title)
         #expect(titles.contains("Eject") && !titles.contains("Move to Trash") && !titles.contains("Delete"))
         #expect(!titles.contains("Rename…") && !titles.contains("Cut") && !titles.contains("Duplicate Here"))
-        #expect(titles.contains("Open") || titles.contains { $0.hasPrefix("Open") })
-        for action in [#selector(DesktopWindowController.renameItem(_:)), #selector(DesktopWindowController.cut(_:)),
-                       #selector(DesktopWindowController.duplicateItem(_:)), #selector(DesktopWindowController.deleteItem(_:))] {
+        #expect(titles.contains { $0.hasPrefix("Open") })
+        for action in [
+            #selector(DesktopWindowController.renameItem(_:)), #selector(DesktopWindowController.cut(_:)),
+            #selector(DesktopWindowController.duplicateItem(_:)), #selector(DesktopWindowController.deleteItem(_:)),
+        ] {
             #expect(!controller.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: "")), "\(action)")
         }
         #expect(controller.validateMenuItem(NSMenuItem(title: "", action: #selector(DesktopWindowController.ejectVolume(_:)), keyEquivalent: "")))
         controller.renameItem(nil); controller.cut(nil); controller.duplicateItem(nil); controller.deleteItem(nil)
-        controller.itemList(try #require(controller.grids.first), rename: rootItem, to: "Renamed")
+        controller.itemList(try #require(controller.grids.first), rename: diskItem, to: "Renamed")
         #expect(ejected.isEmpty && FileOperationsController.shared.cutURLs.isEmpty)
         controller.moveToTrash(nil)
         controller.ejectVolume(nil)
-        #expect(ejected == [[root], [root]])
+        #expect(ejected == [[disk], [disk]])
+        #expect(FileManager.default.fileExists(atPath: disk.path))
         // A file alone keeps every command; ⌘E has no disk to eject.
         model.selection = [file]
         #expect(controller.validateMenuItem(NSMenuItem(title: "", action: #selector(DesktopWindowController.renameItem(_:)), keyEquivalent: "")))
@@ -193,32 +239,80 @@ import Testing
         #expect(scratch.read("file.txt") == "unchanged")
     }
 
+    @Test func trashingAMixedSelectionNeverEjectsTheDisksInIt() async throws {
+        let scratch = try Scratch(), elsewhere = try Scratch()
+        let file = try scratch.file("file.txt", "unchanged")
+        let disk = try elsewhere.folder("USB"), diskItem = FileItem(url: disk, name: "USB", isDirectory: true)
+        let controller = makeDesktop(location: scratch.url, volumes: { [diskItem] })
+        defer { controller.close() }
+        var ejected: [[URL]] = []
+        controller.ejectVolumes = { ejected.append($0) }
+        controller.isEjectable = { _ in true }
+        try #require(await eventually { controller.model?.rows.count == 2 })
+        let model = try #require(controller.model)
+        // The files would go to the Trash (declined here, so nothing leaves the scratch folder); the disk stays put.
+        let operations = FileOperationsController.shared, previousUI = operations.ui
+        let ui = ScriptedUI(confirms: false); operations.ui = ui
+        defer { operations.ui = previousUI }
+        model.selection = [disk, file]
+        #expect(controller.validateMenuItem(NSMenuItem(title: "", action: #selector(DesktopWindowController.moveToTrash(_:)), keyEquivalent: "")))
+        Settings.shared.confirmTrash = true
+        controller.moveToTrash(nil)
+        #expect(ejected.isEmpty && FileManager.default.fileExists(atPath: disk.path))
+        #expect(ui.questions.count == 1 && scratch.read("file.txt") == "unchanged")
+    }
+
     @Test func aDraggedDiskIsCopiedOrLinkedNeverMovedAndStillRearrangesTheDesktop() async throws {
-        #expect(FileDragSource.includesVolume([root]) && !FileDragSource.includesVolume([URL(fileURLWithPath: NSTemporaryDirectory())]))
-        #expect(FileDragSource.mask(for: .outsideApplication, volumes: true) == [.copy, .link, .delete])
-        #expect(FileDragSource.mask(for: .withinApplication, volumes: true) == [.copy, .link])
+        #expect(FileDragSource.volumes(in: [root]) == .startupDisk)
+        #expect(FileDragSource.volumes(in: [URL(fileURLWithPath: NSTemporaryDirectory())]) == FileDragSource.DraggedVolumes.none)
+        #expect(FileDragSource.mask(for: .outsideApplication, volumes: .ejectable) == [.copy, .link, .delete])
+        #expect(FileDragSource.mask(for: .withinApplication, volumes: .ejectable) == [.copy, .link])
+        // The startup disk is never copied wholesale or offered to the Trash: an alias at most.
+        #expect(FileDragSource.mask(for: .outsideApplication, volumes: .startupDisk) == [.link])
+        #expect(FileDragSource.mask(for: .withinApplication, volumes: .startupDisk) == [.link])
         #expect(FileDragSource.mask(for: .outsideApplication).contains(.move))
         let scratch = try Scratch()
         _ = try scratch.file("a.txt")
-        let controller = makeDesktop(location: scratch.url, volumes: { [rootItem] })
+        let item = rootItem
+        let controller = makeDesktop(location: scratch.url, volumes: { [item] })
         defer { controller.close() }
         try #require(await eventually { controller.model?.rows.count == 2 })
         let grid = try #require(controller.grids.first)
         grid.window?.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
         let previous = DropTargetPolicy.heldModifiers
         DropTargetPolicy.heldModifiers = { [] }; defer { DropTargetPolicy.heldModifiers = previous; DropTargetPolicy.dragEnded() }
-        grid.draggingVolumes = true
-        defer { grid.draggingVolumes = false }
+        grid.draggingVolumes = .startupDisk
+        defer { grid.draggingVolumes = .none }
         let target = grid.geometry.frame(for: 4)
-        let drag = FakeDrag([root], mask: [.copy, .link], at: grid.convert(NSPoint(x: target.midX, y: target.midY), to: nil), source: grid)
+        let drag = FakeDrag([root], mask: [.link], at: grid.convert(NSPoint(x: target.midX, y: target.midY), to: nil), source: grid)
         #expect(grid.draggingUpdated(drag) == .move && grid.performDragOperation(drag))
         #expect(controller.gridPreferences.positions[grid.scope]?[root.absoluteString] == 4)
+    }
+
+    @Test func theStartupDiskOffersNoEjectAndNeverGoesToTheTrash() async throws {
+        let scratch = try Scratch()
+        _ = try scratch.file("file.txt")
+        let item = rootItem
+        let controller = makeDesktop(location: scratch.url, volumes: { [item] })
+        defer { controller.close() }
+        var ejected: [[URL]] = []
+        controller.ejectVolumes = { ejected.append($0) }
+        try #require(await eventually { controller.model?.rows.count == 2 })
+        let model = try #require(controller.model)
+        model.selection = [root]
+        let titles = controller.desktopMenu(for: 0).items.map(\.title)
+        #expect(!titles.contains("Eject") && !titles.contains("Move to Trash"))
+        for action in [#selector(DesktopWindowController.ejectVolume(_:)), #selector(DesktopWindowController.moveToTrash(_:))] {
+            #expect(!controller.validateMenuItem(NSMenuItem(title: "", action: action, keyEquivalent: "")), "\(action)")
+        }
+        controller.ejectVolume(nil); controller.moveToTrash(nil)
+        #expect(ejected.isEmpty)
     }
 }
 
 @MainActor @Suite struct DiskDragPasteboardTests {
     @Test func aDraggedDiskCarriesFindersNodeSoTheDocksTrashOffersEject() throws {
-        let disk = FileDragWriter(url: URL(fileURLWithPath: "/", isDirectory: true), allURLs: nil)
+        let disk = FileDragWriter(url: URL(fileURLWithPath: "/", isDirectory: true), allURLs: nil, isVolume: true)
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("porpoise-disk-drag-\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
         #expect(disk.writableTypes(for: pasteboard) == [.fileURL, FileDragWriter.finderNode])
@@ -228,5 +322,9 @@ import Testing
         let scratch = try Scratch()
         let file = FileDragWriter(url: try scratch.file("a.txt"), allURLs: [])
         #expect(file.writableTypes(for: pasteboard) == [.fileURL, FileDragWriter.filenames])
+        // The drag source finds the disks among the items itself, from one look at the mount table.
+        let items = FileDragSource.items([URL(fileURLWithPath: "/"), scratch.url]) { _ in nil }
+        let writers = items.compactMap { $0.item as? FileDragWriter }
+        #expect(writers.map { $0.writableTypes(for: pasteboard).contains(FileDragWriter.finderNode) } == [true, false])
     }
 }

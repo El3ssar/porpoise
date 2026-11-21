@@ -102,9 +102,16 @@ import PorpoiseServices
             return
         }
         observeEnvironment()
-        systemSettings()?.apply()
+        // With an unrecognized value nothing is changed: Porpoise pauses and says so.
+        let settings = systemSettings()
+        if let settings, !readEnvironment().conflicts.contains(.unreadable) {
+            settings.apply()
+            DesktopSettingsGuard.start()
+        }
         let previous = environment
         environment = readEnvironment()
+        // Paused, Finder's desktop is as the user had it: never no desktop icons at all.
+        if !environment.isReady { settings?.restore() }
         windowController?.refreshVolumes()
         // Close the old surfaces before exposing a setup menu. An external change never enables a hybrid mode.
         applyEnabled(environment.isReady)
@@ -209,10 +216,12 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     private var cutObservation: NSObjectProtocol?
     private var settingsObservation: NSObjectProtocol?
     private var volumeObservations: [NSObjectProtocol] = []
-    private let volumes: @MainActor () -> [FileItem]
+    private let volumes: @Sendable () -> [FileItem]
+    private var volumesGeneration = 0
     private let revealDesktop: @MainActor () -> Void
     /// Tests record what would be ejected instead.
     var ejectVolumes: @MainActor ([URL]) -> Void = { VolumeEject.eject($0) }
+    var isEjectable: (URL) -> Bool = { DesktopVolumes.isEjectable($0) }
     private(set) var statusItem: NSStatusItem?
     var onDisable: (() -> Void)?
     weak var activeGrid: DesktopGridView?
@@ -227,7 +236,7 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
         location: URL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0],
         screenNotifications: NotificationCenter = .default,
         displays: @escaping @MainActor () -> [DesktopDisplay] = { DesktopDisplay.current() },
-        volumes: @escaping @MainActor () -> [FileItem] = { DesktopPreferences.current().map { DesktopVolumes.current($0) } ?? [] },
+        volumes: @escaping @Sendable () -> [FileItem] = { DesktopPreferences.current().map { DesktopVolumes.current($0) } ?? [] },
         revealDesktop: @escaping @MainActor () -> Void = { DesktopReveal.wallpaperClicked() }
     ) {
         self.displays = displays
@@ -281,7 +290,20 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     }
 
     /// The disks Finder would show on its desktop come first, in the top right corner until moved.
-    func refreshVolumes() { model?.leadingItems = volumes() }
+    /// Listed off the main thread: a stale network mount can take long to answer. The latest listing wins.
+    func refreshVolumes() {
+        volumesGeneration += 1
+        let generation = volumesGeneration, list = volumes
+        DispatchQueue.global(qos: .userInitiated).async {
+            let found = list()
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.volumesGeneration else { return }
+                    self.model?.leadingItems = found
+                }
+            }
+        }
+    }
 
     private func stopVolumeObservation() {
         volumeObservations.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }

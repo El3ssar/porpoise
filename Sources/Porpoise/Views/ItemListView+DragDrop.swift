@@ -12,7 +12,7 @@ extension ItemListView: NSDraggingSource {
         let url = model.rows[i].item.url
         if !model.selection.contains(url) { model.selection = [url] }
         let items = model.rows.enumerated().filter { model.selection.contains($0.element.item.url) }
-        draggingVolumes = FileDragSource.includesVolume(items.map(\.element.item.url))
+        draggingVolumes = FileDragSource.volumes(in: items.map(\.element.item.url))
         let drag = FileDragSource.items(items.map(\.element.item.url)) { n in
             guard n < maxDragImages else { return nil }
             let (idx, r) = items[n]
@@ -104,10 +104,10 @@ final class FileDragWriter: NSObject, NSPasteboardWriting {
     let allURLs: [URL]?
     private let isVolume: Bool
 
-    init(url: URL, allURLs: [URL]?) {
+    init(url: URL, allURLs: [URL]?, isVolume: Bool = false) {
         self.url = url
         self.allURLs = allURLs
-        isVolume = DesktopVolumes.isVolume(url)
+        self.isVolume = isVolume
     }
 
     func writableTypes(for pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {

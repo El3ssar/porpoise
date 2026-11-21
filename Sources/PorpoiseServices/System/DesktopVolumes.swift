@@ -68,12 +68,30 @@ public enum DesktopVolumes {
         return items(shown: .finder(preferences), volumes: volumes)
     }
 
-    /// Whether `url` is a disk's top level (the startup disk, or one mounted in /Volumes), which can be ejected but
-    /// never moved or trashed. Other paths are ruled out without touching the disk.
-    public static func isVolume(_ url: URL) -> Bool {
-        guard url.isFileURL else { return false }
-        let path = url.standardizedFileURL.path
-        guard path == "/" || (path as NSString).deletingLastPathComponent == "/Volumes" else { return false }
-        return (try? url.resourceValues(forKeys: [.isVolumeKey]).isVolume) == true
+    /// Where every disk is mounted (the startup disk, /Volumes, and anywhere else, such as a FUSE mount in the home
+    /// folder), from the kernel's mount table in one call. Ask once for a batch of items.
+    public static func mountPoints() -> Set<String> {
+        let count = getfsstat(nil, 0, MNT_NOWAIT)
+        guard count > 0 else { return ["/"] }
+        let table = UnsafeMutablePointer<statfs>.allocate(capacity: Int(count))
+        defer { table.deallocate() }
+        let filled = getfsstat(table, Int32(MemoryLayout<statfs>.stride * Int(count)), MNT_NOWAIT)
+        guard filled > 0 else { return ["/"] }
+        return Set(
+            (0..<Int(filled)).map { index in
+                withUnsafeBytes(of: table[index].f_mntonname) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            })
+    }
+
+    /// Whether `url` is a disk's top level: where it is mounted. A disk can be ejected but never moved, trashed or
+    /// deleted.
+    public static func isVolume(_ url: URL, mounts: Set<String>? = nil) -> Bool {
+        url.isFileURL && (mounts ?? mountPoints()).contains(url.standardizedFileURL.path)
+    }
+
+    /// Whether a disk can be ejected: any but the startup disk, as in Finder.
+    public static func isEjectable(_ url: URL, mounts: Set<String>? = nil) -> Bool {
+        isVolume(url, mounts: mounts) && url.standardizedFileURL.path != "/"
+            && (try? url.resourceValues(forKeys: [.volumeIsRootFileSystemKey]).volumeIsRootFileSystem) != true
     }
 }

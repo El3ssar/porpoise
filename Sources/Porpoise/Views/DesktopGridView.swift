@@ -163,7 +163,7 @@ final class DesktopGridView: ItemListView {
         guard let source = sender.draggingSource as? DesktopGridView, source.model === model else { return nil }
         let operation = DropTargetPolicy.operation(for: sender)
         // A drag with a disk only copies or links, which on empty desktop space still just moves the icons.
-        guard operation == .generic || operation == .move || source.draggingVolumes else { return nil }
+        guard operation == .generic || operation == .move || source.draggingVolumes != .none else { return nil }
         let point = convert(sender.draggingLocation, from: nil)
         let urls = DropTargetPolicy.urls(sender)
         guard visibleRect.contains(point), geometry.slot(at: point) != nil, dropFolder(at: point).1 == nil,
