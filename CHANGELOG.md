@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.20.0
+
+- **Desktop Mode (experimental, off until you turn it on).** Porpoise can show your Desktop folder as the desktop itself, with Porpoise's icons, menus, selection, Quick Look and drag and drop. Turn it on in Settings › Advanced.
+  - **It works with Stage Manager on or off.** There is nothing to set up first: while it's on, Porpoise hides Finder's own desktop icons and widgets so nothing shows twice. Turning it off, or quitting Porpoise, puts back exactly what you had, even after a crash.
+  - **Clicking empty desktop space reveals the desktop,** as clicking the wallpaper does, following your Desktop & Dock setting. Under Stage Manager your windows go into the strip; click again to bring them back.
+  - **Your disks are on the desktop,** in the top right corner as in Finder, following Finder's "Show these items on the desktop" choices. Eject, ⌘E, Move to Trash or dragging a disk to the Trash ejects it. The startup disk can't be ejected or trashed.
+  - **Icons stay where you put them.** Dragging several icons moves them together and keeps their arrangement.
+  - Optionally start Desktop Mode at login, show its menu-bar icon, and choose whether desktop folders open in new windows or tabs.
+- **Disks are never moved or deleted by accident.** Anywhere in Porpoise, moving a disk, putting it in the Trash or deleting it is refused (including moving it to a server); the rest of the selection still goes. Trashing files together with disks trashes only the files.
+- **Recent Files sorts by when you last opened a file.** A new Last Opened column (Finder's "Date Last Opened") is the default sort, newest first, and Recent Files keeps its own sort instead of changing every folder's.
+- **Saved connections can be edited or removed** from their sidebar row's context menu.
+- **SFTP remembers your password** in the Keychain, as Finder does for its servers ("Remember this password in my keychain", on by default).
+
 ## 0.19.1
 
 - **Numbers sort naturally.** Numbered filenames sort as 1, 2, 9, 10 in every name-sorting mode, while keeping the chosen letter/case ordering.
