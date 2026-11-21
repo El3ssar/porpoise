@@ -290,6 +290,47 @@ import Testing
         #expect(writes > afterFirst && !mode.isEnabled && system.untouched)
     }
 
+    @Test func severalIconsMoveTogetherAndKeepTheirArrangement() async throws {
+        let scratch = try Scratch()
+        let names = ["a", "b", "c", "d", "e"]
+        let urls = try names.map { try scratch.file("\($0).txt", $0) }
+        let controller = makeDesktop(location: scratch.url)
+        defer { controller.close() }
+        try #require(await eventually { controller.model?.rows.count == 5 })
+        let grid = try #require(controller.grids.first)
+        grid.window?.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
+        let rows = grid.geometry.rows
+        func slot(_ url: URL) throws -> Int { grid.slots[try #require(grid.model.index(of: url))] }
+        func cell(_ url: URL) throws -> (Int, Int) { let s = try slot(url); return (s / rows, s % rows) }
+        func center(_ slot: Int) -> NSPoint { let f = grid.geometry.frame(for: slot); return NSPoint(x: f.midX, y: f.midY) }
+        // a at column 0 row 0, b at column 1 row 1: a diagonal pair.
+        grid.moveItem(at: try #require(grid.model.index(of: urls[1])), to: center(rows + 1))
+        try #require(try cell(urls[1]) == (1, 1))
+        try #require(try cell(urls[0]) == (0, 0))
+        let previous = DropTargetPolicy.heldModifiers
+        DropTargetPolicy.heldModifiers = { [] }
+        defer { DropTargetPolicy.heldModifiers = previous; DropTargetPolicy.dragEnded(); grid.dragAnchor = nil }
+        // Picked up by b and dropped one column right and one row lower: a follows at the same distance.
+        grid.model.selection = [urls[0], urls[1]]
+        grid.dragAnchor = urls[1]
+        let drag = FakeDrag(
+            [urls[0], urls[1]], mask: [.move, .generic], at: grid.convert(center(2 * rows + 2), to: nil), source: grid)
+        #expect(grid.draggingUpdated(drag) == .move && grid.performDragOperation(drag))
+        grid.relayout()
+        #expect(try cell(urls[0]) == (1, 1) && cell(urls[1]) == (2, 2))
+        // Every icon still has a cell of its own, and no file changed.
+        #expect(Set(grid.slots).count == 5)
+        for (url, name) in zip(urls, names) { #expect(try String(contentsOf: url, encoding: .utf8) == name) }
+        // Picked up by a and dropped where b would leave the bottom: the pair stops at the edge, still diagonal.
+        grid.dragAnchor = urls[0]
+        let edge = FakeDrag(
+            [urls[0], urls[1]], mask: [.move, .generic], at: grid.convert(center(0 * rows + 2), to: nil), source: grid)
+        #expect(grid.performDragOperation(edge))
+        grid.relayout()
+        #expect(try cell(urls[0]) == (0, 1) && cell(urls[1]) == (1, 2))
+        #expect(Set(grid.slots).count == 5)
+    }
+
     @Test func aDraggedDiskIsCopiedOrLinkedNeverMovedAndStillRearrangesTheDesktop() async throws {
         #expect(FileDragSource.volumes(in: [root]) == .startupDisk)
         #expect(FileDragSource.volumes(in: [URL(fileURLWithPath: NSTemporaryDirectory())]) == FileDragSource.DraggedVolumes.none)

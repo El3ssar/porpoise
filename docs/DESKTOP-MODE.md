@@ -97,6 +97,9 @@ destinations too, and runs the rest of the selection. Disks are listed off the m
 Font, icon metrics, label wrapping, middle/end elision, maximum lines, selection, hover, ToolTips and animations use
 exactly the browser's existing settings and implementation. Change names/hover in the ordinary Porpoise settings.
 Corner, per-display positions and view properties are persisted separately from the common display settings.
+Dragging several icons moves them as a group that keeps its arrangement, as in Finder: the icon the drag started from
+lands in the cell under the pointer and the others keep their distance from it in columns and rows. The group stops
+at the grid's edges, and icons already in the cells it lands on take the cells it left.
 The desktop also handles continued click counts 4, 6, … as successive double-clicks through the same native opening
 path. Ordinary browser click dispatch is unchanged.
 

@@ -116,6 +116,8 @@ class ItemListView: NSView {
     var rubberBaseSelection: Set<URL> = []
     /// The drag this view started includes a disk (it can't be moved).
     var draggingVolumes = FileDragSource.DraggedVolumes.none
+    /// The item the drag this view started was picked up by: a desktop drop puts it under the pointer.
+    var dragAnchor: URL?
     /// The item a press is on: by URL, since a reload during the press can move the rows.
     var mouseDownURL: URL?
     var mouseDownPoint: CGPoint = .zero

@@ -185,27 +185,40 @@ final class DesktopGridView: ItemListView {
         let urls = DropTargetPolicy.urls(sender)
         setDropTarget(nil, background: false)
         DropTargetPolicy.dragEnded()
-        moveItems(urls, to: point)
+        moveItems(urls, to: point, anchor: (sender.draggingSource as? ItemListView)?.dragAnchor)
         return true
     }
 
     func moveItem(at index: Int, to point: NSPoint) {
         guard model.rows.indices.contains(index) else { return }
-        moveItems([model.rows[index].item.url], to: point)
+        moveItems([model.rows[index].item.url], to: point, anchor: model.rows[index].item.url)
     }
 
-    private func moveItems(_ urls: [URL], to point: NSPoint) {
+    /// As in Finder, the icons move together and keep their arrangement: the one the drag started from (`anchor`) lands
+    /// in the cell under the pointer, and the others keep their distance from it in columns and rows. The group is kept
+    /// inside the grid. Icons already in the cells it lands on take the cells it left.
+    func moveItems(_ urls: [URL], to point: NSPoint, anchor: URL?) {
         let keys = Set(urls.compactMap { model.index(of: $0).map { model.rows[$0].item.url.absoluteString } })
         let moving = itemKeys.filter(keys.contains)
         guard !moving.isEmpty, slots.count == itemKeys.count, let target = geometry.slot(at: point) else { return }
         var positions = Dictionary(uniqueKeysWithValues: zip(itemKeys, slots))
         let original = positions
-        let start = min(target, geometry.capacity - moving.count)
-        let destinations = Array(start..<(start + moving.count))
+        let rows = geometry.rows, columns = max(geometry.columns, (geometry.capacity + rows - 1) / rows)
+        func cell(_ slot: Int) -> (column: Int, row: Int) { (slot / rows, slot % rows) }
+        let anchorKey = anchor.flatMap { model.index(of: $0) }.map { model.rows[$0].item.url.absoluteString }
+        let lead = anchorKey.flatMap { keys.contains($0) ? $0 : nil } ?? moving[0]
+        let cells = moving.compactMap { positions[$0].map(cell) }
+        guard cells.count == moving.count, let from = positions[lead].map(cell) else { return }
+        let to = cell(target)
+        let minColumn = cells.map(\.column).min()!, maxColumn = cells.map(\.column).max()!
+        let minRow = cells.map(\.row).min()!, maxRow = cells.map(\.row).max()!
+        let dc = max(min(to.column - from.column, columns - 1 - maxColumn), -minColumn)
+        let dr = max(min(to.row - from.row, rows - 1 - maxRow), -minRow)
+        let destinations = cells.map { ($0.column + dc) * rows + $0.row + dr }
         let occupied = Set(destinations)
-        let sources = Set(moving.compactMap { positions[$0] })
+        let sources = Set(cells.map { $0.column * rows + $0.row })
         let vacated = sources.subtracting(occupied).sorted()
-        let displaced = zip(itemKeys, slots).filter { !keys.contains($0.0) && occupied.contains($0.1) }.map(\.0)
+        let displaced = zip(itemKeys, slots).filter { !keys.contains($0.0) && occupied.contains($0.1) }.sorted { $0.1 < $1.1 }.map(\.0)
         for (key, slot) in zip(displaced, vacated) { positions[key] = slot }
         for (key, slot) in zip(moving, destinations) { positions[key] = slot }
         guard positions != original else { return }
