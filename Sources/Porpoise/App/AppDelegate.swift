@@ -339,7 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for name in [NSWindow.didBecomeMainNotification, NSWindow.didBecomeKeyNotification] {
             desktopWindowObservations.append(
                 center.addObserver(forName: name, object: nil, queue: .main) { [weak self] n in
-                    MainActor.assumeIsolated { self?.prepareToShowOrdinaryWindow(n.object as? NSWindow) }
+                    MainActor.assumeIsolated { _ = self?.prepareToShowOrdinaryWindow(n.object as? NSWindow) }
                 })
         }
         desktopWindowObservations.append(
