@@ -10,6 +10,7 @@ import PorpoiseServices
     static let changed = Notification.Name("PorpoiseDesktopModeChanged")
     private let makeWindow: @MainActor () -> DesktopWindowController
     private let readEnvironment: @MainActor () -> DesktopEnvironment
+    private let systemSettings: @MainActor () -> DesktopSystemSettings?
     private let openSettings: @MainActor () -> Void
     private let observesSystemChanges: Bool
     private let preferencesDirectory: URL
@@ -24,6 +25,7 @@ import PorpoiseServices
 
     init(
         environment: @escaping @MainActor () -> DesktopEnvironment = { DesktopEnvironment.current() },
+        systemSettings: @escaping @MainActor () -> DesktopSystemSettings? = { DesktopSystemSettings.current() },
         observesSystemChanges: Bool = (!Settings.isTesting || Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype")
             && !TestEnvironment.desktopEnvironment.isSet,
         openSettings: @escaping @MainActor () -> Void = {
@@ -37,6 +39,7 @@ import PorpoiseServices
         }
     ) {
         readEnvironment = environment
+        self.systemSettings = systemSettings
         self.observesSystemChanges = observesSystemChanges
         self.openSettings = openSettings
         self.preferencesDirectory = preferencesDirectory
@@ -61,12 +64,14 @@ import PorpoiseServices
         checkEnvironment()
     }
 
-    /// Quitting tears down this session without changing the user's choice for the next launch.
+    /// Quitting tears down this session without changing the user's choice for the next launch. Finder's desktop items
+    /// come back until Porpoise's desktop starts again.
     func stop() {
         if let settingsObservation { NotificationCenter.default.removeObserver(settingsObservation) }
         settingsObservation = nil
         stopEnvironmentObservation()
         applyEnabled(false)
+        systemSettings()?.restore()
         removePausedStatusItem()
     }
 
@@ -77,22 +82,30 @@ import PorpoiseServices
 
     var statusLine: (Bool?, String) {
         if !Settings.shared.desktopModeEnabled { return (nil, "macOS desktop selected. Porpoise is off.") }
-        if isEnabled { return (true, "Porpoise desktop active. macOS desktop items are hidden.") }
-        return (false, "Porpoise desktop paused.\n" + environment.conflicts.map(\.instruction).joined(separator: "\n"))
+        if isEnabled { return (true, "Porpoise desktop active. Finder's desktop items and widgets are hidden while it is on.") }
+        return (
+            false,
+            "Porpoise desktop paused: macOS kept these desktop settings.\n" + environment.conflicts.map(\.instruction).joined(separator: "\n")
+        )
     }
 
     /// Recheck before creating any listing/surface, after returning from System Settings, and on preference events.
+    /// While selected, Porpoise hides Finder's desktop items and widgets itself; once off, it puts back what it changed
+    /// (also what an earlier session left behind, if it crashed).
     @objc func checkEnvironment() {
         guard settingsObservation != nil else { return }
         if !Settings.shared.desktopModeEnabled {
             stopEnvironmentObservation()
             applyEnabled(false)
+            systemSettings()?.restore()
             removePausedStatusItem()
             return
         }
         observeEnvironment()
+        systemSettings()?.apply()
         let previous = environment
         environment = readEnvironment()
+        windowController?.refreshVolumes()
         // Close the old surfaces before exposing a setup menu. An external change never enables a hybrid mode.
         applyEnabled(environment.isReady)
         updatePausedStatusItem()
@@ -195,6 +208,11 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     private var screenObservation: NSObjectProtocol?
     private var cutObservation: NSObjectProtocol?
     private var settingsObservation: NSObjectProtocol?
+    private var volumeObservations: [NSObjectProtocol] = []
+    private let volumes: @MainActor () -> [FileItem]
+    private let revealDesktop: @MainActor () -> Void
+    /// Tests record what would be ejected instead.
+    var ejectVolumes: @MainActor ([URL]) -> Void = { VolumeEject.eject($0) }
     private(set) var statusItem: NSStatusItem?
     var onDisable: (() -> Void)?
     weak var activeGrid: DesktopGridView?
@@ -208,9 +226,13 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     init(
         location: URL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0],
         screenNotifications: NotificationCenter = .default,
-        displays: @escaping @MainActor () -> [DesktopDisplay] = { DesktopDisplay.current() }
+        displays: @escaping @MainActor () -> [DesktopDisplay] = { DesktopDisplay.current() },
+        volumes: @escaping @MainActor () -> [FileItem] = { DesktopPreferences.current().map { DesktopVolumes.current($0) } ?? [] },
+        revealDesktop: @escaping @MainActor () -> Void = { DesktopReveal.wallpaperClicked() }
     ) {
         self.displays = displays
+        self.volumes = volumes
+        self.revealDesktop = revealDesktop
         self.screenNotifications = screenNotifications
         preferenceStore = Settings.store
         layoutScope = location.absoluteString
@@ -247,7 +269,23 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
             let keys = ["desktopShowMenuBarIcon", "desktopMonochromeMenuBarIcon"]
             if n.object == nil || (n.object as? String).map(keys.contains) == true { self?.updateStatusItem() }
         }
+        let workspace = NSWorkspace.shared.notificationCenter
+        volumeObservations = [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification]
+            .map { name in
+                workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.refreshVolumes() }
+                }
+            }
+        refreshVolumes()
         reload()
+    }
+
+    /// The disks Finder would show on its desktop come first, in the top right corner until moved.
+    func refreshVolumes() { model?.leadingItems = volumes() }
+
+    private func stopVolumeObservation() {
+        volumeObservations.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        volumeObservations = []
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -256,12 +294,14 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
         if let screenObservation { screenNotifications.removeObserver(screenObservation) }
         if let cutObservation { NotificationCenter.default.removeObserver(cutObservation) }
         if let settingsObservation { NotificationCenter.default.removeObserver(settingsObservation) }
+        volumeObservations.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
     }
 
     private func configureGrid(_ view: DesktopGridView, scope: String) {
         view.scope = scope
         view.delegate = self
+        view.onBackgroundClick = { [weak self] in self?.revealDesktop() }
         view.onRearrange = { [weak self] positions in
             guard let self, self.model != nil else { return }
             self.gridPreferences.positions[scope] = positions
@@ -446,6 +486,7 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
         cutObservation = nil
         if let settingsObservation { NotificationCenter.default.removeObserver(settingsObservation) }
         settingsObservation = nil
+        stopVolumeObservation()
         // Releasing the model cancels its loads and stops its FSEvents watcher, including during an in-flight load.
         model?.onChange = nil
         model?.onLoaded = nil

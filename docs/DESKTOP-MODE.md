@@ -9,14 +9,15 @@ optional setting described below.
 
 Known limits of the experiment:
 
-- The exclusive Porpoise desktop requires Finder items and widgets to be hidden in both desktop modes, Stage Manager
-  off, and wallpaper clicks set to Only in Stage Manager. Porpoise checks these conditions; it does not change them.
-- macOS preference keys used for detection are undocumented and can change. Detection is a read-only best-effort
-  check, not ownership of the system desktop or a guarantee against transient composition during system changes.
+- Porpoise hides Finder's desktop items and widgets itself while it is on (both desktop modes) and puts back what the
+  user had when it is turned off or Porpoise quits. Stage Manager and the wallpaper click stay the user's choice.
+- The macOS preference keys it reads and writes, and the Dock's "show desktop" call, are undocumented and can change.
+  They are a best-effort integration, not ownership of the system desktop.
 - Right-clicking empty space opens Porpoise's existing background menu; selection can start there too. Background
   commands also remain in the optional menu-bar icon's menu.
 - Every display shows the same listing and shares one selection.
-- Behaviour with Spaces, Mission Control, Stage Manager and fullscreen is not fully checked.
+- Behaviour with Spaces, Mission Control and fullscreen is not fully checked. Stage Manager was checked by hand on
+  macOS 27 (see Verification).
 
 The optional prototype build stays isolated from the installed application. Generic automated test hosts do not start watching
 the real Desktop; the explicitly identified `app.porpoise.DesktopPrototype` bundle uses normal attended startup. A test
@@ -30,37 +31,57 @@ when only preparing the bundle. This build uses the main app's existing profile;
 
 ## Choosing the desktop
 
-The existing **Enable Desktop Mode** preference remains opt-in. Off selects the macOS desktop; on requests the
-exclusive Porpoise desktop. The **Desktop** status in Settings → Advanced reports active or paused and lists the
-conditions that need attention. **Open macOS Desktop Settings…** opens Desktop & Dock; **Check Again** retries.
-No experimental surfaces or Desktop listing are created until preflight passes.
+The existing **Enable Desktop Mode** preference remains opt-in. Off selects the macOS desktop; on selects the Porpoise
+desktop, with Stage Manager on or off. Nobody has to visit Desktop & Dock first: ticking it is the consent for Porpoise
+to change the settings below while it is on. The **Desktop** status in Settings → Advanced reports active or paused.
 
-In macOS Desktop & Dock:
+`DesktopSystemSettings` sets the Window Manager keys `StandardHideDesktopIcons` and `HideDesktop` (Show items → On
+Desktop / In Stage Manager) and `StandardHideWidgets` and `StageManagerHideWidgets` (Show widgets) to true. With
+`com.apple.finder/CreateDesktop` explicitly false, the two item keys are left alone. Window Manager applies the writes
+at once; nothing is restarted. Before a key is first written, its previous value (or its absence) is recorded in
+Porpoise's defaults (`desktopModeReplacedSettings`); a later session never overwrites that record. Turning Desktop Mode
+off, Quit, and any launch with Desktop Mode off restore each recorded key, unless the user changed it again since (then
+their value stays), and remove the record. So a crash restores at the next launch, or keeps the settings hidden if the
+desktop starts again. `GloballyEnabled` (Stage Manager) and `EnableStandardClickToShowDesktop` are only read.
 
-1. Turn off **Show items → On Desktop** and **In Stage Manager**. Both are checked independently, even with Stage Manager off.
-2. Turn off **Show widgets → On Desktop** and **In Stage Manager**.
-3. Turn off **Stage Manager** and set **Click wallpaper to show desktop → Only in Stage Manager**.
-4. Return to Porpoise or choose **Check Again**. Its own icons, empty-space menu and rubber-band selection then start.
-
-The reader checks `com.apple.finder/CreateDesktop` and the Window Manager keys `StandardHideDesktopIcons`,
-`HideDesktop`, `GloballyEnabled`, `StandardHideWidgets`, `StageManagerHideWidgets`, and
-`EnableStandardClickToShowDesktop`. An explicitly disabled Finder desktop satisfies the icon checks; it does not
-waive the widget or Stage Manager checks. Missing overrides use the system defaults, with items/widgets visible,
-wallpaper click enabled and Stage Manager disabled. Unrecognized values or a failed read block activation.
+`DesktopEnvironment` then checks that the four keys took effect. If macOS kept any of them (or a value is unrecognized),
+the desktop pauses and lists them; **Open macOS Desktop Settings…** and **Check Again** remain for that case. Missing
+overrides use the system defaults, with items and widgets visible.
 
 While Porpoise is selected, the existing FSEvents `FolderWatcher` watches the relevant preferences (including ByHost);
-unrelated app preference changes are ignored. App activation, wake, and Space changes also trigger a recheck. There
-is no polling timer. A detected conflict closes every surface and releases the listing/watcher while keeping the
-requested preference. While paused, a menu-bar icon provides setup, retry, disable and Quit controls even during a
-desktop-only login launch, whether or not Show icon in menu bar is on: it is the only way back when no window is
-open. Resolving the conflict resumes the selected desktop after a recheck. Disabling or quitting removes these
-observers and controls.
+unrelated app preference changes are ignored. App activation, wake, and Space changes also trigger a recheck, which
+applies the settings again and refreshes the desktop's disks. There is no polling timer. A paused desktop closes every
+surface and releases the listing/watcher while keeping the requested preference. While paused, a menu-bar icon provides
+setup, retry, disable and Quit controls even during a desktop-only login launch, whether or not Show icon in menu bar is
+on: it is the only way back when no window is open. Disabling or quitting removes these observers and controls.
+Porpoise never changes Finder itself, installs a helper for this switch, or disables Mission Control/Spaces.
 
-To return to macOS, disable Desktop Mode and restore the desired macOS item/widget/Stage Manager settings manually.
-Porpoise never writes system preferences, changes Finder, installs a helper for this switch, or disables Mission
-Control/Spaces. There is consequently no automatic rollback or crash-recovery transaction in this version: only the
-user changes macOS settings. Normal Quit (including Sidebar's Quit requests) still ends the app. An automatic
-snapshot/apply/restore mechanism, including recovery after a crash, is a separate future stage.
+## The wallpaper click
+
+Porpoise's surface sits above the wallpaper and receives every click there, so macOS never sees a wallpaper click. A
+plain single click on empty desktop space (no modifier, no band dragged further than 4 points, not a double-click's
+second click) reveals the desktop the way macOS would: `DesktopReveal` sends the Dock's `com.apple.showdesktop.awake`
+(`CoreDockSendNotification`), the same toggle as the Show Desktop key. Windows move aside, or into the strip under
+Stage Manager, and the next such click brings them back. It follows the user's **Click wallpaper to reveal desktop**
+setting: Always, or Only in Stage Manager while Stage Manager is on. Band selection, the background menu and drops on
+empty space stay Porpoise's.
+
+## Disks on the desktop
+
+`DesktopVolumes` lists the mounted disks Finder would show on its desktop, by Finder's own **Show these items on the
+desktop** choices (`ShowHardDrivesOnDesktop`, `ShowExternalHardDrivesOnDesktop`, `ShowRemovableMediaOnDesktop`,
+`ShowMountedServersOnDesktop`, with Finder's defaults). Internal disks are hard disks; optical file systems (cd9660,
+UDF, CDDA) are CDs and DVDs; network volumes are servers; everything else, including USB drives, cards and disk images
+(which macOS also calls removable), is an external disk. They are the model's `leadingItems`: first, unsorted, in
+macOS's mount order, so with the default **Top Right** start corner they sit where Finder puts them until moved.
+Mount, unmount and rename notifications refresh them.
+
+A disk is ejected, never moved, trashed, renamed, duplicated, cut or deleted. Its menu has **Eject** in place of
+**Move to Trash**; Move to Trash, ⌘E and dragging it to the Dock's Trash eject it (`VolumeEject`, which first sends
+every browser pane on it elsewhere, as the sidebar's eject does). A drag with a disk offers only copy and link
+(rearranging it on the desktop still works), and carries Finder's `com.apple.finder.node` type so the Dock's Trash
+shows Eject. `FileOperationsController` also refuses to move, trash or delete any disk's top level from anywhere in
+the app, and runs the rest of the selection.
 
 ## Shared Porpoise interface
 
@@ -251,9 +272,9 @@ isolate macOS's volume and application registries. The focused suites above do n
 Manual acceptance:
 
 1. Disable Desktop Mode in any other running Porpoise instance to avoid overlaying two test instances. Launch the
-   isolated prototype and tick Settings → Advanced → Enable Desktop Mode. With macOS desktop items/widgets visible
-   or Stage Manager on, verify setup is required and there are no grids. Complete the steps in Desktop & Dock, then
-   Check Again. Grids appear on both monitors without a preview/control window. Main Porpoise remains a separate
+   isolated prototype and tick Settings → Advanced → Enable Desktop Mode, with macOS desktop items/widgets visible and
+   Stage Manager on. Grids appear at once on both monitors without a preview/control window, and Finder's own icons
+   and widgets disappear. Untick it, or quit: Finder's icons come back and Desktop & Dock shows the user's settings. Main Porpoise remains a separate
    installed application. Do not change the Default file browser setting during prototype checks.
 2. Compare long names, selected labels and hover with a regular prototype browser window. Change the ordinary label
    line limit/elision/ToolTip settings: the desktop follows. No desktop Name Lines submenu should exist.
@@ -265,9 +286,11 @@ Manual acceptance:
    icons between cells, into a folder, and between desktop and browser. Check Move / Copy / Link and modifiers,
    folder highlighting, cancellation and Undo. Rearranging cells must leave files unchanged.
    Check both physical screens, scale/hot-plug,
-   Spaces, Mission Control, Show Desktop and fullscreen return. While active, enable a conflicting macOS desktop
-   option or Stage Manager: verify the surfaces close, the setting remains selected and setup/retry controls remain
-   accessible. Restore the compatible settings and recheck.
+   Spaces, Mission Control, Show Desktop and fullscreen return. With Stage Manager on and off, click empty desktop
+   space: windows move aside (into the strip), and the next click brings them back; with Click wallpaper set to Only in
+   Stage Manager and Stage Manager off, nothing happens. Mount a disposable disk image: it appears in the top right
+   column after the startup disk (if Finder shows hard disks). Drag it towards the Dock's Trash: the Trash shows Eject,
+   and dropping ejects it. ⌘E and Move to Trash on a selected disk eject it too.
 5. With Sidebar running, close the last ordinary window via red close / Cmd+W: the running Dock icon disappears and
    grids remain active. Open a desktop folder or Settings: the Dock role, menus and keyboard focus return. Repeat;
    minimized/hidden windows must retain the regular role. Quit must still end the process, including an external Quit.

@@ -114,6 +114,8 @@ class ItemListView: NSView {
     var rubberBand: CGRect?
     var rubberStart: CGPoint?
     var rubberBaseSelection: Set<URL> = []
+    /// The drag this view started includes a disk (it can't be moved).
+    var draggingVolumes = false
     /// The item a press is on: by URL, since a reload during the press can move the rows.
     var mouseDownURL: URL?
     var mouseDownPoint: CGPoint = .zero

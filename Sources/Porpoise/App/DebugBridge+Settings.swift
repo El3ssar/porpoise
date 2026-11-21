@@ -21,10 +21,19 @@ extension DebugBridge {
         "desktop": DebugBridge.desktopCommand,
     ]
 
-    /// desktop <file>: Desktop Mode as JSON: whether it is on, its folder, the names it lists, its surfaces and status.
+    /// desktop <file>: Desktop Mode as JSON: whether it is on, its folder, the names it lists, its surfaces and status,
+    /// and where each item's icon is on the main display (screen points, origin at the top left, as CGEvent uses).
     func desktopCommand(_ arg: String) {
         let controller = DesktopModeController.shared.windowController
+        let height = NSScreen.screens.first?.frame.height ?? 0
+        let grid = controller?.grids.first { $0.window?.screen == NSScreen.screens.first }
+        let icons: [[Double]] = (grid?.model.rows.indices ?? 0..<0).compactMap { index in
+            guard let grid, let window = grid.window else { return nil }
+            let rect = window.convertToScreen(grid.convert(grid.iconRect(index), to: nil))
+            return [rect.midX, height - rect.midY].map(Double.init)
+        }
         let report: [String: Any] = [
+            "icons": icons,
             "enabled": DesktopModeController.shared.isEnabled, "setting": Settings.shared.desktopModeEnabled,
             "location": controller?.model?.location.path ?? "", "loading": controller?.model?.isLoading ?? false,
             "rows": controller?.model?.rows.map(\.item.name) ?? [], "surfaces": controller?.desktopWindows.count ?? 0,

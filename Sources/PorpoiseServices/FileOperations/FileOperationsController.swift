@@ -154,6 +154,15 @@ public final class FileOperationsController {
             runRemote(kind, urls, to: folder, window: window, done: done, moved: moved)
             return
         }
+        // A disk is ejected, never moved, trashed or deleted (its contents would go). The rest still runs.
+        if kind == .move || kind == .trash || kind == .delete, urls.contains(where: DesktopVolumes.isVolume) {
+            showErrors(["Disks can’t be moved, moved to the Trash or deleted. Eject them instead."], window: window)
+            runWithMoveReceipts(
+                kind, urls.filter { !DesktopVolumes.isVolume($0) }, to: folder, window: window, sound: sound,
+                allowDeleteFallback: allowDeleteFallback, allowAuthorization: allowAuthorization, resumePoints: resumePoints,
+                completedTransfers: completedTransfers, moved: moved, done: done)
+            return
+        }
         let job = FileJob(kind: kind, sources: urls, destinationFolder: folder, control: JobControl(policy: Settings.shared.transferPolicy))
         job.resumePoints = resumePoints
         job.completedTransfers = completedTransfers

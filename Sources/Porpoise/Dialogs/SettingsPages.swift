@@ -328,10 +328,10 @@ import PorpoiseServices
         }
         f.button("Open macOS Desktop Settings…") { controller.openDesktopSettings() }
         f.note(
-            "Off uses the macOS desktop. On uses Porpoise's icons, background menu and selection. Before Porpoise starts, turn off Show items and Show widgets in both modes, turn off Stage Manager, and set wallpaper clicks to Only in Stage Manager in Desktop & Dock."
+            "Off uses the macOS desktop. On uses Porpoise's icons, background menu and selection, with Stage Manager on or off. Your disks show as Finder would show them (Finder › Settings › General), and dragging one to the Trash ejects it."
         )
         f.note(
-            "Porpoise checks these settings but does not change them. To return to Finder, turn Desktop Mode off and enable the macOS desktop items again."
+            "While it is on, Porpoise turns off Show items and Show widgets in Desktop & Dock, so Finder's icons don't show twice. Turning it off, or quitting Porpoise, puts back what you had. Clicking empty desktop space reveals the desktop as your Click wallpaper setting says."
         )
         let s = Settings.shared
         let loginItem = loginItem ?? DesktopLoginItem.shared
@@ -361,7 +361,7 @@ import PorpoiseServices
         ) { s.desktopOpenMaximized = $0 == 1 }
         f.note("Standard keeps an existing tab window’s size. Maximized fills its screen without entering full screen.")
         f.note(
-            "Experimental. Desktop Mode starts only when the desktop settings pass its checks. A conflicting system change pauses it. Every display shows the same Desktop folder; external file dragging is not supported yet. Mission Control and Spaces remain managed by macOS."
+            "Experimental. If macOS doesn't accept the desktop settings, Desktop Mode pauses and lists them. Every display shows the same Desktop folder. Mission Control and Spaces remain managed by macOS."
         )
     }
 

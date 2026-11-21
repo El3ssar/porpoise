@@ -115,15 +115,23 @@ enum FileDragSource {
         session.draggingFormation = .pile
     }
 
-    static func mask(for context: NSDraggingContext) -> NSDragOperation {
+    /// `volumes`: a disk is among the items. It can be copied or linked, never moved (or asked about, which offers
+    /// Move), and the Dock's Trash ejects it.
+    static func mask(for context: NSDraggingContext, volumes: Bool = false) -> NSDragOperation {
         // .delete lets items be dropped on the Trash in the Dock (they're then moved to the Trash).
-        context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
+        if volumes { return context == .outsideApplication ? [.copy, .link, .delete] : [.copy, .link] }
+        return context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
     }
 
-    /// The drag is over: dropped on the Dock's Trash, its files go to the Trash.
+    static func includesVolume(_ urls: [URL]) -> Bool { urls.contains(where: DesktopVolumes.isVolume) }
+
+    /// The drag is over: dropped on the Dock's Trash, its files go to the Trash and its disks are ejected, as in Finder.
     static func ended(_ session: NSDraggingSession, operation: NSDragOperation, window: NSWindow?) {
         guard operation == .delete else { return }
         let urls = (session.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        if !urls.isEmpty { FileOperationsController.shared.trash(urls, window: window, sound: .dragToTrash) }
+        let volumes = urls.filter(DesktopVolumes.isVolume), files = urls.filter { !volumes.contains($0) }
+        // Drag sessions end on the main thread.
+        if !volumes.isEmpty { MainActor.assumeIsolated { VolumeEject.eject(volumes) } }
+        if !files.isEmpty { FileOperationsController.shared.trash(files, window: window, sound: .dragToTrash) }
     }
 }

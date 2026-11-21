@@ -85,7 +85,7 @@ import Testing
     }
 
     @Test func pausedDesktopAlsoUsesAccessoryRoleAndDisablingRestoresDockWithoutInterceptingQuit() {
-        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.widgets]) })
         mode.start()
         let probe = ActivationProbe(), delegate = probe.delegate(mode)
         delegate.startDesktopWindowLifecycle(windows: [])
@@ -105,7 +105,7 @@ import Testing
     }
 
     @Test func ordinaryWindowNotificationsRestoreRoleAndClosedWindowsAreNotRetained() {
-        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.widgets]) })
         mode.setEnabled(true)
         let probe = ActivationProbe(), delegate = probe.delegate(mode)
         delegate.startDesktopWindowLifecycle(windows: [])
@@ -124,7 +124,7 @@ import Testing
     }
 
     @Test func anAuxiliaryWindowPutAwayWithoutClosingGivesTheDockRoleBack() {
-        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.widgets]) })
         mode.setEnabled(true)
         let probe = ActivationProbe(), delegate = probe.delegate(mode)
         delegate.startDesktopWindowLifecycle(windows: [])
@@ -152,7 +152,7 @@ import Testing
     }
 
     @Test func aProhibitedHostOrRejectedPolicyChangeIsNeverTreatedAsASuccess() {
-        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.widgets]) })
         mode.setEnabled(true)
         let probe = ActivationProbe(), delegate = probe.delegate(mode)
         probe.policy = .prohibited
@@ -171,7 +171,7 @@ import Testing
 
     @Test func conflictsPreventListingAndSurfacesUntilSetupPasses() throws {
         let scratch = try Scratch()
-        var snapshot = DesktopEnvironment(conflicts: [.finderItems, .stageManager]), creations = 0, settingsOpened = 0
+        var snapshot = DesktopEnvironment(conflicts: [.finderItems, .widgets]), creations = 0, settingsOpened = 0
         let mode = DesktopModeController(
             environment: { snapshot }, openSettings: { settingsOpened += 1 },
             makeWindow: {
@@ -184,7 +184,7 @@ import Testing
         mode.setEnabled(true)
         #expect(Settings.shared.desktopModeEnabled && !mode.isEnabled && mode.windowController == nil && creations == 0)
         #expect(mode.pausedStatusItem != nil && mode.statusLine.0 == false)
-        #expect(mode.statusLine.1.contains("On Desktop") && mode.statusLine.1.contains("Turn off Stage Manager"))
+        #expect(mode.statusLine.1.contains("On Desktop") && mode.statusLine.1.contains("Turn off Show widgets → On Desktop"))
         let form = FormBuilder(); SettingsPages.desktopMode(form, controller: mode)
         func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
         let open = try #require(views(form.view).compactMap { $0 as? NSButton }.first { $0.title == "Open macOS Desktop Settings…" })
@@ -230,7 +230,7 @@ import Testing
         let scratch = try Scratch()
         var creations = 0
         let mode = DesktopModeController(
-            environment: { DesktopEnvironment(conflicts: [.stageManager]) },
+            environment: { DesktopEnvironment(conflicts: [.widgets]) },
             makeWindow: {
                 creations += 1
                 return makeDesktop(location: scratch.url)
@@ -529,7 +529,7 @@ import Testing
         controller.setGridCorner(.bottomLeft)
         #expect(DesktopGridPreferences.load(from: Settings.store).corner == .bottomLeft)
         Settings.store.set(Data("invalid JSON".utf8), forKey: DesktopGridPreferences.key)
-        #expect(DesktopGridPreferences.load(from: Settings.store).corner == .topLeft)
+        #expect(DesktopGridPreferences.load(from: Settings.store).corner == .topRight)
     }
 
     @Test func desktopItemsAndEmptySpaceReceiveWindowServerHitsAndNativeMenus() async throws {
@@ -873,7 +873,8 @@ import Testing
         grid.layoutSubtreeIfNeeded()
         grid.relayout()
         let original = grid.shownFrame(0)
-        controller.setGridCorner(.topRight)
+        // Finder's top right is where the grid starts.
+        controller.setGridCorner(.topLeft)
         #expect(grid.isAnimating)
         #expect(grid.shownFrame(0) == original)
         try #require(
@@ -887,7 +888,7 @@ import Testing
         try #require(await eventually { !grid.isAnimating })
         #expect(grid.shownFrame(0) == grid.geometry.frame(for: grid.slots[0]))
         Animator.reducesMotion = { true }
-        controller.setGridCorner(.topLeft)
+        controller.setGridCorner(.topRight)
         #expect(!grid.isAnimating)
         #expect(grid.shownFrame(0) == grid.geometry.frame(for: grid.slots[0]))
         Animator.reducesMotion = { false }

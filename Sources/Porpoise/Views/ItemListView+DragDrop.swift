@@ -12,6 +12,7 @@ extension ItemListView: NSDraggingSource {
         let url = model.rows[i].item.url
         if !model.selection.contains(url) { model.selection = [url] }
         let items = model.rows.enumerated().filter { model.selection.contains($0.element.item.url) }
+        draggingVolumes = FileDragSource.includesVolume(items.map(\.element.item.url))
         let drag = FileDragSource.items(items.map(\.element.item.url)) { n in
             guard n < maxDragImages else { return nil }
             let (idx, r) = items[n]
@@ -21,7 +22,7 @@ extension ItemListView: NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        FileDragSource.mask(for: context)
+        FileDragSource.mask(for: context, volumes: draggingVolumes)
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
@@ -96,19 +97,31 @@ extension ItemListView {
 /// NSFilenamesPboardType list that Chrome, Electron, Qt and Java apps read (Finder provides both).
 final class FileDragWriter: NSObject, NSPasteboardWriting {
     static let filenames = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    /// What Finder adds for each dragged item (its file reference URL). The Dock's Trash turns into Eject only for a
+    /// disk dragged with it.
+    static let finderNode = NSPasteboard.PasteboardType("com.apple.finder.node")
     let url: URL
     let allURLs: [URL]?
+    private let isVolume: Bool
 
-    init(url: URL, allURLs: [URL]?) { self.url = url; self.allURLs = allURLs }
+    init(url: URL, allURLs: [URL]?) {
+        self.url = url
+        self.allURLs = allURLs
+        isVolume = DesktopVolumes.isVolume(url)
+    }
 
     func writableTypes(for pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
         guard url.isFileURL else { return [.URL] }
-        return allURLs != nil ? [.fileURL, Self.filenames] : [.fileURL]
+        return [.fileURL] + (isVolume ? [Self.finderNode] : []) + (allURLs != nil ? [Self.filenames] : [])
     }
 
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
         switch type {
         case .fileURL, .URL: return url.absoluteString
+        case Self.finderNode:
+            // Swift's URL turns a file reference back into a path, so it is asked of NSURL itself.
+            let reference = (url as NSURL).perform(#selector(NSURL.fileReferenceURL))?.takeUnretainedValue() as? NSURL
+            return reference?.absoluteString ?? url.absoluteString
         case Self.filenames: return allURLs?.filter(\.isFileURL).map(\.path)
         default: return nil
         }
