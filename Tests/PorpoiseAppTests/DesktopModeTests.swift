@@ -130,13 +130,21 @@ import Testing
         delegate.startDesktopWindowLifecycle(windows: [])
         defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
         // Activity and stand-alone conflict windows order themselves out when their work ends; they never close.
-        let activity = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        // AppKit reports no occlusion change for a window ordered out while already covered, so they say so themselves.
+        let activity = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
         activity.isReleasedWhenClosed = false
+        #expect(delegate.prepareToShowOrdinaryWindow(activity))
+        activity.orderFront(nil)
         NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: activity)
         #expect(probe.policy == .regular)
         activity.orderOut(nil)
-        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: activity)
+        delegate.ordinaryWindowPutAway()
         #expect(probe.policy == .accessory && mode.keepsAppRunning)
+        // A cached window shown again counts from the moment it is asked for, before it is back on screen.
+        #expect(delegate.prepareToShowOrdinaryWindow(activity))
+        delegate.ordinaryWindowPutAway()
+        #expect(probe.policy == .regular)
+        activity.close()
     }
 
     @Test func aProhibitedHostOrRejectedPolicyChangeIsNeverTreatedAsASuccess() {

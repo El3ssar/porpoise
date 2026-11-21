@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lookObservation: NSKeyValueObservation?
     private var drewInitialWindow = false
     private let ordinaryWindows = NSHashTable<NSWindow>.weakObjects()
+    /// Ordinary windows seen on screen since they were last asked for: only these can have been put away.
+    private let shownOrdinaryWindows = NSHashTable<NSWindow>.weakObjects()
     private var desktopWindowObservations: [NSObjectProtocol] = []
     private let activationPolicy: () -> NSApplication.ActivationPolicy
     private let setActivationPolicy: (NSApplication.ActivationPolicy) -> Bool
@@ -351,8 +353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             })
         desktopWindowObservations.append(
-            center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) { [weak self] n in
-                MainActor.assumeIsolated { self?.forgetIfPutAway(n.object as? NSWindow) }
+            center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateDesktopActivationPolicy() }
             })
         desktopWindowObservations.append(
             center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
@@ -366,6 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         desktopWindowObservations.forEach(NotificationCenter.default.removeObserver)
         desktopWindowObservations = []
         ordinaryWindows.removeAllObjects()
+        shownOrdinaryWindows.removeAllObjects()
     }
 
     /// Restore the Dock role before presentation/activation, including reopening a cached Settings window.
@@ -374,18 +377,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !desktopWindowObservations.isEmpty, let window, isOrdinaryWindow(window) else { return false }
         let wasAccessory = activationPolicy() == .accessory
         ordinaryWindows.add(window)
+        if !window.isVisible { shownOrdinaryWindows.remove(window) }
         updateDesktopActivationPolicy()
         return wasAccessory && activationPolicy() == .regular
     }
 
-    /// Activity and stand-alone conflict windows order themselves out instead of closing. Only browser windows, minimized
-    /// windows and a hidden app keep the Dock role while off screen; anything else would hold it for good.
-    private func forgetIfPutAway(_ window: NSWindow?) {
-        guard let window, ordinaryWindows.contains(window), !window.isVisible, !window.isMiniaturized, !NSApp.isHidden,
-            !windows.contains(where: { $0.window === window })
-        else { return }
-        ordinaryWindows.remove(window)
-        updateDesktopActivationPolicy()
+    /// Activity and stand-alone conflict windows order themselves out instead of closing, and call this afterwards:
+    /// AppKit reports no occlusion change for a window that was already covered or on another Space.
+    func ordinaryWindowPutAway() { updateDesktopActivationPolicy() }
+
+    /// Only browser windows, minimized windows and a hidden app keep the Dock role while off screen; anything else
+    /// would hold it for good. A window asked for but not yet on screen is about to be shown, so it stays.
+    private func forgetWindowsPutAway() {
+        for window in ordinaryWindows.allObjects {
+            if window.isVisible { shownOrdinaryWindows.add(window); continue }
+            guard shownOrdinaryWindows.contains(window), !window.isMiniaturized, !NSApp.isHidden,
+                !windows.contains(where: { $0.window === window })
+            else { continue }
+            ordinaryWindows.remove(window)
+        }
     }
 
     private func isOrdinaryWindow(_ window: NSWindow) -> Bool {
@@ -397,7 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MainActor.assumeIsolated {
             let current = activationPolicy()
             guard current != .prohibited else { return }
-            // Keep windows until they close or are put away (forgetIfPutAway). Desktop panels cannot become main.
+            // Keep windows until they close or are put away. Desktop panels cannot become main.
+            forgetWindowsPutAway()
             let desired: NSApplication.ActivationPolicy = desktopMode.keepsAppRunning && ordinaryWindows.allObjects.isEmpty ? .accessory : .regular
             if current != desired { _ = setActivationPolicy(desired) }
         }

@@ -182,7 +182,12 @@ final class ActivityWindowController: SecondaryWindowController, NSWindowDelegat
         layoutCards()
         // Keep an attached error/conflict sheet alive until its own decision has completed.
         if ids.isEmpty, window?.attachedSheet == nil {
-            if window?.isMiniaturized == true { window?.close() } else { window?.orderOut(nil) }
+            if window?.isMiniaturized == true {
+                window?.close()
+            } else {
+                window?.orderOut(nil)
+                AppDelegate.shared.ordinaryWindowPutAway()
+            }
         }
     }
 
