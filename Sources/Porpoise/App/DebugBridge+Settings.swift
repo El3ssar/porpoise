@@ -22,7 +22,8 @@ extension DebugBridge {
     ]
 
     /// desktop <file>: Desktop Mode as JSON: whether it is on, its folder, the names it lists, its surfaces and status,
-    /// and where each item's icon is on the main display (screen points, origin at the top left, as CGEvent uses).
+    /// the selected names, and where each item's icon is on the main display (screen points, origin at the top left, as
+    /// CGEvent uses).
     func desktopCommand(_ arg: String) {
         let controller = DesktopModeController.shared.windowController
         let height = NSScreen.screens.first?.frame.height ?? 0
@@ -34,6 +35,7 @@ extension DebugBridge {
         }
         let report: [String: Any] = [
             "icons": icons,
+            "selected": controller?.model.map { model in model.rows.map(\.item).filter { model.selection.contains($0.url) }.map(\.name) } ?? [],
             "enabled": DesktopModeController.shared.isEnabled, "setting": Settings.shared.desktopModeEnabled,
             "location": controller?.model?.location.path ?? "", "loading": controller?.model?.isLoading ?? false,
             "rows": controller?.model?.rows.map(\.item.name) ?? [], "surfaces": controller?.desktopWindows.count ?? 0,

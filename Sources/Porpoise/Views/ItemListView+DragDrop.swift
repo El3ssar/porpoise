@@ -10,6 +10,7 @@ private let maxDragImages = 200
 extension ItemListView: NSDraggingSource {
     func startDrag(from i: Int, event: NSEvent) {
         let url = model.rows[i].item.url
+        dragAnchor = url
         if !model.selection.contains(url) { model.selection = [url] }
         let items = model.rows.enumerated().filter { model.selection.contains($0.element.item.url) }
         draggingVolumes = FileDragSource.volumes(in: items.map(\.element.item.url))
