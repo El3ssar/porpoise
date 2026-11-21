@@ -269,6 +269,7 @@ final class ConflictDialog: NSObject {
         let answer = ConflictAnswer(resolution, applyToAll: all || applyAll.state == .on, comparisonMethod: methods[method.indexOfSelectedItem])
         if let parent = window.sheetParent { parent.endSheet(window) }
         window.orderOut(nil)
+        AppDelegate.shared.ordinaryWindowPutAway()
         completion(answer)
         retainedSelf = nil
     }

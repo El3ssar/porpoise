@@ -38,6 +38,137 @@ import Testing
         return controller
     }
 
+    private final class ActivationProbe {
+        var policy = NSApplication.ActivationPolicy.regular
+        var changes: [NSApplication.ActivationPolicy] = []
+        var acceptsChanges = true
+        func delegate(_ mode: DesktopModeController) -> AppDelegate {
+            AppDelegate(
+                desktopMode: mode, activationPolicy: { self.policy },
+                setActivationPolicy: {
+                    self.changes.append($0)
+                    if self.acceptsChanges { self.policy = $0 }
+                    return self.acceptsChanges
+                })
+        }
+    }
+
+    @Test func desktopWithoutOrdinaryWindowsUsesAccessoryRoleAndRestoresItBeforePresentation() throws {
+        let scratch = try Scratch(), probe = ActivationProbe()
+        let mode = DesktopModeController(environment: { .ready }, makeWindow: { makeDesktop(location: scratch.url) })
+        mode.setEnabled(true)
+        let delegate = probe.delegate(mode)
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        #expect(probe.policy == .accessory && mode.isEnabled)
+        let first = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        let second = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        #expect(delegate.prepareToShowOrdinaryWindow(first))
+        #expect(probe.policy == .regular && !first.isVisible)
+        #expect(!delegate.prepareToShowOrdinaryWindow(second))
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: first)
+        #expect(probe.policy == .regular)
+        // Being hidden or minimized isn't closing; the second window still belongs to the session.
+        second.orderOut(nil)
+        NotificationCenter.default.post(name: NSWindow.didMiniaturizeNotification, object: second)
+        NotificationCenter.default.post(name: NSApplication.didHideNotification, object: NSApp)
+        #expect(probe.policy == .regular)
+        NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: second)
+        #expect(probe.policy == .accessory && mode.isEnabled)
+        let surface = try #require(mode.windowController?.desktopWindows.values.first?.window)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: surface)
+        #expect(probe.policy == .accessory)
+        // Settings controllers cache their window after closing; presenting the same window must restore the role.
+        #expect(delegate.prepareToShowOrdinaryWindow(second))
+        #expect(probe.policy == .regular)
+        #expect(probe.changes == [.accessory, .regular, .accessory, .regular])
+    }
+
+    @Test func pausedDesktopAlsoUsesAccessoryRoleAndDisablingRestoresDockWithoutInterceptingQuit() {
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        mode.start()
+        let probe = ActivationProbe(), delegate = probe.delegate(mode)
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        #expect(probe.changes.isEmpty)
+        mode.setEnabled(true)
+        #expect(!mode.isEnabled && mode.keepsAppRunning && probe.policy == .accessory)
+        #expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
+        mode.setEnabled(false)
+        #expect(probe.policy == .regular && !mode.keepsAppRunning)
+        #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
+        #expect(probe.changes == [.accessory, .regular])
+        delegate.stopDesktopWindowLifecycle()
+        mode.setEnabled(true)
+        #expect(probe.policy == .regular && probe.changes.count == 2)
+    }
+
+    @Test func ordinaryWindowNotificationsRestoreRoleAndClosedWindowsAreNotRetained() {
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        mode.setEnabled(true)
+        let probe = ActivationProbe(), delegate = probe.delegate(mode)
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        weak var released: NSWindow?
+        autoreleasepool {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            released = window
+            NotificationCenter.default.post(name: NSWindow.didBecomeMainNotification, object: window)
+            #expect(probe.policy == .regular)
+            window.close()
+        }
+        #expect(probe.policy == .accessory)
+        #expect(released == nil)
+    }
+
+    @Test func anAuxiliaryWindowPutAwayWithoutClosingGivesTheDockRoleBack() {
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        mode.setEnabled(true)
+        let probe = ActivationProbe(), delegate = probe.delegate(mode)
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        // Activity and stand-alone conflict windows order themselves out when their work ends; they never close.
+        // AppKit reports no occlusion change for a window ordered out while already covered, so they say so themselves.
+        let activity = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 60), styleMask: [.titled], backing: .buffered, defer: false)
+        activity.isReleasedWhenClosed = false
+        #expect(delegate.prepareToShowOrdinaryWindow(activity))
+        activity.orderFront(nil)
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: activity)
+        #expect(probe.policy == .regular)
+        activity.orderOut(nil)
+        delegate.ordinaryWindowPutAway()
+        #expect(probe.policy == .accessory && mode.keepsAppRunning)
+        // A cached window shown again counts from the moment it is asked for, before it is back on screen.
+        #expect(delegate.prepareToShowOrdinaryWindow(activity))
+        delegate.ordinaryWindowPutAway()
+        #expect(probe.policy == .regular)
+        activity.close()
+        // Without the desktop lifecycle (Desktop Mode never started), the report changes nothing.
+        let idle = ActivationProbe()
+        idle.delegate(mode).ordinaryWindowPutAway()
+        #expect(idle.changes.isEmpty)
+    }
+
+    @Test func aProhibitedHostOrRejectedPolicyChangeIsNeverTreatedAsASuccess() {
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        mode.setEnabled(true)
+        let probe = ActivationProbe(), delegate = probe.delegate(mode)
+        probe.policy = .prohibited
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        #expect(probe.policy == .prohibited && probe.changes.isEmpty)
+        probe.policy = .regular; probe.acceptsChanges = false
+        delegate.startDesktopWindowLifecycle(windows: [])
+        #expect(probe.changes.isEmpty)
+        NotificationCenter.default.post(name: Settings.changed, object: "desktopModeEnabled")
+        #expect(probe.policy == .regular && probe.changes == [.accessory])
+        probe.acceptsChanges = true
+        NotificationCenter.default.post(name: Settings.changed, object: "desktopModeEnabled")
+        #expect(probe.policy == .accessory && probe.changes == [.accessory, .accessory])
+    }
+
     @Test func conflictsPreventListingAndSurfacesUntilSetupPasses() throws {
         let scratch = try Scratch()
         var snapshot = DesktopEnvironment(conflicts: [.finderItems, .stageManager]), creations = 0, settingsOpened = 0

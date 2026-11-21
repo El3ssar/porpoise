@@ -126,7 +126,7 @@ Changes made in System Settings are reflected when returning to Porpoise setting
 At login, the opening AppleEvent's `keyAELaunchedAsLogInItem` marker selects desktop-only startup. This skips home/session
 windows, first-run onboarding, Archive Utility reveal inference and browser activation. Update UI, legacy privileged-helper
 migration and file-operation recovery prompts wait until a browser or settings window is explicitly opened. Saved tabs
-and the failed-session restore marker are preserved while no browser is opened. Clicking the app in the Dock restores
+and the failed-session restore marker are preserved while no browser is opened. Reopening the app restores
 the normal startup session; opening a desktop folder uses the selected New Window / New Tab behavior instead.
 Manual launches retain normal startup behavior. If Desktop Mode has been disabled, a login launch exits without opening
 any windows. An existing login registration can still be removed while Desktop Mode is disabled. Turning login startup
@@ -153,10 +153,16 @@ surface, removes observers/menu-bar item, cancels presentation/editing and relea
 A native menu-bar item, when shown, provides the existing Show in Porpoise, Refresh, Disable Desktop Mode and Quit commands. It also
 shows listing/error status, including denied Desktop access, now that there is no preview window. Refresh retries.
 Closing or minimizing browser windows and hiding the app do not remove active desktop surfaces.
+While Desktop Mode is selected, closing the last ordinary window changes only Porpoise's own AppKit activation
+policy to `accessory`: its running Dock icon disappears, while desktop surfaces and the optional menu-bar icon stay.
+Opening a folder or Settings restores `regular` before showing the window, then explicitly activates it to restore
+keyboard focus. Minimized windows, ordered-out browser windows and a hidden app keep the regular role; an auxiliary
+window that orders itself out instead of closing (Activity, a stand-alone conflict dialog) gives it back. The same
+background role applies while desktop setup is paused. Turning Desktop Mode off restores the regular role. No Sidebar settings are changed and no helper or relaunch process is installed.
 
 Quit is never refused on the desktop's account: Porpoise's own Quit, the Dock, scripts, Activity Monitor and
-logout/shutdown all end the app as they do without Desktop Mode. A window manager that sends Quit when the last ordinary
-window closes therefore also quits the desktop; the remedy is in that tool's settings, not in Porpoise.
+logout/shutdown all end the app as they do without Desktop Mode. The accessory role avoids presenting a windowless
+ordinary Dock app to window managers; it cannot protect against a tool that sends Quit to accessory apps too.
 
 ## Public macOS API research
 
@@ -171,6 +177,7 @@ Reviewed against Apple's documentation and the local SDK on 2026-11-15:
 | [`NSWindow.StyleMask.nonactivatingPanel`](https://developer.apple.com/documentation/appkit/nswindow/stylemask-swift.struct/nonactivatingpanel), [`NSView.needsPanelToBecomeKey`](https://developer.apple.com/documentation/appkit/nsview/needspaneltobecomekey) | Desktop surfaces use NSPanel with this style from construction. A click gives the grid keyboard focus without activating the browser app or bringing its ordinary windows forward. Explicit folder opens activate the app. |
 | [`NSView`](https://developer.apple.com/documentation/appkit/nsview) | Desktop grids reuse Porpoise’s `ItemListView` renderer, selection, hover, accessibility and transitions. Only cell placement is customized. |
 | [`NSStatusBar`](https://developer.apple.com/documentation/appkit/nsstatusbar) | An optional native menu-bar control exists while desktop placement is enabled. Hiding it leaves the desktop active; its context menu and app settings remain available. |
+| [`NSApplication.setActivationPolicy`](https://developer.apple.com/documentation/appkit/nsapplication/setactivationpolicy(_:)) | Uses `accessory` while the selected desktop has no ordinary windows, and `regular` before presenting them again. Changes only Porpoise's runtime role, without an Info.plist change or Quit interception. |
 | [`NSWindow.canHide`](https://developer.apple.com/documentation/appkit/nswindow/canhide) | Defaults to true. Desktop surfaces set it to false so hiding the application from the Dock or Cmd+H does not remove its desktop preview. Ordinary windows retain their normal hiding behavior. |
 | [`NSScreen`](https://developer.apple.com/documentation/appkit/nsscreen), [`screensHaveSeparateSpaces`](https://developer.apple.com/documentation/appkit/nsscreen/screenshaveseparatespaces) | Enumerate screens, use their frames/visible frames and backing scale; account for separate Spaces. Do not assume `NSScreen.main` is the primary display or cache screen objects indefinitely. |
 | [`NSApplication.didChangeScreenParametersNotification`](https://developer.apple.com/documentation/appkit/nsapplication/didchangescreenparametersnotification) | Reconcile future per-display windows after connection, removal or geometry changes. |
@@ -261,8 +268,10 @@ Manual acceptance:
    Spaces, Mission Control, Show Desktop and fullscreen return. While active, enable a conflicting macOS desktop
    option or Stage Manager: verify the surfaces close, the setting remains selected and setup/retry controls remain
    accessible. Restore the compatible settings and recheck.
-5. Close ordinary windows via red close / Cmd+W, minimize and hide the app: grids remain active. Disable Desktop Mode
-   from its context/menu-bar item: every surface disappears. Relaunch: it stays off. Tick Enable Desktop Mode in
+5. With Sidebar running, close the last ordinary window via red close / Cmd+W: the running Dock icon disappears and
+   grids remain active. Open a desktop folder or Settings: the Dock role, menus and keyboard focus return. Repeat;
+   minimized/hidden windows must retain the regular role. Quit must still end the process, including an external Quit.
+   Disable Desktop Mode from its context/menu-bar item: every surface disappears. Relaunch: it stays off. Tick Enable Desktop Mode in
    Settings → Advanced: grids return immediately, with no extra window. Quit while enabled and relaunch: grids return.
 6. Add an application shortcut from the menu-bar icon's menu. Check its application icon, double-click launch and Show
    Original. Create the same shortcut twice: names must be distinct. Cancel the chooser: nothing should be created.

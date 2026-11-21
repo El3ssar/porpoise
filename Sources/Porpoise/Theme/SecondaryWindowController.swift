@@ -14,6 +14,12 @@ class SecondaryWindowController: NSWindowController {
     /// The open windows of one kind, oldest first.
     static func openWindows<T: SecondaryWindowController>(_ kind: T.Type = T.self) -> [T] { open.compactMap { $0 as? T } }
 
+    override func showWindow(_ sender: Any?) {
+        let restoredDockRole = AppDelegate.shared.prepareToShowOrdinaryWindow(window)
+        super.showWindow(sender)
+        if restoredDockRole { NSApp.activate(ignoringOtherApps: true) }
+    }
+
     /// Keeps this controller alive until its window closes, and brings the window to the front.
     func present() {
         keepOpen()
