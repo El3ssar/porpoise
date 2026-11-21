@@ -137,9 +137,10 @@ import PorpoiseServices
         pausedStatusItem = nil
     }
 
-    /// A login launch can need setup without having any browser windows. Keep its recovery controls accessible.
+    /// A login launch can need setup without having any browser windows. Keep its recovery controls accessible, even
+    /// when the menu-bar icon is turned off: an existing opt-in paused by an update would otherwise just lose its desktop.
     private func updatePausedStatusItem() {
-        guard !environment.isReady, Settings.shared.desktopShowMenuBarIcon else { removePausedStatusItem(); return }
+        guard !environment.isReady else { removePausedStatusItem(); return }
         let item = pausedStatusItem ?? NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = DesktopWindowController.menuBarIcon(monochrome: Settings.shared.desktopMonochromeMenuBarIcon)
         item.button?.toolTip = statusLine.1

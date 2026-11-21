@@ -52,8 +52,8 @@ wallpaper click enabled and Stage Manager disabled. Unrecognized values or a fai
 While Porpoise is selected, the existing FSEvents `FolderWatcher` watches the relevant preferences (including ByHost);
 unrelated app preference changes are ignored. App activation, wake, and Space changes also trigger a recheck. There
 is no polling timer. A detected conflict closes every surface and releases the listing/watcher while keeping the
-requested preference. The optional menu-bar icon provides setup, retry, disable and Quit controls even during a
-desktop-only login launch. Resolving the conflict resumes the selected desktop after a recheck. Disabling or quitting
+requested preference. While paused, a menu-bar icon provides setup, retry, disable and Quit controls even during a
+desktop-only login launch, whether or not Show icon in menu bar is on: it is the only way back when no window is open. Resolving the conflict resumes the selected desktop after a recheck. Disabling or quitting
 removes these observers and controls.
 
 To return to macOS, disable Desktop Mode and restore the desired macOS item/widget/Stage Manager settings manually.
@@ -91,7 +91,7 @@ Settings → Advanced, directly below Enable Desktop Mode (available while it is
   and tabs are deferred until Porpoise is opened explicitly. Install the normal Porpoise app in `/Applications` or
   `~/Applications` before enabling this setting. Prototype and test builds cannot register login startup.
 - **Show icon in menu bar** (default on): hiding the icon does not stop the model, watchers or desktop windows.
-  The desktop context menu and app settings remain available. Visibility updates immediately, including after reset.
+  A paused desktop still shows its setup icon. The desktop context menu and app settings remain available. Visibility updates immediately, including after reset.
 - **Menu bar icon: Color / Monochrome** (default Color). The monochrome option reuses the existing fin/waves mark as
   a black/clear AppKit template, with no app-icon background. macOS supplies light/dark contrast. Style updates immediately.
 - **Open desktop folders in: New Window / New Tab** (default New Window). Tab mode uses the active/last Porpoise

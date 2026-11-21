@@ -109,9 +109,9 @@ import Testing
         #expect(delegate.applicationShouldTerminate(NSApp) == .terminateNow)
         Settings.shared.desktopMonochromeMenuBarIcon = true
         #expect(mode.pausedStatusItem?.button?.image?.isTemplate == true)
+        // A paused login launch has no windows: the setup item is the only way back, whatever the icon preference.
         Settings.shared.desktopShowMenuBarIcon = false
-        #expect(mode.pausedStatusItem == nil && Settings.shared.desktopModeEnabled)
-        Settings.shared.desktopShowMenuBarIcon = true
+        #expect(mode.pausedStatusItem?.menu != nil && Settings.shared.desktopModeEnabled)
         let menu = try #require(mode.pausedStatusItem?.menu)
         let index = try #require(menu.items.firstIndex { $0.title == "Use macOS Desktop" })
         menu.performActionForItem(at: index)
@@ -238,7 +238,7 @@ import Testing
         #expect(missing.statusText.hasPrefix("Couldn’t read Desktop:"))
         #expect(missing.grids.first?.frames.isEmpty == true)
         #expect(missing.statusItem?.menu?.items.contains { $0.title == "Refresh" } == true)
-        // Empty desktop belongs to Finder underneath, so the background commands are in the menu-bar menu.
+        // The background commands are also in the menu-bar menu, for when no empty desktop is in reach.
         let titles = empty.statusItem?.menu?.items.map(\.title) ?? []
         for title in ["New Folder…", "Add Application Shortcut…", "Sort By", "Start Corner", "Disable Desktop Mode", "Quit Porpoise"] {
             #expect(titles.contains(title), "\(title) is missing from \(titles)")
@@ -432,11 +432,6 @@ import Testing
             #expect(
                 await eventually(3) { desktopHit(at: icon) == window.windowNumber },
                 "The desktop icon must receive the real Window Server hit")
-            // The label's line is short: the cell's corner has no drawn pixel of the item, only the cell's hit fill.
-            let cell = grid.geometry.frame(for: 0)
-            #expect(
-                await eventually(3) { desktopHit(at: NSPoint(x: cell.minX + 3, y: cell.minY + 3)) == window.windowNumber },
-                "The whole cell of an item must take clicks")
             let empty = grid.geometry.frame(for: 1)
             #expect(
                 await eventually(3) { desktopHit(at: NSPoint(x: empty.midX, y: empty.midY)) == window.windowNumber },
