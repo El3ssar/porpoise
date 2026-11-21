@@ -153,6 +153,8 @@ public struct DesktopSystemSettings {
     public static let savedKey = "desktopModeReplacedSettings"
     /// The process that last applied them: a watcher restores only for the process it watches (`restore(onlyFor:)`).
     public static let ownerKey = "desktopModeReplacedSettingsOwner"
+    /// A SIGTERM restores from another thread: never in the middle of recording an original and writing its key.
+    private static let lock = NSLock()
 
     let preferences: DesktopPreferences
     let store: UserDefaults
@@ -172,6 +174,8 @@ public struct DesktopSystemSettings {
     /// Hides what is still shown. An original is recorded before its key is first written and never replaced afterwards.
     /// `owner` (this process) takes over what an earlier session recorded.
     public func apply(owner: Int32 = getpid()) {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         _ = preferences.synchronize()
         let wm = DesktopPreferences.windowManager
         let finderDesktop = preferences.flag(DesktopPreferences.finder, "CreateDesktop", default: true) != false
@@ -192,6 +196,8 @@ public struct DesktopSystemSettings {
     /// Puts back each value Desktop Mode changed, unless the user changed it again since. With `onlyFor`, only if that
     /// process was the last to apply them: a relaunched Porpoise owns them now.
     public func restore(onlyFor owner: Int32? = nil) {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         let saved = saved
         guard !saved.isEmpty else { return }
         if let owner, let recorded = store.object(forKey: Self.ownerKey) as? Int, recorded != Int(owner) { return }

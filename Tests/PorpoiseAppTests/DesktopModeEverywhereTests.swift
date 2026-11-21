@@ -197,6 +197,11 @@ import Testing
         disks.items = [item]
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didMountNotification, object: NSWorkspace.shared)
         #expect(await eventually { model.rows.first?.item.url == root })
+        // A rename is announced before macOS lists the new name: the desktop looks again a moment later.
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didRenameVolumeNotification, object: NSWorkspace.shared)
+        try await Task.sleep(for: .milliseconds(300))
+        disks.items = [FileItem(url: root, name: "Renamed Disk", isDirectory: true)]
+        #expect(await eventually { model.rows.first?.item.name == "Renamed Disk" })
     }
 
     @Test func aDiskIsEjectedInsteadOfTrashedAndIsNeverRenamedCutDuplicatedOrDeleted() async throws {

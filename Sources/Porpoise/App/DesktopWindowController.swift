@@ -300,6 +300,11 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
             .map { name in
                 workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refreshVolumes() }
+                    // macOS announces a rename before its list of mounted disks has the new name: look again shortly.
+                    guard name == NSWorkspace.didRenameVolumeNotification else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        MainActor.assumeIsolated { self?.refreshVolumes() }
+                    }
                 }
             }
         refreshVolumes()
