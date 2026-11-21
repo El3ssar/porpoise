@@ -48,7 +48,7 @@ import Testing
             #expect(result.isEmpty)
         }
         // Moving to a server is checked first too: an upload would delete the local copy afterwards.
-        controller.run(.move, [disk], to: URL(string: "sftp://example.invalid/home/")!, window: nil)
+        controller.run(.move, [disk], to: URL(string: "sftp://127.0.0.1:1/home/")!, window: nil)
         #expect(started == [[file]] && ui.errors.count == 4)
         #expect(s.read("USB/keep.txt") == "kept" && FileManager.default.fileExists(atPath: keep.path))
     }

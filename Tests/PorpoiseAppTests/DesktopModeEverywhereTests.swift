@@ -245,21 +245,44 @@ import Testing
         let disk = try elsewhere.folder("USB"), diskItem = FileItem(url: disk, name: "USB", isDirectory: true)
         let controller = makeDesktop(location: scratch.url, volumes: { [diskItem] })
         defer { controller.close() }
-        var ejected: [[URL]] = []
+        var ejected: [[URL]] = [], trashed: [[URL]] = []
         controller.ejectVolumes = { ejected.append($0) }
+        controller.trashFiles = { trashed.append($0) }
         controller.isEjectable = { _ in true }
         try #require(await eventually { controller.model?.rows.count == 2 })
         let model = try #require(controller.model)
-        // The files would go to the Trash (declined here, so nothing leaves the scratch folder); the disk stays put.
-        let operations = FileOperationsController.shared, previousUI = operations.ui
-        let ui = ScriptedUI(confirms: false); operations.ui = ui
-        defer { operations.ui = previousUI }
         model.selection = [disk, file]
         #expect(controller.validateMenuItem(NSMenuItem(title: "", action: #selector(DesktopWindowController.moveToTrash(_:)), keyEquivalent: "")))
-        Settings.shared.confirmTrash = true
         controller.moveToTrash(nil)
-        #expect(ejected.isEmpty && FileManager.default.fileExists(atPath: disk.path))
-        #expect(ui.questions.count == 1 && scratch.read("file.txt") == "unchanged")
+        #expect(ejected.isEmpty && trashed == [[file]])
+        model.selection = [disk]
+        controller.moveToTrash(nil)
+        #expect(ejected == [[disk]] && trashed == [[file]])
+    }
+
+    @Test func settingsMacOSKeepsAreNotWrittenAgainOnEveryRecheck() throws {
+        let scratch = try Scratch(), system = FakeSystem()
+        var writes = 0
+        let locked = DesktopPreferences(
+            read: { system.preferences.read($0, $1) },
+            write: { domain, key, value in
+                writes += 1
+                if !key.contains("Widgets") { system.preferences.write(domain, key, value) }
+            })
+        let mode = DesktopModeController(
+            environment: { DesktopEnvironment.inspect(locked) },
+            systemSettings: { DesktopSystemSettings(preferences: locked, store: Settings.store) },
+            makeWindow: { makeDesktop(location: scratch.url) })
+        defer { mode.stop() }
+        mode.setEnabled(true)
+        let afterFirst = writes
+        #expect(!mode.isEnabled && afterFirst > 0 && system.untouched)
+        // Activations, Space changes and our own writes' FSEvents recheck: nothing is written again (no flicker).
+        for _ in 0..<5 { mode.checkEnvironment() }
+        #expect(writes == afterFirst && system.untouched)
+        // Check Again tries once more.
+        mode.retry()
+        #expect(writes > afterFirst && !mode.isEnabled && system.untouched)
     }
 
     @Test func aDraggedDiskIsCopiedOrLinkedNeverMovedAndStillRearrangesTheDesktop() async throws {

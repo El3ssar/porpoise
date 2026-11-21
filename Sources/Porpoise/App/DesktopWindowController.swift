@@ -18,6 +18,9 @@ import PorpoiseServices
     private var environmentObservations: [(NotificationCenter, NSObjectProtocol)] = []
     private var preferenceWatcher: FolderWatcher?
     private(set) var environment = DesktopEnvironment(conflicts: [.unreadable])
+    /// macOS kept some of the settings (a managed Mac): they aren't written again until the user asks (Check Again) or
+    /// selects the desktop again. Writing and putting back on every recheck would make Finder's icons flicker.
+    private var refused = false
     private(set) var pausedStatusItem: NSStatusItem?
     private(set) var windowController: DesktopWindowController?
     var isEnabled: Bool { windowController != nil }
@@ -76,6 +79,7 @@ import PorpoiseServices
     }
 
     func setEnabled(_ enabled: Bool) {
+        refused = false
         if Settings.shared.desktopModeEnabled != enabled { Settings.shared.desktopModeEnabled = enabled }
         start()
     }
@@ -95,6 +99,7 @@ import PorpoiseServices
     @objc func checkEnvironment() {
         guard settingsObservation != nil else { return }
         if !Settings.shared.desktopModeEnabled {
+            refused = false
             stopEnvironmentObservation()
             applyEnabled(false)
             systemSettings()?.restore()
@@ -104,14 +109,18 @@ import PorpoiseServices
         observeEnvironment()
         // With an unrecognized value nothing is changed: Porpoise pauses and says so.
         let settings = systemSettings()
-        if let settings, !readEnvironment().conflicts.contains(.unreadable) {
+        let applying = settings != nil && !refused && !readEnvironment().conflicts.contains(.unreadable)
+        if applying, let settings {
             settings.apply()
             DesktopSettingsGuard.start()
         }
         let previous = environment
         environment = readEnvironment()
         // Paused, Finder's desktop is as the user had it: never no desktop icons at all.
-        if !environment.isReady { settings?.restore() }
+        if !environment.isReady {
+            if applying { refused = true }
+            settings?.restore()
+        }
         windowController?.refreshVolumes()
         // Close the old surfaces before exposing a setup menu. An external change never enables a hybrid mode.
         applyEnabled(environment.isReady)
@@ -120,6 +129,12 @@ import PorpoiseServices
     }
 
     @objc func openDesktopSettings() { openSettings() }
+
+    /// Check Again: also tries the settings macOS kept last time.
+    @objc func retry() {
+        refused = false
+        checkEnvironment()
+    }
 
     @objc private func showSetup() { AppDelegate.shared.showSettings(page: "Advanced", section: "Experiments") }
     @objc private func useMacOSDesktop() { setEnabled(false) }
@@ -171,7 +186,7 @@ import PorpoiseServices
         for entry in [
             NSMenuItem.make("Desktop Mode Settings…", #selector(showSetup), icon: "configure"),
             .make("Open macOS Desktop Settings…", #selector(openDesktopSettings), icon: "configure"),
-            .make("Check Again", #selector(checkEnvironment), icon: "view-refresh"),
+            .make("Check Again", #selector(retry), icon: "view-refresh"),
             .make("Use macOS Desktop", #selector(useMacOSDesktop), icon: "tab-close"),
         ] {
             entry.target = self; menu.addItem(entry)
@@ -217,11 +232,13 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     private var settingsObservation: NSObjectProtocol?
     private var volumeObservations: [NSObjectProtocol] = []
     private let volumes: @Sendable () -> [FileItem]
-    private var volumesGeneration = 0
+    private static let volumeQueue = DispatchQueue(label: "app.porpoise.desktop-volumes", qos: .userInitiated)
+    private var listingVolumes = false, volumesStale = false
     private let revealDesktop: @MainActor () -> Void
     /// Tests record what would be ejected instead.
     var ejectVolumes: @MainActor ([URL]) -> Void = { VolumeEject.eject($0) }
     var isEjectable: (URL) -> Bool = { DesktopVolumes.isEjectable($0) }
+    var trashFiles: @MainActor ([URL]) -> Void = { FileOperationsController.shared.trash($0, window: nil) }
     private(set) var statusItem: NSStatusItem?
     var onDisable: (() -> Void)?
     weak var activeGrid: DesktopGridView?
@@ -290,16 +307,23 @@ final class DesktopWindowController: NSResponder, ItemListViewDelegate, NSMenuIt
     }
 
     /// The disks Finder would show on its desktop come first, in the top right corner until moved.
-    /// Listed off the main thread: a stale network mount can take long to answer. The latest listing wins.
+    /// Listed off the main thread, one listing at a time: a stale network mount can take long to answer, and rechecks
+    /// meanwhile only ask for one more listing after it.
     func refreshVolumes() {
-        volumesGeneration += 1
-        let generation = volumesGeneration, list = volumes
-        DispatchQueue.global(qos: .userInitiated).async {
+        guard !listingVolumes else { volumesStale = true; return }
+        listingVolumes = true
+        let list = volumes
+        Self.volumeQueue.async { [weak self] in
             let found = list()
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, generation == self.volumesGeneration else { return }
+                    guard let self else { return }
+                    self.listingVolumes = false
                     self.model?.leadingItems = found
+                    if self.volumesStale {
+                        self.volumesStale = false
+                        self.refreshVolumes()
+                    }
                 }
             }
         }

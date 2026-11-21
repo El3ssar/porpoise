@@ -323,7 +323,7 @@ import PorpoiseServices
         f.observe(DesktopModeController.changed)
         f.check("Enable Desktop Mode", Settings.shared.desktopModeEnabled) { controller.setEnabled($0) }
         f.status("Desktop:", { controller.statusLine }, button: { "Check Again" }) { refresh in
-            controller.checkEnvironment()
+            controller.retry()
             refresh()
         }
         f.button("Open macOS Desktop Settings…") { controller.openDesktopSettings() }

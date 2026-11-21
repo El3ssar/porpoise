@@ -289,7 +289,7 @@ extension DesktopWindowController {
         guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true else { return }
         let files = selectedURLs.filter { !isVolume($0) }
         if !files.isEmpty {
-            FileOperationsController.shared.trash(files, window: actionWindow)
+            trashFiles(files)
         } else if selectedEjectable.count == selectedVolumes.count {
             ejectVolumes(selectedVolumes)
         } else {

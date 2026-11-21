@@ -156,6 +156,20 @@ import Testing
         #expect(DesktopEnvironment.inspect(fake.preferences).isReady)
     }
 
+    @Test func aWatcherRestoresOnlyForTheProcessThatLastAppliedThem() throws {
+        let fake = FakePreferences(["StandardHideDesktopIcons": false])
+        let store = try isolatedStore()
+        let settings = DesktopSystemSettings(preferences: fake.preferences, store: store)
+        settings.apply(owner: 100)
+        // Porpoise crashed and was relaunched (pid 200) before its old watcher got to restore.
+        settings.apply(owner: 200)
+        settings.restore(onlyFor: 100)
+        #expect(fake.value("StandardHideDesktopIcons") as? Bool == true && !settings.saved.isEmpty)
+        settings.restore(onlyFor: 200)
+        #expect(fake.value("StandardHideDesktopIcons") as? Bool == false && settings.saved.isEmpty)
+        #expect(store.object(forKey: DesktopSystemSettings.ownerKey) == nil)
+    }
+
     @Test func genericTestsGetNoSystemPreferencesToChange() {
         #expect(DesktopPreferences.current() == nil && DesktopSystemSettings.current() == nil)
     }

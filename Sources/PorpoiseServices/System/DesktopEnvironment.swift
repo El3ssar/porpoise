@@ -151,6 +151,8 @@ public struct DesktopSystemSettings {
     public static let hiddenKeys = ["StandardHideDesktopIcons", "HideDesktop", "StandardHideWidgets", "StageManagerHideWidgets"]
     private static let itemKeys: Set<String> = ["StandardHideDesktopIcons", "HideDesktop"]
     public static let savedKey = "desktopModeReplacedSettings"
+    /// The process that last applied them: a watcher restores only for the process it watches (`restore(onlyFor:)`).
+    public static let ownerKey = "desktopModeReplacedSettingsOwner"
 
     let preferences: DesktopPreferences
     let store: UserDefaults
@@ -168,7 +170,8 @@ public struct DesktopSystemSettings {
     public var saved: [String: [String: Any]] { (store.dictionary(forKey: Self.savedKey) as? [String: [String: Any]]) ?? [:] }
 
     /// Hides what is still shown. An original is recorded before its key is first written and never replaced afterwards.
-    public func apply() {
+    /// `owner` (this process) takes over what an earlier session recorded.
+    public func apply(owner: Int32 = getpid()) {
         _ = preferences.synchronize()
         let wm = DesktopPreferences.windowManager
         let finderDesktop = preferences.flag(DesktopPreferences.finder, "CreateDesktop", default: true) != false
@@ -182,13 +185,16 @@ public struct DesktopSystemSettings {
             preferences.write(wm, key, true)
             changed = true
         }
+        if !saved.isEmpty, store.object(forKey: Self.ownerKey) as? Int != Int(owner) { store.set(Int(owner), forKey: Self.ownerKey) }
         if changed { preferences.synchronize() }
     }
 
-    /// Puts back each value Desktop Mode changed, unless the user changed it again since.
-    public func restore() {
+    /// Puts back each value Desktop Mode changed, unless the user changed it again since. With `onlyFor`, only if that
+    /// process was the last to apply them: a relaunched Porpoise owns them now.
+    public func restore(onlyFor owner: Int32? = nil) {
         let saved = saved
         guard !saved.isEmpty else { return }
+        if let owner, let recorded = store.object(forKey: Self.ownerKey) as? Int, recorded != Int(owner) { return }
         _ = preferences.synchronize()
         let wm = DesktopPreferences.windowManager
         for (key, entry) in saved where Self.hiddenKeys.contains(key) && preferences.flag(wm, key, default: false) == true {
@@ -196,5 +202,6 @@ public struct DesktopSystemSettings {
         }
         preferences.synchronize()
         store.removeObject(forKey: Self.savedKey)
+        store.removeObject(forKey: Self.ownerKey)
     }
 }

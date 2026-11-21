@@ -86,7 +86,14 @@ public enum DesktopVolumes {
     /// Whether `url` is a disk's top level: where it is mounted. A disk can be ejected but never moved, trashed or
     /// deleted.
     public static func isVolume(_ url: URL, mounts: Set<String>? = nil) -> Bool {
-        url.isFileURL && (mounts ?? mountPoints()).contains(url.standardizedFileURL.path)
+        guard url.isFileURL else { return false }
+        let mounts = mounts ?? mountPoints()
+        if mounts.contains(url.standardizedFileURL.path) { return true }
+        // Another spelling of a mount point (other letter case, a symbolic link on the way, as /tmp for /private/tmp):
+        // a name that a mount point ends with is asked of the disk itself.
+        let name = url.lastPathComponent.lowercased()
+        guard mounts.contains(where: { ($0 as NSString).lastPathComponent.lowercased() == name }) else { return false }
+        return (try? url.resourceValues(forKeys: [.isVolumeKey]).isVolume) == true
     }
 
     /// Whether a disk can be ejected: any but the startup disk, as in Finder.
