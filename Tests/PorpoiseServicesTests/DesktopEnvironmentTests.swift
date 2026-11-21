@@ -87,7 +87,10 @@ import Testing
                 domains[domain, default: [:]][key] = value
                 writes.append((key, value))
             },
-            synchronize: { [unowned self] in syncs += 1; return true })
+            synchronize: { [unowned self] in
+                syncs += 1
+                return true
+            })
         func value(_ key: String) -> Any? { domains["com.apple.WindowManager"]?[key] }
     }
 

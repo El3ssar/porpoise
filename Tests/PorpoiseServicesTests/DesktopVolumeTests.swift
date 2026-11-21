@@ -14,7 +14,10 @@ import Testing
         let s = try Scratch()
         try s.file("b.txt"); try s.file("a.txt")
         let m = try await DirectoryModel.loaded(s.url)
-        let disks = [FileItem(url: URL(fileURLWithPath: "/Volumes/Zed"), name: "Zed", isDirectory: true), FileItem(url: root, name: "Mac", isDirectory: true)]
+        let disks = [
+            FileItem(url: URL(fileURLWithPath: "/Volumes/Zed"), name: "Zed", isDirectory: true),
+            FileItem(url: root, name: "Mac", isDirectory: true),
+        ]
         m.leadingItems = disks
         #expect(m.rowNames == ["Zed", "Mac", "a.txt", "b.txt"])
         #expect(m.index(of: root) == 1)
