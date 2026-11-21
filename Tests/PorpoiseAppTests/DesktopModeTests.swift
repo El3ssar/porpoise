@@ -145,6 +145,10 @@ import Testing
         delegate.ordinaryWindowPutAway()
         #expect(probe.policy == .regular)
         activity.close()
+        // Without the desktop lifecycle (Desktop Mode never started), the report changes nothing.
+        let idle = ActivationProbe()
+        idle.delegate(mode).ordinaryWindowPutAway()
+        #expect(idle.changes.isEmpty)
     }
 
     @Test func aProhibitedHostOrRejectedPolicyChangeIsNeverTreatedAsASuccess() {

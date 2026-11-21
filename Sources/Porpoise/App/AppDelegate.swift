@@ -383,8 +383,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Activity and stand-alone conflict windows order themselves out instead of closing, and call this afterwards:
-    /// AppKit reports no occlusion change for a window that was already covered or on another Space.
-    func ordinaryWindowPutAway() { updateDesktopActivationPolicy() }
+    /// a window already covered when it is ordered out gets no occlusion change, so nothing else would recount.
+    func ordinaryWindowPutAway() {
+        guard !desktopWindowObservations.isEmpty else { return }
+        updateDesktopActivationPolicy()
+    }
 
     /// Only browser windows, minimized windows and a hidden app keep the Dock role while off screen; anything else
     /// would hold it for good. A window asked for but not yet on screen is about to be shown, so it stays.
