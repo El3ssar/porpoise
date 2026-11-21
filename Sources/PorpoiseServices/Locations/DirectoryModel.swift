@@ -106,6 +106,16 @@ public final class DirectoryModel {
         }
     }
     public private(set) var items: [FileItem] = []  // top level, unsorted, including hidden
+    /// Shown before the sorted listing, unsorted and never filtered out: the disks on Desktop Mode's desktop.
+    public var leadingItems: [FileItem] = [] {
+        didSet {
+            guard leadingItems != oldValue else { return }
+            // An ejected disk is no longer selected.
+            let gone = Set(oldValue.map(\.url)).subtracting(leadingItems.map(\.url))
+            if !gone.isDisjoint(with: selection) { selection.subtract(gone) }
+            rebuild(keepingOrder: true)
+        }
+    }
     /// Changes whenever the visible rows are replaced, for constant-time view cache invalidation.
     public private(set) var rowsRevision: UInt64 = 0
     public private(set) var rows: [Row] = [] {
@@ -850,7 +860,7 @@ public final class DirectoryModel {
 
     /// Everything listed, search results included (a reload during a search keeps their selection).
     private func allLoadedURLs() -> [URL] {
-        items.map(\.url) + children.values.flatMap { $0.map(\.url) } + (searchResults ?? []).map(\.url)
+        leadingItems.map(\.url) + items.map(\.url) + children.values.flatMap { $0.map(\.url) } + (searchResults ?? []).map(\.url)
     }
 
     /// A reload's children, plus those of folders expanded while it ran (their own load may have finished first).
@@ -906,7 +916,7 @@ public final class DirectoryModel {
         let generation = rowPreparationGeneration
         let snapshot = DirectoryModelPreparation(
             items: searchResults ?? items, incoming: isSearching ? [] : incomingItems, children: children, expanded: expanded, props: props,
-            filter: filter,
+            filter: filter, leading: isSearching ? [] : leadingItems,
             choice: Settings.shared.sortingChoice, hideBackups: Settings.shared.hideBackupFiles, sizes: folderCounts,
             knownTags: tagCache, ordered: keepingOrder ? sortedTop : nil,
             search: isSearching ? searchMatches : nil, retainedItems: isSearching ? items : [], knownEntryKeys: fileKeyCache)
@@ -967,7 +977,7 @@ public final class DirectoryModel {
                 tags: props.sortRole == .tags ? tagMap(all) : [:])
             sortedTop = top
         }
-        let sorted = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
+        let sorted = (isSearching ? [] : leadingItems) + (filter.matcher().map { match in top.filter { match($0.name) } } ?? top)
         let tagNames = groupRole == .tags ? tagMap(sorted) : [:]
 
         let sections: [(title: String, items: [FileItem])]?

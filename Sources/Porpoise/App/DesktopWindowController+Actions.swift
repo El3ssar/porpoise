@@ -5,6 +5,11 @@ import PorpoiseServices
 extension DesktopWindowController {
     private var selectedItems: [FileItem] { model?.selectedItems ?? [] }
     private var selectedURLs: [URL] { selectedItems.map(\.url) }
+    /// The selected disks: ejected rather than trashed, and never cut, moved, renamed or duplicated.
+    private var selectedVolumes: [URL] { selectedURLs.filter(isVolume) }
+    /// The startup disk can't be ejected: Eject, Move to Trash and ⌘E do nothing for it, as in Finder.
+    private var selectedEjectable: [URL] { selectedVolumes.filter(isEjectable) }
+    func isVolume(_ url: URL) -> Bool { model?.leadingItems.contains { $0.url == url } == true }
     private var actionWindow: NSWindow? { nil }
 
     func desktopMenu(for index: Int?) -> NSMenu {
@@ -21,9 +26,12 @@ extension DesktopWindowController {
                 at: menu.items.firstIndex(where: \.isSeparatorItem) ?? menu.items.count)
         }
         // Surface navigation, grouping, other-pane operations and app cleanup do not apply to a pinned desktop grid.
-        let forbidden: Set<Selector> = [
+        var forbidden: Set<Selector> = [
             #selector(MainWindowController.removeAppAndLeftovers(_:)), #selector(MainWindowController.emptyTrash(_:)),
         ]
+        let volumes = item.map { isVolume($0.url) } == true
+        // Finder's menu for a disk: Eject in place of Move to Trash (which, like the Dock's Trash, ejects it too).
+        if volumes { forbidden.formUnion(Self.volumeForbidden.union([#selector(moveToTrash(_:))])) }
         func bind(_ menu: NSMenu) {
             for entry in menu.items {
                 if let submenu = entry.submenu {
@@ -43,6 +51,12 @@ extension DesktopWindowController {
             let show = NSMenuItem.make("Show in Porpoise", #selector(showInPorpoise(_:)), icon: "document-open-folder", obj: item.url)
             show.target = self; menu.addItem(show)
         }
+        if volumes, item.map({ isEjectable($0.url) }) == true {
+            let eject = NSMenuItem.make("Eject", #selector(ejectVolume(_:)), icon: "media-eject")
+            eject.target = self
+            menu.insertItem(eject, at: menu.items.firstIndex(where: \.isSeparatorItem).map { $0 + 1 } ?? menu.items.count)
+            menu.insertItem(.separator(), at: menu.index(of: eject) + 1)
+        }
         menu.addItem(.separator())
         let corners = NSMenu(title: "Start Corner")
         for (tag, corner) in DesktopGridCorner.allCases.enumerated() {
@@ -61,9 +75,20 @@ extension DesktopWindowController {
         return menu
     }
 
+    /// What a disk can't do: it is ejected instead (Move to Trash, and dragging it to the Trash, do that).
+    static let volumeForbidden: Set<Selector> = [
+        #selector(cut(_:)), #selector(renameItem(_:)), #selector(duplicateItem(_:)), #selector(deleteItem(_:)),
+        #selector(copyOrMoveTo(_:)), #selector(MainWindowController.addToShelf(_:)),
+    ]
+
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard let model, let action = item.action else { return false }
+        if Self.volumeForbidden.contains(action), !selectedVolumes.isEmpty { return false }
         switch action {
+        case #selector(ejectVolume(_:)): return !selectedEjectable.isEmpty
+        // Disks alone are ejected (all of them must be ejectable); with files, only the files go.
+        case #selector(moveToTrash(_:)) where !selectedVolumes.isEmpty && selectedVolumes.count == selectedURLs.count:
+            return selectedEjectable.count == selectedVolumes.count
         case #selector(emptyTrash(_:)), #selector(removeAppAndLeftovers(_:)): return false
         case #selector(paste(_:)): return !FileOperationsController.shared.clipboardURLs.isEmpty
         case #selector(sortBy(_:)): item.state = (item.representedObject as? String) == model.props.sortRole.rawValue ? .on : .off
@@ -111,7 +136,16 @@ extension DesktopWindowController {
     }
 
     @objc func copy(_ sender: Any?) { FileOperationsController.shared.copy(selectedURLs, cut: false) }
-    @objc func cut(_ sender: Any?) { FileOperationsController.shared.copy(selectedURLs, cut: true) }
+    @objc func cut(_ sender: Any?) {
+        guard selectedVolumes.isEmpty else { NSSound.beep(); return }
+        FileOperationsController.shared.copy(selectedURLs, cut: true)
+    }
+    /// Eject (⌘E): the selected disks.
+    @objc func ejectVolume(_ sender: Any?) {
+        let volumes = selectedEjectable
+        guard !volumes.isEmpty else { NSSound.beep(); return }
+        ejectVolumes(volumes)
+    }
     @objc func copyLocation(_ sender: Any?) {
         let urls = selectedURLs.isEmpty ? model.map { [$0.location] } ?? [] : selectedURLs
         NSPasteboard.general.clearContents()
@@ -126,7 +160,7 @@ extension DesktopWindowController {
         }
     }
     @objc func duplicateItem(_ sender: Any?) {
-        guard let model else { return }
+        guard let model, selectedVolumes.isEmpty else { NSSound.beep(); return }
         FileOperationsController.shared.run(.copy, selectedURLs, to: model.location, window: actionWindow) { [weak self] urls in
             self?.model?.selection = Set(urls); self?.model?.reload()
         }
@@ -142,7 +176,7 @@ extension DesktopWindowController {
         }
     }
     @objc func renameItem(_ sender: Any?) {
-        guard let item = selectedItems.first else { return }
+        guard let item = selectedItems.first, selectedVolumes.isEmpty else { NSSound.beep(); return }
         if selectedItems.count > 1 {
             BatchRenameDialog.run(selectedURLs, window: actionWindow) { [weak self] urls in
                 self?.model?.selection = Set(urls); self?.model?.reload()
@@ -158,7 +192,7 @@ extension DesktopWindowController {
     }
     @objc func copyOrMoveTo(_ sender: NSMenuItem) {
         let urls = selectedURLs
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty, sender.tag != 1 || selectedVolumes.isEmpty else { return }
         let run: (URL) -> Void = { [weak self] destination in
             FileOperationsController.shared.run(sender.tag == 1 ? .move : .copy, urls, to: destination, window: self?.actionWindow)
         }
@@ -225,7 +259,7 @@ extension DesktopWindowController {
             let entry = NSMenuItem(); entry.representedObject = app; ctxOpenWith(entry)
         }
     }
-    @objc func addToShelf(_ sender: Any?) { _ = ShelfStore.shared.add(selectedURLs) }
+    @objc func addToShelf(_ sender: Any?) { if selectedVolumes.isEmpty { _ = ShelfStore.shared.add(selectedURLs) } }
     @objc func addToPlaces(_ sender: Any?) {
         guard let model else { return }
         for url in selectedItems.filter(\.isBrowsableFolder).map(\.url).isEmpty
@@ -249,12 +283,21 @@ extension DesktopWindowController {
     }
 
     // Explicit local blockers prevent the main menu from finding an unrelated browser as its action target.
+    /// Selected disks on their own are ejected, as when they are dragged to the Trash. With files (⌘A, ⌘⌫), only the
+    /// files go to the Trash: trashing a selection never ejects a drive.
     @objc func moveToTrash(_ sender: Any?) {
         guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true else { return }
-        FileOperationsController.shared.trash(selectedURLs, window: actionWindow)
+        let files = selectedURLs.filter { !isVolume($0) }
+        if !files.isEmpty {
+            trashFiles(files)
+        } else if selectedEjectable.count == selectedVolumes.count {
+            ejectVolumes(selectedVolumes)
+        } else {
+            NSSound.beep()
+        }
     }
     @objc func deleteItem(_ sender: Any?) {
-        guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true else { return }
+        guard !selectedURLs.isEmpty, activeGrid?.isRenaming != true, selectedVolumes.isEmpty else { return }
         FileOperationsController.shared.delete(selectedURLs, window: actionWindow)
     }
     @objc func emptyTrash(_ sender: Any?) {}
@@ -278,6 +321,7 @@ extension DesktopWindowController {
         FileOperationsController.shared.handleDrop(urls, onto: folder, operation: operation, in: view, window: actionWindow)
     }
     func itemList(_ view: ItemListView, rename item: FileItem, to name: String) {
+        guard !isVolume(item.url) else { return }
         itemRenaming.rename(item, to: name, showingHidden: model?.props.showHidden ?? false, window: actionWindow) { [weak self] url in
             if let url { self?.renamedPosition(from: item.url, to: url); self?.model?.selection = [url] }; self?.model?.reload()
         }

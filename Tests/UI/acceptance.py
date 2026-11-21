@@ -151,7 +151,7 @@ class Run:
         with open(os.path.join(self.desktop, "On the desktop.txt"), "w") as f:
             f.write("desktop\n")
         self.desktop_environment = os.path.join(self.scratch, f"desktop-environment-{look}.json")
-        self.write_desktop_environment(stage_manager=True)
+        self.write_desktop_environment(stage_manager=True, hidden=False)
         env = dict(
             os.environ, PORPOISE_DEFAULTS_SUITE=self.suite, PORPOISE_BRIDGE=self.bridge.channel, PORPOISE_FORCE_ONBOARDING="1",
             PORPOISE_DESKTOP_DIR=self.desktop,
@@ -354,50 +354,59 @@ class Run:
             slug = "-".join(title.lower().replace("&", " ").split())
             self.capture(f"{50 + index:02d}-settings-{slug}", window="settings")
 
-    def write_desktop_environment(self, stage_manager):
+    def write_desktop_environment(self, stage_manager, hidden):
+        """Synthetic Finder and Window Manager preferences. Finder lists no disks, so the rows stay this folder's."""
+        window_manager = {"GloballyEnabled": stage_manager, "EnableStandardClickToShowDesktop": True}
+        if hidden:
+            window_manager.update({"StandardHideDesktopIcons": True, "HideDesktop": True,
+                                   "StandardHideWidgets": True, "StageManagerHideWidgets": True})
+        else:
+            window_manager.update({"StandardHideDesktopIcons": False})
         with open(self.desktop_environment, "w") as f:
             json.dump({
-                "com.apple.finder": {"CreateDesktop": True},
-                "com.apple.WindowManager": {
-                    "StandardHideDesktopIcons": True, "HideDesktop": True, "GloballyEnabled": stage_manager,
-                    "StandardHideWidgets": True, "StageManagerHideWidgets": True, "EnableStandardClickToShowDesktop": False,
-                },
+                "com.apple.finder": {"CreateDesktop": True, "ShowHardDrivesOnDesktop": False, "ShowExternalHardDrivesOnDesktop": False,
+                                     "ShowRemovableMediaOnDesktop": False, "ShowMountedServersOnDesktop": False},
+                "com.apple.WindowManager": window_manager,
             }, f)
 
+    def read_desktop_environment(self):
+        with open(self.desktop_environment) as f:
+            return json.load(f)["com.apple.WindowManager"]
+
     def desktop_mode(self):
-        """The experiment is off until its checkbox is ticked in Settings, shows its folder while on, and goes again."""
+        """The experiment is off until its checkbox is ticked in Settings. With Stage Manager on, it hides Finder's desktop
+        items itself, shows its folder, and puts the user's settings back when it is turned off again."""
         b = self.bridge
+        hidden_keys = ["StandardHideDesktopIcons", "HideDesktop", "StandardHideWidgets", "StageManagerHideWidgets"]
 
         def report():
             return b.ask("desktop", parse=json.loads)
 
         first = report()
         self.check("desktop: off until enabled", not first["enabled"] and not first["setting"] and first["surfaces"] == 0, first)
+        before = self.read_desktop_environment()
+        self.check("desktop: Finder's items start shown and Stage Manager on",
+                   before.get("StandardHideDesktopIcons") is False and "HideDesktop" not in before and before["GloballyEnabled"], before)
         b.send("settings", "Advanced")
         wait_until(lambda: any(w.startswith("Advanced|") and "SettingsWindowController" in w for w in b.windows()),
                    self.args.step_timeout, "the Advanced settings page")
         b.send("click", "Settings|Enable Desktop Mode")
-        blocked = wait_until(lambda: (lambda r: r if r["setting"] and r["conflicts"] == ["stageManager"] else None)(report()),
-                             self.args.step_timeout, "Desktop Mode to require setup")
-        self.check("desktop: incompatible setup creates no listing or surfaces",
-                   not blocked["enabled"] and blocked["surfaces"] == 0 and not blocked["location"], blocked)
-        self.capture("60-desktop-setup", window="settings")
-        self.write_desktop_environment(stage_manager=False)
-        b.send("click", "Settings|Check Again")
         on = wait_until(lambda: (lambda r: r if r["enabled"] and r["surfaces"] > 0 and r["rows"] == ["On the desktop.txt"] else None)(report()),
                         self.args.step_timeout, "Desktop Mode to list its folder")
-        self.check("desktop: Enable Desktop Mode shows the given folder",
+        self.check("desktop: Enable Desktop Mode shows the given folder with Stage Manager on",
                    on["setting"] and not on["conflicts"] and os.path.realpath(on["location"]) == os.path.realpath(self.desktop), on)
+        applied = self.read_desktop_environment()
+        self.check("desktop: Porpoise hid Finder's items and widgets and left Stage Manager and wallpaper clicks alone",
+                   all(applied.get(k) is True for k in hidden_keys) and applied["GloballyEnabled"] is True
+                   and applied["EnableStandardClickToShowDesktop"] is True, applied)
         self.capture("61-desktop-active", window="settings")
-        self.write_desktop_environment(stage_manager=True)
-        b.send("click", "Settings|Check Again")
-        paused = wait_until(lambda: (lambda r: r if not r["enabled"] and r["surfaces"] == 0 else None)(report()),
-                            self.args.step_timeout, "Desktop Mode to pause")
-        self.check("desktop: a new conflict pauses the selected desktop", paused["setting"] and paused["conflicts"] == ["stageManager"], paused)
         b.send("click", "Settings|Enable Desktop Mode")
         off = wait_until(lambda: (lambda r: r if not r["enabled"] and r["surfaces"] == 0 else None)(report()),
                          self.args.step_timeout, "Desktop Mode to close")
         self.check("desktop: unticking it removes every surface", not off["setting"] and not off["menuBarIcon"], off)
+        restored = wait_until(lambda: (lambda e: e if e.get("StandardHideDesktopIcons") is False else None)(self.read_desktop_environment()),
+                              self.args.step_timeout, "the desktop settings to be put back")
+        self.check("desktop: turning it off put back exactly what the user had", restored == before, restored)
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))

@@ -10,6 +10,7 @@ struct DirectoryModelPreparation {
     let expanded: Set<URL>
     let props: ViewProperties
     let filter: NameFilter
+    var leading: [FileItem] = []
     let choice: SortingChoice
     let hideBackups: Bool
     let sizes: [URL: Int]
@@ -104,7 +105,7 @@ struct DirectoryModelPreparation {
             top = sorted
         }
         guard !cancelled() else { return nil }
-        let shown = filter.matcher().map { match in top.filter { match($0.name) } } ?? top
+        let shown = leading + (filter.matcher().map { match in top.filter { match($0.name) } } ?? top)
         let groupRole = props.effectiveGroupRole
         let groupTags = groupRole == .tags ? tagNames(shown) : [:]
         let sections: [(title: String, items: [FileItem])]?
@@ -165,6 +166,8 @@ struct DirectoryModelPreparation {
         return Result(
             top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: keyCache,
             rowIndex: rowIndex, rowIndexByPath: rowIndexByPath,
-            alive: Set(items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url) + children.values.flatMap { $0.map(\.url) }))
+            alive: Set(
+                leading.map(\.url) + items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url)
+                    + children.values.flatMap { $0.map(\.url) }))
     }
 }

@@ -9,6 +9,11 @@ if Bundle.main.bundleIdentifier == "app.porpoise.DesktopPrototype" {
 }
 #endif
 
+// Desktop Mode's watcher: puts the desktop settings back if this app ends without doing so (DesktopSettingsGuard).
+if CommandLine.arguments.count >= 4, CommandLine.arguments[1] == DesktopSettingsGuard.sentinelArgument, let parent = pid_t(CommandLine.arguments[2]) {
+    DesktopSettingsGuard.runSentinel(parent: parent, suite: CommandLine.arguments[3])
+}
+
 // ssh calls the app back as its password/confirmation prompt (SSH_ASKPASS).
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == "--askpass" {
     AskPass.runHelper(prompt: CommandLine.arguments.dropFirst(2).joined(separator: " "))

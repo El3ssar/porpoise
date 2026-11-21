@@ -99,9 +99,11 @@ final class SpringLoader {
 enum FileDragSource {
     /// The dragging items for `urls`, each with its frame and image when `look` gives one (many items drag without).
     static func items(_ urls: [URL], look: (Int) -> (frame: CGRect, image: NSImage)?) -> [NSDraggingItem] {
-        urls.enumerated().map { n, url in
+        let mounts = DesktopVolumes.mountPoints()
+        let disks = Set(urls.filter { DesktopVolumes.isVolume($0, mounts: mounts) })
+        return urls.enumerated().map { n, url in
             // Like Finder: a file URL per item, plus the classic file list on the first one for older apps.
-            let item = NSDraggingItem(pasteboardWriter: FileDragWriter(url: url, allURLs: n == 0 ? urls : nil))
+            let item = NSDraggingItem(pasteboardWriter: FileDragWriter(url: url, allURLs: n == 0 ? urls : nil, isVolume: disks.contains(url)))
             if let l = look(n) { item.setDraggingFrame(l.frame, contents: l.image) }
             return item
         }
@@ -115,15 +117,37 @@ enum FileDragSource {
         session.draggingFormation = .pile
     }
 
-    static func mask(for context: NSDraggingContext) -> NSDragOperation {
+    /// `volumes`: a disk is among the items. It can be copied or linked, never moved (or asked about, which offers
+    /// Move), and the Dock's Trash ejects it. The startup disk only links, and the Trash doesn't take it.
+    static func mask(for context: NSDraggingContext, volumes: DraggedVolumes = .none) -> NSDragOperation {
         // .delete lets items be dropped on the Trash in the Dock (they're then moved to the Trash).
-        context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
+        switch volumes {
+        case .none: break
+        case .ejectable: return context == .outsideApplication ? [.copy, .link, .delete] : [.copy, .link]
+        case .startupDisk: return [.link]
+        }
+        return context == .outsideApplication ? [.copy, .move, .link, .generic, .delete] : [.copy, .move, .link, .generic]
     }
 
-    /// The drag is over: dropped on the Dock's Trash, its files go to the Trash.
+    enum DraggedVolumes { case none, ejectable, startupDisk }
+
+    static func volumes(in urls: [URL]) -> DraggedVolumes {
+        let mounts = DesktopVolumes.mountPoints()
+        let volumes = urls.filter { DesktopVolumes.isVolume($0, mounts: mounts) }
+        if volumes.isEmpty { return .none }
+        return volumes.allSatisfy { DesktopVolumes.isEjectable($0, mounts: mounts) } ? .ejectable : .startupDisk
+    }
+
+    /// The drag is over: dropped on the Dock's Trash, its files go to the Trash. Disks dragged on their own are ejected,
+    /// as in Finder; with files, they are left alone (as ⌘⌫ leaves them), so trashing a selection never ejects a drive.
     static func ended(_ session: NSDraggingSession, operation: NSDragOperation, window: NSWindow?) {
         guard operation == .delete else { return }
         let urls = (session.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        if !urls.isEmpty { FileOperationsController.shared.trash(urls, window: window, sound: .dragToTrash) }
+        let mounts = DesktopVolumes.mountPoints()
+        let files = urls.filter { !DesktopVolumes.isVolume($0, mounts: mounts) }
+        let volumes = files.isEmpty ? urls.filter { DesktopVolumes.isEjectable($0, mounts: mounts) } : []
+        // Drag sessions end on the main thread.
+        if !volumes.isEmpty { MainActor.assumeIsolated { VolumeEject.eject(volumes) } }
+        if !files.isEmpty { FileOperationsController.shared.trash(files, window: window, sound: .dragToTrash) }
     }
 }

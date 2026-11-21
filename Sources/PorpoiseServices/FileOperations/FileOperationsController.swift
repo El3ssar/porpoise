@@ -132,6 +132,10 @@ public final class FileOperationsController {
 
     // MARK: Jobs
 
+    /// Where disks are mounted, for the guard above every move, trash and delete. Tests give a scratch folder instead,
+    /// so a broken guard can never reach a real disk.
+    public var volumeRoots: () -> Set<String> = DesktopVolumes.mountPoints
+
     /// `sound` plays once the job has done something (Finder's trash sounds).
     public func run(
         _ kind: FileOperationKind, _ urls: [URL], to folder: URL? = nil, window: AnyObject?, sound: FinderSound? = nil,
@@ -150,6 +154,26 @@ public final class FileOperationsController {
         completedTransfers: [URL: URL] = [:], moved: (([URL: URL]) -> Void)?, done: (([URL]) -> Void)? = nil
     ) {
         guard !urls.isEmpty else { return }
+        // A disk is ejected, never moved, trashed or deleted, to a server or anywhere (its contents would go). The rest
+        // still runs. Checked before anything, remote destinations included.
+        if kind == .move || kind == .trash || kind == .delete, urls.contains(where: \.isFileURL) {
+            let mounts = volumeRoots()
+            let disks = urls.filter { DesktopVolumes.isVolume($0, mounts: mounts) }
+            if !disks.isEmpty {
+                showErrors(["Disks can’t be moved, moved to the Trash or deleted. Eject them instead."], window: window)
+                let rest = urls.filter { !disks.contains($0) }
+                guard !rest.isEmpty else {
+                    moved?([:])
+                    done?([])
+                    return
+                }
+                runWithMoveReceipts(
+                    kind, rest, to: folder, window: window, sound: sound, allowDeleteFallback: allowDeleteFallback,
+                    allowAuthorization: allowAuthorization, resumePoints: resumePoints, completedTransfers: completedTransfers,
+                    moved: moved, done: done)
+                return
+            }
+        }
         if urls.contains(where: { !$0.isFileURL }) || (folder.map { !$0.isFileURL } ?? false) {
             runRemote(kind, urls, to: folder, window: window, done: done, moved: moved)
             return

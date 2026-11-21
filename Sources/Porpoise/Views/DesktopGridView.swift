@@ -21,7 +21,8 @@ enum DesktopGridCorner: String, Codable, CaseIterable {
 /// Only presentation state. Neither enabling Desktop Mode nor file metadata is persisted here.
 struct DesktopGridPreferences: Codable {
     static let key = "desktopGridLayout"
-    var corner: DesktopGridCorner = .topLeft
+    /// Finder's own arrangement: the first items (the disks) in the top right corner, then down each column.
+    var corner: DesktopGridCorner = .topRight
     var positions: [String: [String: Int]] = [:]
     var viewProperties: ViewProperties?
 
@@ -97,11 +98,13 @@ struct DesktopGridGeometry {
 /// Placement only; drawing, labels, hover, selection, accessibility and transitions belong to ItemListView.
 final class DesktopGridView: ItemListView {
     var scope = ""
-    var corner = DesktopGridCorner.topLeft
+    var corner = DesktopGridCorner.topRight
     var preferred: [Int: Int] = [:]
     private(set) var slots: [Int] = []
     private(set) var geometry = DesktopGridGeometry(viewport: .zero, count: 0, corner: .topLeft, cellSize: NSSize(width: 112, height: 120))
     var onRearrange: (([String: Int]) -> Void)?
+    /// A plain click on empty desktop space: macOS's wallpaper click, which Porpoise's surface receives instead.
+    var onBackgroundClick: (() -> Void)?
     var scrollToCornerAfterLayout = true
     var onDesktop = false {
         didSet { drawsBackground = !onDesktop; tracksWithoutKeyWindow = onDesktop; updateTrackingAreas() }
@@ -145,11 +148,22 @@ final class DesktopGridView: ItemListView {
         super.mouseDown(with: event)
     }
 
+    /// Selection by dragging a band, modified clicks and right clicks stay Porpoise's; only a plain click on empty space
+    /// (the pointer barely moved) is the wallpaper click.
+    override func mouseUp(with event: NSEvent) {
+        let band = rubberBand.map { $0.width > 4 || $0.height > 4 } ?? false
+        let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
+        let background = onDesktop && rubberStart != nil && !band && plain && event.clickCount == 1 && !SecondaryClick.matches(event)
+        super.mouseUp(with: event)
+        if background { onBackgroundClick?() }
+    }
+
     /// Only a drop back onto desktop space rearranges cells. Folders and external files use the browser's target.
     private func rearrangementPoint(_ sender: NSDraggingInfo) -> NSPoint? {
         guard let source = sender.draggingSource as? DesktopGridView, source.model === model else { return nil }
         let operation = DropTargetPolicy.operation(for: sender)
-        guard operation == .generic || operation == .move else { return nil }
+        // A drag with a disk only copies or links, which on empty desktop space still just moves the icons.
+        guard operation == .generic || operation == .move || source.draggingVolumes != .none else { return nil }
         let point = convert(sender.draggingLocation, from: nil)
         let urls = DropTargetPolicy.urls(sender)
         guard visibleRect.contains(point), geometry.slot(at: point) != nil, dropFolder(at: point).1 == nil,
