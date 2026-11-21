@@ -156,8 +156,9 @@ Closing or minimizing browser windows and hiding the app do not remove active de
 While Desktop Mode is selected, closing the last ordinary window changes only Porpoise's own AppKit activation
 policy to `accessory`: its running Dock icon disappears, while desktop surfaces and the optional menu-bar icon stay.
 Opening a folder or Settings restores `regular` before showing the window, then explicitly activates it to restore
-keyboard focus. Minimized, hidden and ordered-out ordinary windows keep the regular role. The same background role applies while desktop setup is paused. Turning Desktop Mode
-off restores the regular role. No Sidebar settings are changed and no helper or relaunch process is installed.
+keyboard focus. Minimized windows, ordered-out browser windows and a hidden app keep the regular role; an auxiliary
+window that orders itself out instead of closing (Activity, a stand-alone conflict dialog) gives it back. The same
+background role applies while desktop setup is paused. Turning Desktop Mode off restores the regular role. No Sidebar settings are changed and no helper or relaunch process is installed.
 
 Quit is never refused on the desktop's account: Porpoise's own Quit, the Dock, scripts, Activity Monitor and
 logout/shutdown all end the app as they do without Desktop Mode. The accessory role avoids presenting a windowless

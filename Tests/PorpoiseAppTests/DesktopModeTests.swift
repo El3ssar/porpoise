@@ -68,7 +68,7 @@ import Testing
         #expect(!delegate.prepareToShowOrdinaryWindow(second))
         NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: first)
         #expect(probe.policy == .regular)
-        // Being hidden, minimized or ordered out isn't closing; the second window still belongs to the session.
+        // Being hidden or minimized isn't closing; the second window still belongs to the session.
         second.orderOut(nil)
         NotificationCenter.default.post(name: NSWindow.didMiniaturizeNotification, object: second)
         NotificationCenter.default.post(name: NSApplication.didHideNotification, object: NSApp)
@@ -121,6 +121,22 @@ import Testing
         }
         #expect(probe.policy == .accessory)
         #expect(released == nil)
+    }
+
+    @Test func anAuxiliaryWindowPutAwayWithoutClosingGivesTheDockRoleBack() {
+        let mode = DesktopModeController(environment: { DesktopEnvironment(conflicts: [.stageManager]) })
+        mode.setEnabled(true)
+        let probe = ActivationProbe(), delegate = probe.delegate(mode)
+        delegate.startDesktopWindowLifecycle(windows: [])
+        defer { delegate.stopDesktopWindowLifecycle(); mode.stop() }
+        // Activity and stand-alone conflict windows order themselves out when their work ends; they never close.
+        let activity = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        activity.isReleasedWhenClosed = false
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: activity)
+        #expect(probe.policy == .regular)
+        activity.orderOut(nil)
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: activity)
+        #expect(probe.policy == .accessory && mode.keepsAppRunning)
     }
 
     @Test func aProhibitedHostOrRejectedPolicyChangeIsNeverTreatedAsASuccess() {

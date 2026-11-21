@@ -351,6 +351,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             })
         desktopWindowObservations.append(
+            center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: nil, queue: .main) { [weak self] n in
+                MainActor.assumeIsolated { self?.forgetIfPutAway(n.object as? NSWindow) }
+            })
+        desktopWindowObservations.append(
             center.addObserver(forName: Settings.changed, object: nil, queue: .main) { [weak self] n in
                 guard n.object == nil || n.object as? String == "desktopModeEnabled" else { return }
                 MainActor.assumeIsolated { self?.updateDesktopActivationPolicy() }
@@ -374,6 +378,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return wasAccessory && activationPolicy() == .regular
     }
 
+    /// Activity and stand-alone conflict windows order themselves out instead of closing. Only browser windows, minimized
+    /// windows and a hidden app keep the Dock role while off screen; anything else would hold it for good.
+    private func forgetIfPutAway(_ window: NSWindow?) {
+        guard let window, ordinaryWindows.contains(window), !window.isVisible, !window.isMiniaturized, !NSApp.isHidden,
+            !windows.contains(where: { $0.window === window })
+        else { return }
+        ordinaryWindows.remove(window)
+        updateDesktopActivationPolicy()
+    }
+
     private func isOrdinaryWindow(_ window: NSWindow) -> Bool {
         // AppKit's canBecomeMain is false before a normal window is shown, and while it is minimized.
         window.canBecomeMain || (!(window is NSPanel) && !window.styleMask.intersection([.titled, .resizable]).isEmpty)
@@ -383,7 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         MainActor.assumeIsolated {
             let current = activationPolicy()
             guard current != .prohibited else { return }
-            // Keep hidden, minimized and ordered-out windows until they actually close. Desktop panels cannot become main.
+            // Keep windows until they close or are put away (forgetIfPutAway). Desktop panels cannot become main.
             let desired: NSApplication.ActivationPolicy = desktopMode.keepsAppRunning && ordinaryWindows.allObjects.isEmpty ? .accessory : .regular
             if current != desired { _ = setActivationPolicy(desired) }
         }
