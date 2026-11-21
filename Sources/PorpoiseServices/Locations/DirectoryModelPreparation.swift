@@ -166,6 +166,8 @@ struct DirectoryModelPreparation {
         return Result(
             top: top, rows: rows, groups: groups, tags: tags, keys: keys, keyCache: keyCache,
             rowIndex: rowIndex, rowIndexByPath: rowIndexByPath,
-            alive: Set(leading.map(\.url) + items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url) + children.values.flatMap { $0.map(\.url) }))
+            alive: Set(
+                leading.map(\.url) + items.map(\.url) + incoming.map(\.url) + retainedItems.map(\.url)
+                    + children.values.flatMap { $0.map(\.url) }))
     }
 }
