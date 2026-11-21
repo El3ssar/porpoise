@@ -15,9 +15,12 @@ import Testing
     private final class MenuProbe: ItemListViewDelegate {
         var targets: [URL?] = []
         var opened: [URL] = []
+        var dropped: [(urls: [URL], folder: URL, operation: NSDragOperation)] = []
         func itemList(_ view: ItemListView, open items: [FileItem], inNewTab: Bool) { opened += items.map(\.url) }
         func itemList(_ view: ItemListView, menuFor item: FileItem?) -> NSMenu? { targets.append(item?.url); return nil }
-        func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {}
+        func itemList(_ view: ItemListView, drop urls: [URL], onto folder: URL, operation: NSDragOperation, event: NSEvent?) {
+            dropped.append((urls, folder, operation))
+        }
         func itemList(_ view: ItemListView, rename item: FileItem, to name: String) {}
         func itemListDidBecomeActive(_ view: ItemListView) {}
         func itemList(_ view: ItemListView, hovered item: FileItem?) {}
@@ -216,7 +219,7 @@ import Testing
         let model = try #require(controller.model)
         try #require(await eventually { model.rows.count == 2 })
         let grid = try #require(controller.grids.first)
-        #expect(grid.delegate === controller && grid.frames.count == 2 && grid.registeredDraggedTypes.isEmpty)
+        #expect(grid.delegate === controller && grid.frames.count == 2 && Set(grid.registeredDraggedTypes) == Set(DropTargetPolicy.types))
         #expect(grid.font == Settings.shared.labelFont && grid.maxLabelLines == Settings.shared.iconsMaxLines)
         _ = try scratch.file("external.txt")
         try #require(await eventually { model.rows.count == 3 && grid.frames.count == 3 })
@@ -489,7 +492,7 @@ import Testing
         #expect(grid.rubberStart == nil && grid.rubberBand == nil)
     }
 
-    @Test func mouseDragSwapsGridCellsPersistsAndKeepsFilesAndSelectionOnRefresh() async throws {
+    @Test func nativeDropRearrangesGridCellsPersistsAndKeepsFilesAndSelectionOnRefresh() async throws {
         let scratch = try Scratch()
         let first = try scratch.file("one.txt", "original one")
         let second = try scratch.file("two.txt", "original two")
@@ -500,21 +503,18 @@ import Testing
         controller.grids.first?.window?.contentView?.layoutSubtreeIfNeeded()
         let grid = try #require(controller.grids.first)
         grid.relayout()
-        let source = grid.iconRect(0)
         let target = grid.geometry.frame(for: 1)
-        func event(_ type: NSEvent.EventType, _ rect: NSRect) throws -> NSEvent {
-            try #require(
-                NSEvent.mouseEvent(
-                    with: type, location: grid.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil), modifierFlags: [],
-                    timestamp: 0, windowNumber: grid.window!.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-        }
-        grid.mouseDown(with: try event(.leftMouseDown, source))
-        grid.mouseDragged(with: try event(.leftMouseDragged, target))
-        grid.mouseUp(with: try event(.leftMouseUp, target))
+        let previous = DropTargetPolicy.heldModifiers
+        DropTargetPolicy.heldModifiers = { [] }; defer { DropTargetPolicy.heldModifiers = previous; DropTargetPolicy.dragEnded() }
+        model.selection = [first]
+        let drag = FakeDrag(
+            [first], mask: [.move, .generic], at: grid.convert(NSPoint(x: target.midX, y: target.midY), to: nil), source: grid)
+        #expect(grid.draggingEntered(drag) == .move && grid.dropOnBackground)
+        #expect(grid.performDragOperation(drag) && !grid.dropOnBackground)
         let saved = try #require(controller.gridPreferences.positions[grid.scope])
         #expect(saved[first.absoluteString] == 1 && saved[second.absoluteString] == 0)
         #expect(DesktopGridPreferences.load(from: Settings.store).positions[grid.scope] == saved)
-        #expect(grid.registeredDraggedTypes.isEmpty)
+        #expect(Set(grid.registeredDraggedTypes) == Set(DropTargetPolicy.types))
         #expect(try String(contentsOf: first, encoding: .utf8) == "original one")
         #expect(try String(contentsOf: second, encoding: .utf8) == "original two")
         _ = try scratch.file("aaa external.txt")
@@ -527,6 +527,124 @@ import Testing
         let positions = controller.gridPreferences.positions
         grid.moveItem(at: firstIndex, to: NSPoint(x: -500, y: -500))
         #expect(controller.gridPreferences.positions == positions)
+    }
+
+    @Test func desktopFolderDropsUseTheBrowserPolicyHighlightsAndModifierKeys() async throws {
+        let scratch = try Scratch(), desktop = try scratch.folder("Desktop")
+        let folder = try scratch.folder("Desktop/Folder")
+        let file = try scratch.file("Desktop/file.txt", "unchanged"), incoming = try scratch.file("incoming.txt", "incoming")
+        let controller = makeDesktop(location: desktop)
+        defer { controller.close() }
+        try #require(await eventually { controller.model?.rows.count == 2 })
+        let grid = try #require(controller.grids.first), model = try #require(controller.model)
+        grid.window?.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
+        let browser = ItemListView(model: model)
+        browser.frame = grid.bounds; browser.relayout()
+        let probe = MenuProbe(); grid.delegate = probe; browser.delegate = probe
+        let index = try #require(model.index(of: folder))
+        let previous = DropTargetPolicy.heldModifiers
+        defer { DropTargetPolicy.heldModifiers = previous; DropTargetPolicy.dragEnded() }
+        let cases: [(NSEvent.ModifierFlags, NSDragOperation)] = [([], .generic), (.option, .copy), (.command, .move), ([.command, .option], .link)]
+        for (keys, expected) in cases {
+            DropTargetPolicy.heldModifiers = { keys }
+            for view in [grid as ItemListView, browser] {
+                let rect = view.iconRect(index)
+                let drag = FakeDrag(
+                    [file], mask: [.copy, .move, .link, .generic],
+                    at: view.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil), source: grid)
+                #expect(view.draggingEntered(drag) == expected)
+                #expect(view.dropTargetIndex == index && !view.dropOnBackground)
+                #expect(view.performDragOperation(drag))
+                #expect(probe.dropped.last?.urls == [file])
+                #expect(probe.dropped.last?.folder.path == folder.path && probe.dropped.last?.operation == expected)
+                #expect(view.dropTargetIndex == nil && view.springLoader.target == nil)
+            }
+        }
+        let rect = grid.iconRect(index)
+        let selfDrop = FakeDrag([folder], mask: .move, at: grid.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil), source: grid)
+        DropTargetPolicy.heldModifiers = { [] }
+        #expect(grid.draggingUpdated(selfDrop).isEmpty)
+        let empty = grid.geometry.frame(for: 2)
+        let external = FakeDrag([incoming], mask: .copy, at: grid.convert(NSPoint(x: empty.midX, y: empty.midY), to: nil))
+        #expect(grid.draggingUpdated(external) == .copy && grid.dropOnBackground)
+        #expect(grid.performDragOperation(external))
+        #expect(probe.dropped.last?.urls == [incoming] && probe.dropped.last?.folder == desktop)
+        #expect(scratch.read("Desktop/file.txt") == "unchanged" && scratch.read("incoming.txt") == "incoming")
+        #expect(controller.gridPreferences.positions[grid.scope] == nil)
+    }
+
+    @Test func aNativeMultiItemDropRearrangesWithoutOverlapsOrMovingFiles() async throws {
+        let scratch = try Scratch()
+        let a = try scratch.file("a.txt", "a"), b = try scratch.file("b.txt", "b")
+        let c = try scratch.file("c.txt", "c"), d = try scratch.file("d.txt", "d")
+        let controller = makeDesktop(location: scratch.url)
+        defer { controller.close() }
+        try #require(await eventually { controller.model?.rows.count == 4 })
+        let grid = try #require(controller.grids.first)
+        grid.window?.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
+        grid.model.selection = [a, b]
+        let previous = DropTargetPolicy.heldModifiers
+        DropTargetPolicy.heldModifiers = { [] }; defer { DropTargetPolicy.heldModifiers = previous; DropTargetPolicy.dragEnded() }
+        let target = grid.geometry.frame(for: 1)
+        let drag = FakeDrag(
+            [a, b], mask: [.move, .generic], at: grid.convert(NSPoint(x: target.midX, y: target.midY), to: nil), source: grid)
+        #expect(grid.draggingUpdated(drag) == .move && grid.performDragOperation(drag))
+        let positions = try #require(controller.gridPreferences.positions[grid.scope])
+        #expect(positions[a.absoluteString] == 1 && positions[b.absoluteString] == 2)
+        #expect(positions[c.absoluteString] == 0 && positions[d.absoluteString] == 3)
+        #expect(Set(grid.slots).count == 4 && grid.model.selection == [a, b])
+        #expect(DesktopGridPreferences.load(from: Settings.store).positions[grid.scope] == positions)
+        for name in ["a", "b", "c", "d"] { #expect(scratch.read(name + ".txt") == name) }
+        grid.draggingUpdated(drag)
+        grid.stopPresentation()
+        #expect(!grid.dropOnBackground && grid.dropTargetIndex == nil && grid.springLoader.target == nil)
+        // File URLs on pasteboards may omit the directory's trailing slash. Match the model's identity as the browser does.
+        let folder = try scratch.folder("Folder")
+        try #require(await eventually { grid.model.rows.count == 5 })
+        grid.relayout()
+        let folderKey = grid.itemKeys[try #require(grid.model.index(of: folder))], cell = grid.geometry.frame(for: 0)
+        let folderDrag = FakeDrag(
+            [folder], mask: [.move, .generic], at: grid.convert(NSPoint(x: cell.midX, y: cell.midY), to: nil), source: grid)
+        #expect(grid.draggingUpdated(folderDrag) == .move && grid.performDragOperation(folderDrag))
+        #expect(controller.gridPreferences.positions[grid.scope]?[folderKey] == 0)
+        #expect(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    @Test func nativeDesktopDropsRunSharedCopyMoveAndUndoOnScratchFiles() async throws {
+        let scratch = try Scratch(), desktop = try scratch.folder("Desktop")
+        let folder = try scratch.folder("Desktop/Folder"), source = try scratch.file("Desktop/move.txt", "move")
+        let incoming = try scratch.file("incoming.txt", "copy")
+        let controller = makeDesktop(location: desktop)
+        defer { controller.close() }
+        try #require(await eventually { controller.model?.rows.count == 2 })
+        let grid = try #require(controller.grids.first), model = try #require(controller.model)
+        grid.window?.contentView?.layoutSubtreeIfNeeded(); grid.relayout()
+        let operations = FileOperationsController.shared, previousUI = operations.ui, previousKeys = DropTargetPolicy.heldModifiers
+        let ui = ScriptedUI(); operations.ui = ui
+        defer { operations.ui = previousUI; DropTargetPolicy.heldModifiers = previousKeys; DropTargetPolicy.dragEnded() }
+        let empty = grid.geometry.frame(for: 2)
+        let copy = FakeDrag([incoming], mask: [.copy, .move, .generic], at: grid.convert(NSPoint(x: empty.midX, y: empty.midY), to: nil))
+        DropTargetPolicy.heldModifiers = { .option }
+        #expect(grid.draggingUpdated(copy) == .copy && grid.performDragOperation(copy))
+        await ui.nextJobFinished()
+        #expect(scratch.read("incoming.txt") == "copy" && scratch.read("Desktop/incoming.txt") == "copy")
+        try #require(await eventually { model.rows.count == 3 })
+        grid.relayout()
+        let target = grid.iconRect(try #require(model.index(of: folder)))
+        let move = FakeDrag(
+            [source], mask: [.copy, .move, .generic], at: grid.convert(NSPoint(x: target.midX, y: target.midY), to: nil), source: grid)
+        DropTargetPolicy.heldModifiers = { .command }
+        #expect(grid.draggingUpdated(move) == .move && grid.performDragOperation(move))
+        await ui.nextJobFinished()
+        #expect(!FileManager.default.fileExists(atPath: source.path) && scratch.read("Desktop/Folder/move.txt") == "move")
+        let activity = try #require(operations.activities.first { $0.kind == .move && $0.sources == [source] && $0.destination?.path == folder.path })
+        #expect(activity.originWindow == nil)
+        try #require(await eventually { model.index(of: source) == nil })
+        operations.undo(window: nil)
+        #expect(scratch.read("Desktop/move.txt") == "move" && !FileManager.default.fileExists(atPath: folder.appendingPathComponent("move.txt").path))
+        #expect(ui.finishedJobs.count == 2 && ui.errors.isEmpty)
+        #expect(await eventually { model.index(of: source) != nil })
+        #expect(controller.gridPreferences.positions[grid.scope] == nil)
     }
 
     @Test func displaysKeepIndependentPositionsAndRestoreAfterReenable() async throws {
@@ -683,7 +801,7 @@ import Testing
         try click(0, modifiers: [])
         try click(1, modifiers: .command)
         #expect(model.selection == [first, second])
-        #expect(desktop.registeredDraggedTypes.isEmpty)
+        #expect(Set(desktop.registeredDraggedTypes) == Set(DropTargetPolicy.types))
     }
 
     @Test func desktopAndBrowserBuildTheSameCommonCommandsAndShortcuts() async throws {

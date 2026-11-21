@@ -35,7 +35,7 @@ extension ItemListView: NSDraggingSource {
 
 extension ItemListView {
     /// The folder a drop at `p` goes into: the folder item under it, or the shown location.
-    private func dropFolder(at p: CGPoint) -> (URL, Int?) {
+    func dropFolder(at p: CGPoint) -> (URL, Int?) {
         if let i = index(at: p), model.rows[i].item.isBrowsableFolder {
             let u = model.rows[i].item.url
             // A share in Network (smb://…) is no folder to copy into until it is mounted.
@@ -65,7 +65,7 @@ extension ItemListView {
         return DropTargetPolicy.operation(for: sender)
     }
 
-    private func setDropTarget(_ i: Int?, background: Bool) {
+    func setDropTarget(_ i: Int?, background: Bool) {
         if i == nil { springLoader.cancel() }
         if i != dropTargetIndex || background != dropOnBackground {
             dropTargetIndex = i

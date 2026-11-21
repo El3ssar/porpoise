@@ -106,12 +106,8 @@ final class DesktopGridView: ItemListView {
     var onDesktop = false {
         didSet { drawsBackground = !onDesktop; tracksWithoutKeyWindow = onDesktop; updateTrackingAreas() }
     }
-    private var dragKey: URL?
-    private var targetSlot: Int?
-
     override init(model: DirectoryModel) {
         super.init(model: model)
-        unregisterDraggedTypes()
         iconsLayout = { [weak self] in self?.placeItems() ?? .zero }
     }
 
@@ -146,53 +142,60 @@ final class DesktopGridView: ItemListView {
 
     override func mouseDown(with event: NSEvent) {
         if onDesktop { window?.makeKey() }
-        dragKey = nil
-        targetSlot = nil
         super.mouseDown(with: event)
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        if rubberStart != nil { super.mouseDragged(with: event); return }
-        let point = convert(event.locationInWindow, from: nil)
-        guard let key = mouseDownURL, hypot(point.x - mouseDownPoint.x, point.y - mouseDownPoint.y) > 4 else { return }
-        hoverIndex = nil
-        dragKey = key
-        targetSlot = visibleRect.contains(point) ? geometry.slot(at: point) : nil
-        needsDisplay = true
+    /// Only a drop back onto desktop space rearranges cells. Folders and external files use the browser's target.
+    private func rearrangementPoint(_ sender: NSDraggingInfo) -> NSPoint? {
+        guard let source = sender.draggingSource as? DesktopGridView, source.model === model else { return nil }
+        let operation = DropTargetPolicy.operation(for: sender)
+        guard operation == .generic || operation == .move else { return nil }
+        let point = convert(sender.draggingLocation, from: nil)
+        let urls = DropTargetPolicy.urls(sender)
+        guard visibleRect.contains(point), geometry.slot(at: point) != nil, dropFolder(at: point).1 == nil,
+            !urls.isEmpty, urls.allSatisfy({ model.index(of: $0) != nil })
+        else { return nil }
+        return point
     }
 
-    override func mouseUp(with event: NSEvent) {
-        defer { dragKey = nil; targetSlot = nil; needsDisplay = true }
-        if let key = dragKey {
-            if let index = model.index(of: key), visibleRect.contains(convert(event.locationInWindow, from: nil)) {
-                moveItem(at: index, to: convert(event.locationInWindow, from: nil))
-            }
-            mouseDownURL = nil
-            return
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if rearrangementPoint(sender) != nil {
+            setDropTarget(nil, background: true)
+            return .move
         }
-        super.mouseUp(with: event)
+        return super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let point = rearrangementPoint(sender) else { return super.performDragOperation(sender) }
+        let urls = DropTargetPolicy.urls(sender)
+        setDropTarget(nil, background: false)
+        DropTargetPolicy.dragEnded()
+        moveItems(urls, to: point)
+        return true
     }
 
     func moveItem(at index: Int, to point: NSPoint) {
-        guard itemKeys.indices.contains(index), slots.count == itemKeys.count, let target = geometry.slot(at: point) else { return }
-        let source = slots[index]
-        guard source != target else { return }
-        var positions = Dictionary(uniqueKeysWithValues: zip(itemKeys, slots))
-        if let occupant = slots.firstIndex(of: target) { positions[itemKeys[occupant]] = source }
-        positions[itemKeys[index]] = target
-        onRearrange?(positions)
+        guard model.rows.indices.contains(index) else { return }
+        moveItems([model.rows[index].item.url], to: point)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        if let targetSlot {
-            Theme.focus.setStroke()
-            let path = NSBezierPath(
-                roundedRect: geometry.frame(for: targetSlot).insetBy(dx: 2, dy: 2),
-                xRadius: Theme.itemRadius, yRadius: Theme.itemRadius)
-            path.lineWidth = 2
-            path.stroke()
-        }
+    private func moveItems(_ urls: [URL], to point: NSPoint) {
+        let keys = Set(urls.compactMap { model.index(of: $0).map { model.rows[$0].item.url.absoluteString } })
+        let moving = itemKeys.filter(keys.contains)
+        guard !moving.isEmpty, slots.count == itemKeys.count, let target = geometry.slot(at: point) else { return }
+        var positions = Dictionary(uniqueKeysWithValues: zip(itemKeys, slots))
+        let original = positions
+        let start = min(target, geometry.capacity - moving.count)
+        let destinations = Array(start..<(start + moving.count))
+        let occupied = Set(destinations)
+        let sources = Set(moving.compactMap { positions[$0] })
+        let vacated = sources.subtracting(occupied).sorted()
+        let displaced = zip(itemKeys, slots).filter { !keys.contains($0.0) && occupied.contains($0.1) }.map(\.0)
+        for (key, slot) in zip(displaced, vacated) { positions[key] = slot }
+        for (key, slot) in zip(moving, destinations) { positions[key] = slot }
+        guard positions != original else { return }
+        onRearrange?(positions)
     }
 
     func stopPresentation() {
@@ -202,7 +205,6 @@ final class DesktopGridView: ItemListView {
         hoverIndex = nil
         hoverFade.stop()
         transitions.navigate()
-        dragKey = nil
-        targetSlot = nil
+        setDropTarget(nil, background: false)
     }
 }
