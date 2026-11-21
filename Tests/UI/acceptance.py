@@ -150,9 +150,12 @@ class Run:
         os.makedirs(self.desktop)
         with open(os.path.join(self.desktop, "On the desktop.txt"), "w") as f:
             f.write("desktop\n")
+        self.desktop_environment = os.path.join(self.scratch, f"desktop-environment-{look}.json")
+        self.write_desktop_environment(stage_manager=True)
         env = dict(
             os.environ, PORPOISE_DEFAULTS_SUITE=self.suite, PORPOISE_BRIDGE=self.bridge.channel, PORPOISE_FORCE_ONBOARDING="1",
             PORPOISE_DESKTOP_DIR=self.desktop,
+            PORPOISE_DESKTOP_ENVIRONMENT=self.desktop_environment,
         )
         exe = os.path.join(os.path.abspath(self.args.app), "Contents", "MacOS", "Porpoise")
         # No "reopen windows?" alert after an earlier instance was stopped: it would block the app until answered.
@@ -351,6 +354,16 @@ class Run:
             slug = "-".join(title.lower().replace("&", " ").split())
             self.capture(f"{50 + index:02d}-settings-{slug}", window="settings")
 
+    def write_desktop_environment(self, stage_manager):
+        with open(self.desktop_environment, "w") as f:
+            json.dump({
+                "com.apple.finder": {"CreateDesktop": True},
+                "com.apple.WindowManager": {
+                    "StandardHideDesktopIcons": True, "HideDesktop": True, "GloballyEnabled": stage_manager,
+                    "StandardHideWidgets": True, "StageManagerHideWidgets": True, "EnableStandardClickToShowDesktop": False,
+                },
+            }, f)
+
     def desktop_mode(self):
         """The experiment is off until its checkbox is ticked in Settings, shows its folder while on, and goes again."""
         b = self.bridge
@@ -364,10 +377,23 @@ class Run:
         wait_until(lambda: any(w.startswith("Advanced|") and "SettingsWindowController" in w for w in b.windows()),
                    self.args.step_timeout, "the Advanced settings page")
         b.send("click", "Settings|Enable Desktop Mode")
-        on = wait_until(lambda: (lambda r: r if r["enabled"] and r["rows"] == ["On the desktop.txt"] else None)(report()),
+        blocked = wait_until(lambda: (lambda r: r if r["setting"] and r["conflicts"] == ["stageManager"] else None)(report()),
+                             self.args.step_timeout, "Desktop Mode to require setup")
+        self.check("desktop: incompatible setup creates no listing or surfaces",
+                   not blocked["enabled"] and blocked["surfaces"] == 0 and not blocked["location"], blocked)
+        self.capture("60-desktop-setup", window="settings")
+        self.write_desktop_environment(stage_manager=False)
+        b.send("click", "Settings|Check Again")
+        on = wait_until(lambda: (lambda r: r if r["enabled"] and r["surfaces"] > 0 and r["rows"] == ["On the desktop.txt"] else None)(report()),
                         self.args.step_timeout, "Desktop Mode to list its folder")
         self.check("desktop: Enable Desktop Mode shows the given folder",
-                   on["setting"] and os.path.realpath(on["location"]) == os.path.realpath(self.desktop), on)
+                   on["setting"] and not on["conflicts"] and os.path.realpath(on["location"]) == os.path.realpath(self.desktop), on)
+        self.capture("61-desktop-active", window="settings")
+        self.write_desktop_environment(stage_manager=True)
+        b.send("click", "Settings|Check Again")
+        paused = wait_until(lambda: (lambda r: r if not r["enabled"] and r["surfaces"] == 0 else None)(report()),
+                            self.args.step_timeout, "Desktop Mode to pause")
+        self.check("desktop: a new conflict pauses the selected desktop", paused["setting"] and paused["conflicts"] == ["stageManager"], paused)
         b.send("click", "Settings|Enable Desktop Mode")
         off = wait_until(lambda: (lambda r: r if not r["enabled"] and r["surfaces"] == 0 else None)(report()),
                          self.args.step_timeout, "Desktop Mode to close")
